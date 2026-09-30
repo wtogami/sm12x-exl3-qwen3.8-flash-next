@@ -17,8 +17,8 @@ registry = root / "model_executor/layers/quantization/__init__.py"
 replace(registry, '    "deepseek_v4_fp8",\n', '    "deepseek_v4_fp8",\n    "exl3",\n')
 replace(registry, '    from .experts_int8 import ExpertsInt8Config\n',
         '    from .experts_int8 import ExpertsInt8Config\n    from .exl3 import Exl3Config\n')
-replace(registry, '        "deepseek_v4_fp8": DeepseekV4FP8Config,\n',
-        '        "deepseek_v4_fp8": DeepseekV4FP8Config,\n        "exl3": Exl3Config,\n')
+replace(registry, '        "deepseek_v4_fp8": deepseek_config,\n',
+        '        "deepseek_v4_fp8": deepseek_config,\n        "exl3": Exl3Config,\n')
 exl3 = root / "model_executor/layers/quantization/exl3.py"
 replace(exl3, '''            # A standard MTP forward has one row per live request, not one
             # row per target-prefill token. Planning its EXL3 prefill arena

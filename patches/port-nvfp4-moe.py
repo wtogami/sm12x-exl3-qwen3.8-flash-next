@@ -7,7 +7,7 @@ root = Path(sys.argv[1])
 path = root / "model_executor/layers/quantization/modelopt.py"
 text = path.read_text()
 start = text.index("class ModelOptNvFp4FusedMoE(")
-end = text.index("ModelOptNvFp4Config.LinearMethodCls", start)
+end = text.index("class ModelOptMxFp8Config(", start)
 section = text[start:end]
 old = "        self.moe_kernel.fused_experts.process_weights_after_loading(layer)\n"
 assert section.count(old) == 1

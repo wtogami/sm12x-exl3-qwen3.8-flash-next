@@ -13,11 +13,11 @@ args = parser.parse_args()
 info = json.loads(subprocess.check_output(["docker", "inspect", args.container]))[0]
 logs = subprocess.run(["docker", "logs", args.container], capture_output=True,
                       text=True, check=True)
-markers = ("PLE offload matched", "Token embedding offloaded", "Model loading took",
+markers = ("Token embedding offloaded", "Model loading took",
            "Worker ready -", "GPU KV cache size:", "Available KV cache memory:", "Graph capturing finished",
            "B12x vocabulary", "Prepared B12x BF16 vocabulary projection", "Qwen NVFP4 experts use precise B12x",
-           "PLE mmap:", "PLE mmap input prep", "EXL3 projection-mixed Trellis")
-environment_names = {"VLLM_PLE_CPU_OFFLOAD", "VLLM_EXL3_TRELLIS_MIN_M",
+           "Mapped PLE table of layer", "Initialized PLE embedding", "EXL3 projection-mixed Trellis")
+environment_names = {"VLLM_EXL3_TRELLIS_MIN_M",
                      "VLLM_EXL3_PREFILL_TRELLIS", "VLLM_EXL3_PREFILL_CAPACITY",
                      "QWEN38_B12X_VOCAB", "QWEN38_B12X_NVFP4", "OMP_NUM_THREADS", "CUTE_DSL_ARCH", "QWEN38_TRELLIS_TILE_K"}
 receipt = {
@@ -29,8 +29,7 @@ receipt = {
     "started_at": info["State"]["StartedAt"],
     "device_requests": info["HostConfig"]["DeviceRequests"],
     "selected_environment": [item for item in info["Config"]["Env"]
-                             if item.split("=", 1)[0] in environment_names
-                             or item.startswith("VLLM_PLE_MMAP") ],
+                             if item.split("=", 1)[0] in environment_names],
     "selected_startup_lines": [line for line in (logs.stdout + logs.stderr).splitlines()
                                if any(marker in line for marker in markers)],
     "gpu_inventory_csv": subprocess.check_output([

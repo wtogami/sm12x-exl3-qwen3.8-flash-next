@@ -41,8 +41,9 @@ with tempfile.TemporaryDirectory() as folder:
         args = subprocess.check_output(['bash', str(root/'start.sh')], env=env, text=True).splitlines()
         assert image in args
         assert args[args.index('--gpu-memory-utilization')+1] == fraction
-        assert 'VLLM_PLE_MMAP=1' in args
-        assert 'VLLM_PLE_MMAP_READAHEAD=2048' in args
+        engram = json.loads(args[args.index('--engram-config')+1])
+        assert engram == {'cpu_offload': True,
+                          'checkpoint_mapped': arch == 'aarch64'}, engram
         spec = json.loads(args[args.index('--speculative-config')+1])
         assert spec['num_speculative_tokens'] == (2 if arch == 'aarch64' else 3)
         assert 'QWEN38_B12X_VOCAB='+('1' if arch == 'aarch64' else '0') in args

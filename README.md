@@ -1,9 +1,27 @@
 # Qwen3.8 Flash Next on RTX PRO 6000 and DGX Spark
 
-A TP=1 SM12x serving recipe with host-resident token embeddings and mmap-backed PLE
-n-gram tables, FP8 KV cache, vision, CUDA graphs, and tuned MTP. The configured
-context is 262144 tokens and the scheduler has 16 request slots. C1 performance
-is the priority for the defaults; C16 throughput tradeoffs are recorded below.
+A TP=1 SM12x serving recipe with host-resident token embeddings and
+mmap-backed (checkpoint-mapped) PLE n-gram tables, FP8 KV cache, vision, CUDA
+graphs, and tuned MTP. The configured context is 262144 tokens and the
+scheduler has 16 request slots. C1 performance is the priority for the
+defaults; C16 throughput tradeoffs are recorded below.
+
+> **Rebased to vLLM v0.30.0 (unreleased).** The runtime now builds on the
+> official `vllm/vllm-openai:v0.30.0` image (CUDA 13.0.2), the newest tag with
+> published images; the latest tag, `v0.31.0rc1`, has no published image yet.
+> The model ships upstream as `vllm/models/qwen4_exp` (Qwen4Exp is the
+> upstream codename for Qwen3.8-Flash-Next; the pinned checkpoints declare
+> `model_type: qwen4_exp`), so this recipe no longer needs a custom vLLM base.
+> Several former ports are now upstream code and were dropped, FP8 QSA comes
+> from merged upstream PR 55557 instead of the B12x bridge, and the mmap PLE
+> backport follows the redesigned upstream PRs 58439+58835 (checkpoint-mapped
+> PLE). That design requires a GPU that dereferences pageable host memory
+> through the host page tables: it is supported on DGX Spark (GB10) and is
+> rejected at startup on discrete RTX cards, whose default is the upstream
+> host-offloaded resident table (`cpu_offload`, the v0.1.0-era behavior). All
+> benchmark numbers below were measured on the pre-rebase v0.3.1 image and are
+> retained as historical evidence; they are **not** new measurements of this
+> rebase. See [PROVENANCE.md](PROVENANCE.md).
 
 | Profile (`QUANT`) | Checkpoint | PLE table format | Default MTP (RTX / Spark) |
 |---|---|---|---:|
@@ -59,12 +77,13 @@ for checkpoint pages and the host. A lower value is configurable.
 | GPU memory utilization | 0.94 | 0.7 maximum |
 | EXL3 MTP draft tokens | 3 | 2 |
 | Vocabulary projection | Native | B12x |
-| PLE storage | BF16 mmap | BF16 mmap |
-| Targeted readahead range limit | 2048 | 2048 |
+| PLE storage | host-offloaded resident table | BF16 mmap checkpoint mapping |
 | Maximum context / request slots | 262144 / 16 | 262144 / 16 |
 
 Use `B12X_VOCAB=0` for the native vocabulary projection or
-`PLE_MMAP_READAHEAD=0` to disable targeted readahead.
+`B12X_VOCAB=1` to opt the RTX build in. `PLE_MMAP` overrides the platform
+default on either host (`--engram-config` on the command line overrides the
+launcher entirely).
 
 Spark's original BF16 PLE default has completed the full qualification below.
 The RTX columns retain their existing measurements.
@@ -96,12 +115,14 @@ used by `start.sh`. Immutable image digests are recorded in
 
 | Platform | Image package | Status |
 |---|---|---|
-| RTX, linux/amd64 | `ghcr.io/tpurtell/rtx6k-exl3-qwen3.8-flash-next` | v0.3.1 |
-| Spark, linux/arm64 | `ghcr.io/tpurtell/spark-exl3-qwen3.8-flash-next` | v0.3.1 |
+| RTX, linux/amd64 | `ghcr.io/tpurtell/rtx6k-exl3-qwen3.8-flash-next` | v0.3.1 (pre-rebase) |
+| Spark, linux/arm64 | `ghcr.io/tpurtell/spark-exl3-qwen3.8-flash-next` | v0.3.1 (pre-rebase) |
 
-The new Spark package currently requires registry authentication while its
-visibility is private. The package owner can enable public pulls in GitHub
-package settings.
+The published packages above predate the v0.30.0 rebase; `pull.sh` installs
+them until rebased images are published. **Build with `build.sh` to get the
+rebased runtime.** The Spark package currently requires registry
+authentication while its visibility is private. The package owner can enable
+public pulls in GitHub package settings.
 
 The RTX measurements use one RTX PRO 6000 Blackwell 96 GB at **400 W**, driver
 595.71.05, and a Threadripper 9970X host with 183 GiB CPU RAM. Spark uses a GB10
@@ -128,11 +149,11 @@ used in performance tests. The full tool-quality suite uses thinking enabled.
 
 `GPU`, `PORT`, `CONTAINER_NAME`, `HF_CACHE`, `RUNTIME_CACHE`, `CPU_THREADS`,
 `MAX_MODEL_LEN`, `MAX_NUM_SEQS`, `MAX_BATCHED_TOKENS`,
-`GPU_MEMORY_UTILIZATION` and `MTP_TOKENS` can override the defaults.
-`MTP_TOKENS=0` disables speculation. Runtime/compiler caches persist under
-`~/.cache/qwen38-rtx/<profile>`; checkpoint caches are mounted read-only.
-The launcher uses the native multiprocessing executor. Resident mode needs
-its PLE offload worker; mmap gathers rows directly in the model worker.
+`GPU_MEMORY_UTILIZATION`, `PLE_MMAP` and `MTP_TOKENS` can override the
+defaults. `MTP_TOKENS=0` disables speculation. Runtime/compiler caches persist
+under `~/.cache/qwen38-rtx/<profile>`; checkpoint caches are mounted
+read-only. The launcher uses the native multiprocessing executor and passes
+the PLE storage mode through `--engram-config`.
 
 Sixteen scheduler slots do **not** mean sixteen simultaneous 262144-token
 requests fit in the KV pool. The final tests include sixteen overlapping
@@ -146,47 +167,46 @@ request mix. Use the context and concurrency tables below to distinguish those c
 
 ## Mmap PLE
 
-`PLE_MMAP=1` is the shipping default and works with **all three profiles**.
-It reads the PLE table through read-only checkpoint mappings and replaces the
-resident PLE subprocess. Set `PLE_MMAP=0` to use the resident host table instead.
-Use **v0.3.1 or newer for resident mode**: v0.3.0 incorrectly accessed a
-CPU-owned embedding from the GPU worker during loading (`ple_layer.py:691`).
-The corrected image supports both modes; the historical resident benchmark
-rows keep their original image provenance. See the
-[reproduction, fix and mode checks](benchmarks/resident-v031-review/README.md).
-Token embeddings remain in host RAM in either mode.
-Mmap maps the selected checkpoint's actual table dtype, including BF16 for
-`exl3` and FP8 plus its scalar scale for `exl3-ple8` and `nvfp4`.
+`PLE_MMAP=1` selects the checkpoint-mapped PLE table
+(`--engram-config '{"cpu_offload": true, "checkpoint_mapped": true}'`).
+The lookup kernel reads rows in place from read-only mappings of the
+checkpoint's safetensors shards; a model-runner input-prep pass issues
+readahead for the rows a step needs. There is no table-sized device or pinned
+allocation. This is the upstream redesign from merged-into-main PRs
+[#58439](https://github.com/vllm-project/vllm/pull/58439) and
+[#58835](https://github.com/vllm-project/vllm/pull/58835) (stacked, at head
+`47b9933db82d`), vendored and rebased onto v0.30.0 by this recipe.
+
+**Platform support.** Direct checkpoint mapping requires a GPU that
+dereferences pageable host memory through the host page tables
+(`CU_DEVICE_ATTRIBUTE_PAGEABLE_MEMORY_ACCESS_USES_HOST_PAGE_TABLES`), which
+the CUDA driver checks at startup. DGX Spark (GB10, unified memory) passes and
+defaults to mmap. A discrete RTX PRO 6000 reports the attribute as 0 (measured
+on driver 615.71.09), so the RTX default is `PLE_MMAP=0`: the upstream
+host-offloaded resident table (`cpu_offload`, the same v0.1.0-era behavior as
+the historical RTX benchmark rows). Setting `PLE_MMAP=1` on unsupported
+hardware fails fast with the driver-reported attribute. Token embeddings
+remain in host RAM in either mode. Mapped tables cover the checkpoint's
+actual dtype: BF16 for `exl3`, FP8 E4M3 with its scalar scale for
+`exl3-ple8` and `nvfp4`. The former per-knob `PLE_MMAP_*` environment
+variables are gone; the prefetch/readahead tunables are internal upstream
+defaults, and a custom `--engram-config` passed to `start.sh` overrides the
+launcher's one entirely.
 
 ```bash
-GPU=0 bash start.sh  # default: exl3, BF16 PLE, mmap enabled
+GPU=0 bash start.sh  # RTX default: exl3, host-offloaded BF16 PLE table
 QUANT=exl3-ple8 GPU=0 bash start.sh  # FP8 PLE, smaller checkpoint/cache footprint
 # Run one model at a time; use stop.sh with the same QUANT before switching.
-# PLE_MMAP=0 opts into the resident table with any profile.
+# PLE_MMAP=1/0 overrides the platform default; Spark defaults to mmap.
 ```
 
-The launcher supports `PLE_MMAP_WORKERS=32`, `PLE_MMAP_CHUNK=2048`,
-`PLE_MMAP_PREWARM=0`, `PLE_MMAP_READAHEAD=2048`, `PLE_MMAP_PINNED=0` and
-`PLE_MMAP_SERIAL=128`. When running the image directly, use the corresponding
-`VLLM_PLE_MMAP*` environment variables. `VLLM_PLE_MMAP=1` takes precedence
-over the image's resident-worker setting. Model Runner V2 and PP=1 are required.
-
-The serial threshold bypasses thread-pool dispatch for at most 128 distinct
-rows. We selected it for C1: the three-run blend measured 147.94 tokens/s
-versus 138.30 with the PR's SERIAL=0 default. Larger gathers still use the
-thread pool. Targeted readahead is enabled globally with a 2,048-range limit,
-selected from the Spark tuning runs. It asks Linux to fetch the current step's
-PLE file ranges before the gather; it does not predict future tokens or preload
-the entire table. If the coalesced range count exceeds the limit, that step's
-hints are skipped. Set `PLE_MMAP_READAHEAD=0` to disable the hints. Historical
-RTX results below retain their measured readahead-zero configuration; this
-default change does not introduce new RTX measurements.
-
-This ports [PR #54129](https://github.com/vllm-project/vllm/pull/54129) at a pinned
-commit after review, with fixes for approximate/broadcast scale comparisons
-and non-finite scales. **218 tests pass**, followed by byte-exact checks on
-real checkpoint shard boundaries and changed-row CUDA graph replay. The
-[review and evidence](docs/mmap-review.md) explain the port and test adaptations.
+The old PR #54129 gather-based backport and its B12x-era tuning knobs are
+removed with the rebase; its review tests targeted code paths the upstream
+redesign no longer has (streamed-scale comparison). The upstream test suite
+`tests/test_ple_pageable.py` (594 checks at the PR head) is vendored for
+GPU-equipped hosts. Mapped pages remain clean and reclaimable in the file
+cache. Historical mmap snapshots below remain valid observations of the
+pre-rebase runtime.
 
 Mapped pages may accumulate in Linux's file cache, but remain clean and
 reclaimable. An initial snapshot showed about 2.3 GiB resident across the
@@ -252,9 +272,12 @@ from the final client matrix.
 
 - **EXL3 mixed MoE:** B12x, including the Qwen H2560/I640 projection planner fix
   pushed to the [fork](https://github.com/tpurtell/sparkinfer-glmrt/commit/c76a40ee684cb3ef7d2c223d56a9b9cff25a3a1e).
-- **QSA attention:** B12x sparse attention with FP8 cache descales and native
-  cache writes/index selection. Numerical and mutable CUDA-graph tests cover
-  the actual integration. There is no full-model BF16-KV quality control.
+- **QSA attention:** native upstream Triton QSA with the merged FP8 main-KV-cache
+  support (PR 55557, vendored for v0.30.0). The FP8 cache is dequantized inside
+  the QSA kernel with the layer's host-side scales; the indexer side caches and
+  GDN state are unchanged. The former B12x QSA bridge is retired because v0.30.0
+  rejects FP8 main caches and the merged upstream change supersedes the bridge;
+  its pre-rebase measurements remain historical.
 - **NVIDIA MoE:** native FlashInfer CUTLASS. Precise B12x won isolated component
   timings but lost the end-to-end C1 blend, 136.74 versus 152.40 tokens/s.
   `B12X_NVFP4=1` retains the tested optional bridge; it is off by default.
@@ -267,8 +290,13 @@ from the final client matrix.
   retained native paths. Reproducers and failures remain in the repository.
 
 The [Dockerfile](Dockerfile) pins the base image and B12x revision. The
-[patches](patches) also handle EXL3 MTP layer mapping, NVIDIA's FP8 draft weights,
-FP8 PLE storage, exact host token embeddings and required/named tool constraints.
+[patches](patches) now carry the EXL3 namespace/MTP-mapping loader port, the
+qflashrt FP8-PLE annotation for EXL3 hybrids, exact host token embeddings, the
+optional B12x vocabulary projection and NVFP4 expert bridges, plus two
+strict-hash vendored upstream backports (QSA FP8 main cache, PR 55557;
+checkpoint-mapped PLE, PRs 58439+58835). The former MTP remap, FP8 draft
+weights, ModelOpt PLE selection and structured-output ports are upstream code
+in v0.30.0 and were dropped.
 [Provenance](PROVENANCE.md) distinguishes borrowed benchmark contracts from new
 integration work. Model licenses apply separately from the recipe's [license](LICENSE).
 
