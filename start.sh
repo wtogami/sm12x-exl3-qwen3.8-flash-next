@@ -31,8 +31,16 @@ EXTRA_ARGS=()
 if [[ "${MTP_TOKENS:-3}" != 0 ]]; then
   EXTRA_ARGS+=(--speculative-config "{\"method\":\"mtp\",\"num_speculative_tokens\":${MTP_TOKENS:-3}}")
 fi
+# Docker wants --gpus; podman's docker shim rejects its device= syntax and
+# resolves GPUs through CDI instead.
+if docker --version 2>/dev/null | grep -qi podman; then
+  GPU_ARGS=(--device nvidia.com/gpu=all -e NVIDIA_VISIBLE_DEVICES="${GPU:-all}")
+else
+  GPU_ARGS=(--gpus "device=${GPU:-0}")
+fi
 docker run -d --name "${CONTAINER_NAME:-qwen38-${QUANT:-exl3}}" \
-  --gpus "device=${GPU:-0}" --ipc=host --network=host \
+  "${GPU_ARGS[@]}" \
+  --ipc=host --network=host \
   -e OMP_NUM_THREADS="${CPU_THREADS:-8}" \
   -e CUDA_CACHE_PATH=/root/.cache/cuda \
   -e TRITON_CACHE_DIR=/root/.cache/triton \
