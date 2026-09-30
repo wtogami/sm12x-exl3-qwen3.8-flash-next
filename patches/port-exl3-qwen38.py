@@ -39,6 +39,7 @@ replace(exl3, '''            # A standard MTP forward has one row per live reque
 ''')
 replace(exl3, '            "glm5_next_text",\n',
         '            "glm5_next_text",\n            "qwen4_exp",\n            "qwen4_exp_text",\n'
+        '            "qwen4_exp_mtp",\n'
         '            "qwen3_8_flash_next",\n            "qwen3_8_flash_next_text",\n'
         '            "qwen3_8_flash_next_mtp",\n')
 replace(exl3, r'|mtp\.\d+)', r'|mtp\.(?:layers\.)?\d+)', count=2)
