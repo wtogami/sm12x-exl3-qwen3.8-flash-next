@@ -82,7 +82,7 @@ docker run -d --name "${CONTAINER_NAME:-qwen38-${QUANT:-exl3}}" \
   --tensor-parallel-size 1 --distributed-executor-backend mp \
   --max-model-len "${MAX_MODEL_LEN:-262144}" \
   --max-num-seqs "${MAX_NUM_SEQS:-16}" \
-  --max-num-batched-tokens "${MAX_BATCHED_TOKENS:-2048}" \
+  --max-num-batched-tokens "${MAX_BATCHED_TOKENS:-${DEFAULT_MAX_BATCHED_TOKENS:-2048}}" \
   --gpu-memory-utilization "$GPU_MEMORY_UTILIZATION" \
   --kv-cache-dtype fp8 \
   --enable-auto-tool-choice --tool-call-parser qwen3_coder --reasoning-parser qwen3 \

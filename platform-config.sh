@@ -10,6 +10,7 @@ case "$(uname -m)" in
     DEFAULT_GPU_MEMORY_UTILIZATION=0.7
     DEFAULT_CUTE_DSL_ARCH=sm_121a
     DEFAULT_LONGCTX=0
+    DEFAULT_MAX_BATCHED_TOKENS=2048
     # GB10 reads pageable host memory through the host page tables, so the
     # checkpoint-mapped PLE table is the Spark default.
     DEFAULT_PLE_MMAP=1
@@ -23,6 +24,7 @@ case "$(uname -m)" in
     DEFAULT_GPU_MEMORY_UTILIZATION=0.94
     DEFAULT_CUTE_DSL_ARCH=sm_120a
     DEFAULT_LONGCTX=1
+    DEFAULT_MAX_BATCHED_TOKENS=8192
     # Discrete RTX cards cannot dereference the checkpoint mapping (CUDA
     # PAGEABLE_MEMORY_ACCESS_USES_HOST_PAGE_TABLES=0); use the host-offloaded
     # resident table instead.
