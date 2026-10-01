@@ -31,7 +31,21 @@ MTP_TOKENS="${MTP_TOKENS:-$( [[ ${QUANT:-exl3} == nvfp4 ]] && echo 2 || echo "$D
 # resident table (the upstream cpu_offload default).
 PLE_MMAP="${PLE_MMAP:-${VLLM_PLE_MMAP:-${DEFAULT_PLE_MMAP:-0}}}"
 [[ "$PLE_MMAP" == 0 || "$PLE_MMAP" == 1 ]] || { echo "PLE_MMAP must be 0 or 1" >&2; exit 2; }
+# LONGCTX=1 serves 512K via YaRN 2.0 rope scaling of the 262K-native
+# checkpoint (RULER 97.66 at 523K vs 97.92 at native 262K, no measured
+# throughput cost). LONGCTX=0 stays at the native 262144 window.
+LONGCTX="${LONGCTX:-${DEFAULT_LONGCTX:-0}}"
+[[ "$LONGCTX" == 0 || "$LONGCTX" == 1 ]] || { echo "LONGCTX must be 0 or 1" >&2; exit 2; }
+MAX_MODEL_LEN="${MAX_MODEL_LEN:-$([[ "$LONGCTX" == 1 ]] && echo 524288 || echo 262144)}"
 EXTRA_ARGS=()
+if [[ "$LONGCTX" == 1 ]]; then
+  case " $* " in
+    *" --hf-overrides "*|*" --hf-overrides="*) ;;
+    *)
+      EXTRA_ARGS+=(--hf-overrides '{"text_config":{"max_position_embeddings":524288,"rope_parameters":{"rope_type":"yarn","factor":2.0,"original_max_position_embeddings":262144}}}')
+      ;;
+  esac
+fi
 case " $* " in
   *" --engram-config "*|*" --engram-config="*) ;;
   *)
