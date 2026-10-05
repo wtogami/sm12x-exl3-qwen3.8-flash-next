@@ -50,9 +50,9 @@ RUN python3 /tmp/port-host-embedding.py /usr/local/lib/python3.12/dist-packages/
  && python3 /tmp/port-exl3-ple-fp8.py /usr/local/lib/python3.12/dist-packages/vllm \
  && python3 -c 'from vllm.model_executor.layers.quantization import get_quantization_config; assert get_quantization_config("exl3").__name__ == "Exl3Config"' \
  && python3 -c 'import vllm.models.qwen4_exp.nvidia.ple_pageable, vllm.models.qwen4_exp.nvidia.ngram_embedding'
-ENV VLLM_EXL3_TRELLIS_MIN_M=1 \
-    VLLM_EXL3_PREFILL_TRELLIS=1 \
-    VLLM_EXL3_PREFILL_CAPACITY=2048
+ENV EXL3_TRELLIS_MIN_M=1 \
+    EXL3_PREFILL_TRELLIS=1 \
+    EXL3_PREFILL_CAPACITY=2048
 
 # Structured-output regressions: the reasoning-end guard (c6e19b3be243) and the
 # XGrammar termination fix (PR 52805) shipped upstream in v0.30.0; these CPU

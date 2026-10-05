@@ -61,6 +61,16 @@ replace(routed, '            is_fused = loaded_weight.dim() == 3\n',
         '            # EXL3 per-expert trellis tiles also have rank three.\n'
         '            is_fused = (loaded_weight.dim() == 3\n'
         '                        and self.quant_method.__class__.__name__ != "Exl3MoEMethod")\n')
+# The recipe's EXL3 trellis knobs were plain environment variables read from
+# the adapter; v0.31.0 warns about every unregistered VLLM_* variable at
+# startup, so move them to the non-reserved EXL3_ prefix.
+text = exl3.read_text()
+for name in ("VLLM_EXL3_TRELLIS_MIN_M", "VLLM_EXL3_PREFILL_TRELLIS",
+             "VLLM_EXL3_PREFILL_CAPACITY"):
+    if name not in text:
+        raise RuntimeError(f"EXL3 knob {name} missing from the adapter")
+    text = text.replace(name, name.removeprefix("VLLM_"))
+exl3.write_text(text)
 for path in (registry, exl3, routed):
     compile(path.read_text(), str(path), "exec")
 print("Qwen EXL3 namespace and per-projection loader port applied")

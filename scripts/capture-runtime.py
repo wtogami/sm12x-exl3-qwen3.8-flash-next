@@ -17,7 +17,9 @@ markers = ("Token embedding offloaded", "Model loading took",
            "Worker ready -", "GPU KV cache size:", "Available KV cache memory:", "Graph capturing finished",
            "B12x vocabulary", "Prepared B12x BF16 vocabulary projection", "Qwen NVFP4 experts use precise B12x",
            "Mapped PLE table of layer", "Initialized PLE embedding", "EXL3 projection-mixed Trellis")
-environment_names = {"VLLM_EXL3_TRELLIS_MIN_M",
+environment_names = {"EXL3_TRELLIS_MIN_M", "EXL3_PREFILL_TRELLIS",
+                     "EXL3_PREFILL_CAPACITY",
+                     "VLLM_EXL3_TRELLIS_MIN_M",
                      "VLLM_EXL3_PREFILL_TRELLIS", "VLLM_EXL3_PREFILL_CAPACITY",
                      "QWEN38_B12X_VOCAB", "QWEN38_B12X_NVFP4", "OMP_NUM_THREADS", "CUTE_DSL_ARCH", "QWEN38_TRELLIS_TILE_K"}
 receipt = {
