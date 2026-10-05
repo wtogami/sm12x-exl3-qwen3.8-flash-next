@@ -21,11 +21,25 @@ SOURCE = SOURCE_ROOT / 'vllm' / 'v1' / 'structured_output' / '__init__.py'
 UTILS = SOURCE_ROOT / 'vllm' / 'v1' / 'structured_output' / 'utils.py'
 
 
+class Row:
+    def __init__(self, log, index):
+        self.log, self.index = log, index
+
+    def copy_(self, other):
+        # v0.31.0+ rows after a rejected draft copy the failed row's mask
+        # in place instead of receiving a fresh disabled fill.
+        self.log.append((self.index, other.index))
+        return self
+
+
 class Tensor:
     shape = (32,)
 
+    def __init__(self):
+        self.copies = []
+
     def __getitem__(self, key):
-        return self
+        return self if isinstance(key, slice) else Row(self.copies, key)
 
     def numpy(self):
         return 'bitmask'
@@ -130,8 +144,10 @@ class ReasoningTests(unittest.TestCase):
         self.assertEqual(grammar.advances, [])
         self.assertEqual(grammar.rollbacks, [])
         self.assertEqual(mgr.logs, [99])
-        # 42 unconstrained, rejected draft masked out, bonus disabled.
-        self.assertEqual(mgr.masks, [(0, False), (1, True), (2, False)])
+        # 42 unconstrained, rejected draft masked out, bonus row copies the
+        # failed row (v0.31.0+) instead of a separate disabled fill.
+        self.assertEqual(mgr.masks, [(0, False), (1, True)])
+        self.assertEqual(mgr._grammar_bitmask.copies, [(2, 1)])
 
     def test_valid_post_reasoning_drafts_advance_and_rollback(self):
         mgr, grammar = self.run_tokens([42, 1, 2])
@@ -153,7 +169,8 @@ class ReasoningTests(unittest.TestCase):
         self.assertEqual(grammar.errors, [[99]])
         self.assertEqual(grammar.advances, [])
         self.assertEqual(mgr.logs, [99])
-        self.assertEqual(mgr.masks, [(0, True), (1, False)])
+        self.assertEqual(mgr.masks, [(0, True)])
+        self.assertEqual(mgr._grammar_bitmask.copies, [(1, 0)])
 
     def test_valid_constrained_tokens_keep_existing_path(self):
         mgr, grammar = self.run_tokens([1, 2], reasoner=False)

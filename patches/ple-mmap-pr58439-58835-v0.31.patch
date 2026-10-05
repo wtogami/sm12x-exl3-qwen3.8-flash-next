@@ -1,8 +1,8 @@
 diff --git a/vllm/config/engram.py b/vllm/config/engram.py
 --- a/vllm/config/engram.py
 +++ b/vllm/config/engram.py
-@@ -27,6 +27,12 @@
-     return envs.VLLM_PLE_CPU_OFFLOAD
+@@ -21,6 +21,12 @@
+ }
  
  
 +# Architectures whose Engram embedding implements checkpoint_mapped storage.
@@ -14,7 +14,7 @@ diff --git a/vllm/config/engram.py b/vllm/config/engram.py
  def model_has_engram_layers(model_config: "ModelConfig | None") -> bool:
      """Whether the model carries n-gram embedding layers."""
      if model_config is None:
-@@ -50,6 +56,16 @@
+@@ -42,6 +48,16 @@
      """Shard embeddings across TP and all DP ranks when enabled.
      Otherwise, each DP rank has a separate TP-sharded embedding replica."""
  
@@ -28,13 +28,13 @@ diff --git a/vllm/config/engram.py b/vllm/config/engram.py
 +    only, not with embedding_across_dp; validated on DGX Spark (GB10, unified
 +    memory) only."""
 +
-     dp_shared_memory: bool = False
+     dp_shared_memory: bool | None = None
      """Share CPU-offloaded embedding weights between co-located
      DP replicas. Each node stores one copy of every TP shard, reducing host
-@@ -60,6 +76,16 @@
-     def _validate_shared_memory(self) -> Self:
-         if self.dp_shared_memory and not self.cpu_offload:
-             raise ValueError("dp_shared_memory requires cpu_offload=True")
+@@ -63,6 +79,16 @@
+             raise ValueError(
+                 "use_thp requires cpu_offload=True and dp_shared_memory=False"
+             )
 +        if self.embedding_across_dp and self.checkpoint_mapped:
 +            raise ValueError(
 +                "checkpoint_mapped does not support embedding_across_dp: its host "
@@ -48,20 +48,10 @@ diff --git a/vllm/config/engram.py b/vllm/config/engram.py
          return self
  
      def verify_model_config(self, model_config: "ModelConfig | None") -> None:
-@@ -74,13 +100,27 @@
-         if (
-             model_config is None
-             or field is None
--            or not current_platform.is_cuda()
-+            or not current_platform.is_cuda_alike()
-             or not getattr(model_config.hf_text_config, field, None)
-         ):
-             raise ValueError(
-                 "EngramConfig requires a model with supported Engram "
--                "embeddings, non-empty n-gram layer ids, and CUDA."
-+                "embeddings, non-empty n-gram layer ids, and a CUDA-alike "
-+                "device (CUDA or ROCm)."
-+            )
+@@ -85,6 +111,19 @@
+                 "embeddings, non-empty n-gram layer ids, and a CUDA-alike "
+                 "device (CUDA or ROCm)."
+             )
 +        if (
 +            self.checkpoint_mapped
 +            and model_config.architecture not in _CHECKPOINT_MAPPED_ARCHITECTURES
@@ -70,14 +60,22 @@ diff --git a/vllm/config/engram.py b/vllm/config/engram.py
 +                "Engram checkpoint_mapped is implemented for "
 +                f"{sorted(_CHECKPOINT_MAPPED_ARCHITECTURES)} only, not "
 +                f"{model_config.architecture}."
-             )
++            )
 +        if self.checkpoint_mapped and not current_platform.is_cuda():
 +            # The ROCm Qwen4Exp path has no mapped backend and would silently
 +            # store the full pinned table instead.
 +            raise ValueError("Engram checkpoint_mapped is implemented for CUDA only.")
  
+     def resolve_dp_shared_memory(self, parallel_config: "ParallelConfig") -> None:
+         """Share host tables by default wherever the configuration permits."""
+@@ -94,6 +133,7 @@
+                 and not self.use_thp
+                 and parallel_config.data_parallel_size > 1
+                 and not parallel_config.enable_elastic_ep
++                and not self.checkpoint_mapped
+             )
+ 
      def verify_parallel_config(self, parallel_config: "ParallelConfig") -> None:
-         """Reject unsupported embedding parallel topologies."""
 diff --git a/vllm/models/qwen4_exp/nvidia/model_state.py b/vllm/models/qwen4_exp/nvidia/model_state.py
 --- a/vllm/models/qwen4_exp/nvidia/model_state.py
 +++ b/vllm/models/qwen4_exp/nvidia/model_state.py
@@ -169,37 +167,10 @@ diff --git a/vllm/models/qwen4_exp/nvidia/model_state.py b/vllm/models/qwen4_exp
      def prepare_dummy_inputs(
          self,
          num_reqs: int,
-diff --git a/vllm/models/qwen4_exp/nvidia/ngram_embedding.py b/vllm/models/qwen4_exp/nvidia/ngram_embedding.py
---- a/vllm/models/qwen4_exp/nvidia/ngram_embedding.py
-+++ b/vllm/models/qwen4_exp/nvidia/ngram_embedding.py
-@@ -1,11 +1,12 @@
- # SPDX-License-Identifier: Apache-2.0
- # SPDX-FileCopyrightText: Copyright contributors to the vLLM project
--"""Qwen4Exp n-gram embeddings with device and pinned-host storage."""
-+"""Qwen4Exp n-gram embeddings with device, pinned-host and checkpoint-mapped storage."""
- 
- from abc import ABC, abstractmethod
- from collections.abc import Iterable
- from typing import ClassVar
- 
-+import regex as re
- import torch
- import torch.nn.functional as F
- from torch import nn
-@@ -45,6 +46,12 @@
- 
- from ..common.ple import PLEVocabParallelEmbedding
- from .ops.ple import ple_ngram_ids
-+from .ple_pageable import (
-+    MappedTable,
-+    discover_table_layout,
-+    require_pageable_access,
-+    verify_shard_bytes,
-+)
- 
- logger = init_logger(__name__)
- 
-@@ -218,6 +225,12 @@
+diff --git a/vllm/models/qwen4_exp/common/ngram_embedding.py b/vllm/models/qwen4_exp/common/ngram_embedding.py
+--- a/vllm/models/qwen4_exp/common/ngram_embedding.py
++++ b/vllm/models/qwen4_exp/common/ngram_embedding.py
+@@ -216,6 +216,12 @@
      def embedding(self, layer: nn.Module, input_: torch.Tensor) -> torch.Tensor:
          return F.embedding(input_, layer.weight)
  
@@ -212,7 +183,7 @@ diff --git a/vllm/models/qwen4_exp/nvidia/ngram_embedding.py b/vllm/models/qwen4
      @abstractmethod
      def dequantize(
          self,
-@@ -307,6 +320,7 @@
+@@ -305,6 +311,7 @@
          sentinel = torch.finfo(torch.float32).min
          if torch.any(layer.weight_scale == sentinel):
              raise ValueError("FP8 PLE checkpoint is missing its global scale")
@@ -220,7 +191,7 @@ diff --git a/vllm/models/qwen4_exp/nvidia/ngram_embedding.py b/vllm/models/qwen4
  
      def dequantize(
          self,
-@@ -512,7 +526,7 @@
+@@ -522,7 +529,7 @@
          output: torch.Tensor,
      ) -> None:
          """Join the side stream, reduce ETP shards, and select local rows."""
@@ -229,7 +200,7 @@ diff --git a/vllm/models/qwen4_exp/nvidia/ngram_embedding.py b/vllm/models/qwen4
          slot_size, slot_offset = self._get_dp_gather_slot(output.shape[0])
          active_output = prefetch_output[: slot_size * self.etp_data_parallel_size]
          embeddings = self._reduce_etp_embeddings(active_output)
-@@ -523,6 +537,9 @@
+@@ -533,6 +540,9 @@
          )
          output.copy_(embeddings.flatten(-2))
  
@@ -239,8 +210,41 @@ diff --git a/vllm/models/qwen4_exp/nvidia/ngram_embedding.py b/vllm/models/qwen4
      def forward(self, hidden_states: torch.Tensor) -> torch.Tensor:
          """Finish the pinned lookup into graph-owned output storage."""
          output = self._prefetch_buffer.new_empty(
-@@ -532,6 +549,255 @@
-         return output
+diff --git a/vllm/models/qwen4_exp/nvidia/ngram_embedding.py b/vllm/models/qwen4_exp/nvidia/ngram_embedding.py
+--- a/vllm/models/qwen4_exp/nvidia/ngram_embedding.py
++++ b/vllm/models/qwen4_exp/nvidia/ngram_embedding.py
+@@ -1,13 +1,15 @@
+ # SPDX-License-Identifier: Apache-2.0
+ # SPDX-FileCopyrightText: Copyright contributors to the vLLM project
+-"""Qwen4Exp n-gram embeddings with device and pinned-host storage."""
++"""Qwen4Exp n-gram embeddings with device, pinned-host and checkpoint-mapped storage."""
+ 
+ from collections.abc import Iterable
+ 
++import regex as re
+ import torch
+ from torch import nn
+ 
+ from vllm.config import get_current_vllm_config
++from vllm.compilation.breakable_cudagraph import eager_break_during_capture
+ from vllm.logger import init_logger
+ from vllm.model_executor.layers.quantization.base_config import (
+     QuantizationConfig,
+@@ -26,6 +28,12 @@
+     Qwen4ExpPLEUnquantizedEmbeddingMethod,
+ )
+ from .ops.ple import ple_ngram_ids
++from .ple_pageable import (
++    MappedTable,
++    discover_table_layout,
++    require_pageable_access,
++    verify_shard_bytes,
++)
+ 
+ logger = init_logger(__name__)
+ 
+@@ -40,6 +48,256 @@
+ ]
  
  
 +class Qwen4ExpPLEPageableHostEmbedding(Qwen4ExpPLEPinnedHostEmbedding):
@@ -477,8 +481,8 @@ diff --git a/vllm/models/qwen4_exp/nvidia/ngram_embedding.py b/vllm/models/qwen4
 +    """
 +    from vllm.model_executor.model_loader.default_loader import DefaultModelLoader
 +
-+    # v0.30.0's _prepare_weights returns (hf_folder, files, use_safetensors).
-+    _, files, use_safetensors = DefaultModelLoader(load_config)._prepare_weights(
++    # _prepare_weights returns (hf_folder, files, use_safetensors, fmt).
++    _, files, use_safetensors, _ = DefaultModelLoader(load_config)._prepare_weights(
 +        model_config.model_weights or model_config.model,
 +        None,
 +        model_config.revision,
@@ -492,10 +496,11 @@ diff --git a/vllm/models/qwen4_exp/nvidia/ngram_embedding.py b/vllm/models/qwen4
 +
 +
 +
++
  class Qwen4ExpNGramEmbedding(nn.Module):
      _MASK64 = (1 << 64) - 1
      _SPLITMIX_GAMMA = 0x9E3779B97F4A7C15
-@@ -700,11 +966,13 @@
+@@ -208,11 +466,13 @@
          if params_dtype is None:
              params_dtype = torch.get_default_dtype()
          engram_config = get_current_vllm_config().engram_config
@@ -514,7 +519,7 @@ diff --git a/vllm/models/qwen4_exp/nvidia/ngram_embedding.py b/vllm/models/qwen4
          self.ngram_embedding = embedding_cls(
              padded_vocab_size,
              self.head_dim,
-@@ -849,6 +1117,13 @@
+@@ -363,6 +623,13 @@
          ngram_ids = self.compute_ngram_ids(input_ids, query_start_loc, ngram_context)
          return self.ngram_embedding(ngram_ids).flatten(-2)
  
@@ -528,7 +533,7 @@ diff --git a/vllm/models/qwen4_exp/nvidia/ngram_embedding.py b/vllm/models/qwen4
      def start_prefetch(
          self,
          hidden_states: torch.Tensor,
-@@ -920,6 +1195,12 @@
+@@ -434,6 +701,12 @@
                          f"expected {expected_shape}, got "
                          f"{tuple(loaded_weight.shape)}"
                      )
@@ -541,7 +546,7 @@ diff --git a/vllm/models/qwen4_exp/nvidia/ngram_embedding.py b/vllm/models/qwen4
                  embedding.weight.weight_loader(
                      embedding.weight,
                      loaded_weight,
-@@ -934,6 +1215,23 @@
+@@ -448,6 +721,23 @@
          return loaded
  
  
@@ -566,8 +571,7 @@ diff --git a/vllm/models/qwen4_exp/nvidia/ngram_embedding.py b/vllm/models/qwen4
 +    "Qwen4ExpPLEPageableHostEmbedding",
  ]
 diff --git a/vllm/models/qwen4_exp/nvidia/ple_pageable.py b/vllm/models/qwen4_exp/nvidia/ple_pageable.py
-new file mode 100644
---- /dev/null
+--- a/vllm/models/qwen4_exp/nvidia/ple_pageable.py
 +++ b/vllm/models/qwen4_exp/nvidia/ple_pageable.py
 @@ -0,0 +1,547 @@
 +# SPDX-License-Identifier: Apache-2.0

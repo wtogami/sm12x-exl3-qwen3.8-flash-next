@@ -391,12 +391,21 @@ def test_config_rejects_embedding_across_dp_with_mapping():
         EngramConfig(checkpoint_mapped=True, embedding_across_dp=True)
 
 
-def test_config_does_not_default_shared_memory_when_mapped():
-    # Upstream main auto-defaults dp_shared_memory through
-    # resolve_dp_shared_memory()/use_thp; that landed after v0.30.0, where
-    # mapped storage must simply leave shared memory off.
-    config = EngramConfig(checkpoint_mapped=True)
-    assert config.dp_shared_memory is False
+def test_resolve_does_not_default_shared_memory_when_mapped():
+    # v0.31.0 upstream auto-defaults dp_shared_memory through
+    # resolve_dp_shared_memory(); the mmap backport keeps it off for
+    # checkpoint_mapped (mapped pages are already process-shared), while the
+    # plain cpu_offload path still auto-enables under DP.
+    mapped = EngramConfig(checkpoint_mapped=True)
+    mapped.resolve_dp_shared_memory(
+        SimpleNamespace(data_parallel_size=2, enable_elastic_ep=False)
+    )
+    assert mapped.dp_shared_memory is False
+    offloaded = EngramConfig(checkpoint_mapped=False)
+    offloaded.resolve_dp_shared_memory(
+        SimpleNamespace(data_parallel_size=2, enable_elastic_ep=False)
+    )
+    assert offloaded.dp_shared_memory is True
 
 
 # ---------------------------------------------------------------------- GPU

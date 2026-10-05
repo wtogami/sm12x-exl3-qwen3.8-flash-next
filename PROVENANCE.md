@@ -88,7 +88,43 @@ both native builds. All 220 tests pass on RTX. Full-model mode checks use the
 locally available BF16 model on GPU1, with MTP3 and CUDA graphs. See the
 [reproduction and qualification record](benchmarks/resident-v031-review/README.md).
 
-## v0.30.0 rebase (this branch)
+## v0.31.0 rebase (this branch)
+
+The runtime moves from `vllm/vllm-openai:v0.30.0` to the official
+`vllm/vllm-openai:v0.31.0` digest
+`sha256:a4a4c0437bf7240089da5f08aa370c4aee17ae5290f7a3b468825ee26c4c3a6b`
+(multiarch, CUDA 13.0, torch 2.13.0+cu130).
+
+Dropped as upstream code in v0.31.0: the QSA FP8 KV cache backport
+(`qsa-fp8-pr55557-v0.30.patch`, its port and hashes) — the release ships
+`fp8_e4m3` main-KV support on the QSA path natively, matching the vendored
+patch line-for-line.
+
+`ple-mmap-pr58439-58835-v0.31.patch` — the checkpoint-mapped PLE backport
+(PR 58439 + stacked 58835, head `47b9933db82d`) re-derived against v0.31.0.
+v0.31.0 carries the common/nvidia `ngram_embedding` split, so the shared-base
+hunks now land in `qwen4_exp/common/ngram_embedding.py` and the CUDA-specific
+pageable embedding, loader glue and `ple_pageable.py` in the nvidia module —
+restoring the upstream PR's original file shape (the v0.30.0 patch had merged
+them). Rebase adaptations: the nvidia module gains its own
+`eager_break_during_capture` import (it moved to common);
+`resolve_checkpoint_files` unpacks the release's 4-tuple `_prepare_weights`
+return; `resolve_dp_shared_memory()` — reintroduced upstream with
+`dp_shared_memory: bool | None` and `use_thp` — gains the
+`not checkpoint_mapped` guard, and the ported
+`tests/test_ple_pageable.py` now exercises both resolve paths. Upstream also
+retired the `VLLM_PLE_CPU_OFFLOAD` default factory (plain
+`cpu_offload: bool = True`); the launcher always passes an explicit
+`--engram-config`, so behavior is unchanged.
+
+Recipe-local ports (EXL3 registration/loader, host token embeddings, B12x
+vocabulary projection, NVFP4 experts, structured-output AST regressions)
+re-anchor on the v0.31.0 tree unchanged except that
+`port-exl3-ple-fp8.py` now hooks `from_quant_config` in the common
+`ngram_embedding.py` (moved from nvidia). The b12x pin (`c76a40ee`), the GLM
+EXL3 source image pin (`48e254d9`), and the checkpoint pins are unchanged.
+
+## v0.30.0 rebase
 
 The runtime moves from the custom `vllm/vllm-openai:qwen38-flash-next` dev
 build (upstream commit unknown, model at `vllm/models/qwen3_8_flash_next`) to

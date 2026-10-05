@@ -1,6 +1,7 @@
 {
-  "vllm/config/engram.py": "34043a22385a041d4e9be8857f64174c990c2ca8308b97b6a952b5ab96c20ee5",
+  "vllm/config/engram.py": "00435380fbcbb508c20f47c6bfba3cf81cf729abc1b08c80fcfab5dda66f3085",
   "vllm/models/qwen4_exp/nvidia/model_state.py": "a5b062d0354f82b93ee78f0e5d9089fd011a073c817b6ee0d61e99536e54b3a4",
-  "vllm/models/qwen4_exp/nvidia/ngram_embedding.py": "f3aaf29281b803dcebb4b179d5177704ed7b913170edf8107e33f729be825429",
+  "vllm/models/qwen4_exp/common/ngram_embedding.py": "1392f51ccf0b610542bf05c3021271bf6754221d9616ff92831b94f79fc3a892",
+  "vllm/models/qwen4_exp/nvidia/ngram_embedding.py": "7c3f00b5b77b364062dd28b49f3fc43c52fd74b7b0d63a32870937eb10ff16e4",
   "vllm/models/qwen4_exp/nvidia/ple_pageable.py": null
 }

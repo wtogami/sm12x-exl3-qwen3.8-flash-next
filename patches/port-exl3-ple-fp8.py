@@ -25,7 +25,9 @@ s = s.replace(old, old + '            qflashrt_ple=config.get("meta", {}).get("q
 compile(s, str(path), 'exec')
 path.write_text(s)
 
-path = root / 'models/qwen4_exp/nvidia/ngram_embedding.py'
+# v0.31.0 moved the shared PLE embedding-method base (and from_quant_config)
+# to qwen4_exp/common/ngram_embedding.py.
+path = root / 'models/qwen4_exp/common/ngram_embedding.py'
 s = path.read_text()
 old = '''        if quant_config is None:
             return Qwen4ExpPLEUnquantizedEmbeddingMethod()

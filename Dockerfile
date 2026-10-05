@@ -1,9 +1,9 @@
 # syntax=docker/dockerfile:1.7
 ARG EXL3_SOURCE_IMAGE=ghcr.io/tpurtell/glm-5.3-flash-exl3-4bpw-2x-rtx@sha256:48e254d94f58137c8707e6044cde4528c6af3fdd9702726b9b362e9b0e0b4629
-# vllm/vllm-openai:v0.30.0 (latest tag with published multiarch images; CUDA 13.0.2).
-# The newest tag, v0.31.0rc1, has no published image yet; when v0.31.0 ships, the
-# vendored QSA and mmap backports below become upstream code and can be dropped.
-ARG VLLM_BASE_IMAGE=docker.io/vllm/vllm-openai@sha256:8a69ffad015f138d7170c4ddc429e230a3bc1c1719f67e14324749df200a4b90
+# vllm/vllm-openai:v0.31.0 (official multiarch images, CUDA 13.0; upstream now
+# contains the QSA FP8 KV cache (PR 55557), so only the mmap PLE backport
+# remains vendored).
+ARG VLLM_BASE_IMAGE=docker.io/vllm/vllm-openai@sha256:a4a4c0437bf7240089da5f08aa370c4aee17ae5290f7a3b468825ee26c4c3a6b
 FROM --platform=linux/amd64 ${EXL3_SOURCE_IMAGE} AS exl3_source
 FROM ${VLLM_BASE_IMAGE}
 ARG CUTE_DSL_ARCH=sm_120a
@@ -29,17 +29,14 @@ COPY patches/qwen_nvfp4_moe.py /usr/local/lib/python3.12/dist-packages/vllm/mode
 RUN python3 /tmp/port-exl3-qwen38.py /usr/local/lib/python3.12/dist-packages/vllm \
  && python3 -c 'from vllm.model_executor.layers.quantization import get_quantization_config; assert get_quantization_config("exl3").__name__ == "Exl3Config"'
 
-# Upstream corrections merged after the v0.30.0 branch cut, applied at pinned
-# commits with strict base hashes and fuzz 0:
-#   PR 55557  fp8_e4m3 main KV cache on the QSA path (replaces the old B12x bridge)
+# Upstream correction merged after the v0.31.0 branch cut, applied at a pinned
+# commit with strict base hashes and fuzz 0:
 #   PR 58439 + stacked 58835  checkpoint-mapped (mmap) PLE table with readahead
-COPY patches/port-qsa-fp8.py patches/qsa-fp8-pr55557-v0.30.patch patches/qsa-fp8-base-hashes.json /tmp/qsa-fp8/
-COPY patches/port-ple-mmap.py patches/ple-mmap-pr58439-58835-v0.30.patch patches/ple-mmap-base-hashes.json /tmp/ple-mmap/
-RUN python3 /tmp/qsa-fp8/port-qsa-fp8.py /usr/local/lib/python3.12/dist-packages/vllm \
- && python3 /tmp/ple-mmap/port-ple-mmap.py /usr/local/lib/python3.12/dist-packages/vllm
-LABEL io.tpurtell.qsa-fp8.pr="55557" \
-      io.tpurtell.qsa-fp8.commit="dff1bde84dd6" \
-      io.tpurtell.ple-mmap.pr="58439+58835" \
+# (PR 55557's fp8_e4m3 QSA KV cache shipped upstream in v0.31.0 and was dropped
+# from this recipe.)
+COPY patches/port-ple-mmap.py patches/ple-mmap-pr58439-58835-v0.31.patch patches/ple-mmap-base-hashes.json /tmp/ple-mmap/
+RUN python3 /tmp/ple-mmap/port-ple-mmap.py /usr/local/lib/python3.12/dist-packages/vllm
+LABEL io.tpurtell.ple-mmap.pr="58439+58835" \
       io.tpurtell.ple-mmap.commit="47b9933db82d"
 
 # Recipe-local ports, applied after the vendored upstream patches.
