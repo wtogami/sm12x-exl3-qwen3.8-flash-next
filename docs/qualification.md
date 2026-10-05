@@ -663,3 +663,43 @@ The new regressions test actual loading without a GPU-owned embedding, and
 full-model checks exercise both resident and mmap with the same corrected image.
 See [v0.3.1 evidence](../benchmarks/resident-v031-review/README.md).
 Historical performance and quality tables retain their original image IDs.
+
+## v0.31.0 rebase (this branch)
+
+Image `localhost/qwen38-rtx:local` at `23fa4d1b560d`, based on the official
+`vllm/vllm-openai:v0.31.0` digest `sha256:a4a4c0437bf7…` after dropping the
+now-upstream QSA FP8 backport and re-deriving the mmap PLE patch into the
+release's common/nvidia split (see PROVENANCE.md). Qualified in
+LONGCTX=1 (512K YaRN) serving mode with the 2048-token batch default:
+
+- In-image assert-imports and both CPU AST suites pass; the reasoning-guard
+  fake models the 0.31 copy-based draft-row inheritance. `test_ple_pageable`
+  passes 25 with 5 Spark-only skips on the RTX PRO 6000. Launcher and
+  platform-config regressions pass.
+- Core stability suite: api-tools matrix 24/24 pass, vision pass, orchid
+  10/10, seven 20/21 (sole failure `fable` run 0 at 183 words against the
+  140..170 contract — a documented pre-rebase checkpoint behavior band),
+  decode sweep C1 128.3, C2 220.4, C4 372.4, C8 593.4, C16 865.3 tok/s.
+  Zero server errors.
+- Cross-context retrieval: 9/9 needles exact across 131072, 240000 and
+  480000 filler tokens at 5/50/95% positions
+  ([receipts](../benchmarks/retrieval-v031.jsonl)).
+- Context-depth ladder (uncached, C1, 3 runs): TTFT 12.9/28.3/58.1 s at
+  131072/261632/523264 tokens; decode's high-acceptance mode 242–262 tok/s
+  across depths ([receipts](../benchmarks/context-v031-ladder.jsonl)).
+  The scheduler's speculative-decoding note about the 2048 batch budget
+  showed no visible cost at these depths.
+
+Note: the earlier v0.30.0 receipts (decode C1 124.8/C16 854.6; ladder TTFT
+15.1/32.1/67.5 s at an 8192-token batch budget) are not comparable to this
+section's numbers. After they were taken, the host's cooling was improved
+and its power limit raised, so any cross-release deltas measured before and
+after that change conflate hardware envelope with software. A same-day
+cross-release A/B would be required for attribution.
+
+v0.31.0 startup notes: the stricter env validation flagged the recipe's
+EXL3 trellis knobs as unknown `VLLM_*` variables; they were renamed to the
+non-reserved `EXL3_` prefix in this section's follow-up commit, at every
+read site in the copied adapter and in the Dockerfile and capture tooling.
+The scheduler logs a speculative-decoding note about the 2048 batch budget;
+no degradation was observed at any ladder depth on this host configuration.
