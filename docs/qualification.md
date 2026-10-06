@@ -703,3 +703,25 @@ non-reserved `EXL3_` prefix in this section's follow-up commit, at every
 read site in the copied adapter and in the Dockerfile and capture tooling.
 The scheduler logs a speculative-decoding note about the 2048 batch budget;
 no degradation was observed at any ladder depth on this host configuration.
+
+## 300 W power-limit comparison (2026-10-06)
+
+The v0.31.0 qualification above was measured while the RTX PRO 6000 ran at a
+600 W power limit. Both measurement days' engines were otherwise identical
+(image `452cdc32105f`, LONGCTX=1 512K YaRN, 2048-token batch budget). Re-run
+at the current 300 W limit:
+
+- Quality unchanged: seven 20/21 (same `fable` word-count band), orchid 9/9,
+  api-tools 16/16, vision pass, zero server errors.
+- Context ladder TTFT medians (600 W -> 300 W): 12.9 -> 22.3 s (+72.7%) at
+  131072; 28.3 -> 46.7 s (+64.9%) at 261632; 58.1 -> 97.3 s (+67.4%) at
+  523264. Decode's high-acceptance mode fell ~10-12%.
+- Decode sweep medians (600 W -> 300 W): C1 128.3 -> 114.7 (-10.6%),
+  C2 -12.7%, C4 -16.7%, C8 -20.9%, C16 865.3 -> 595.0 tok/s (-31.2%).
+
+Power scales throughput superlinearly with concurrency (bandwidth and clock
+floors compound at C16) but only mildly at C1. Long-context prefill pays a
+flat ~1.7x. Receipts: [power-300w-20261006](../benchmarks/power-300w-20261006/).
+This also re-anchors the earlier caveat: the Oct 1 (v0.30.0) receipts were
+taken before the envelope change and remain non-comparable without a
+same-day A/B at matched limits.

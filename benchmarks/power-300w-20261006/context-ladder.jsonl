@@ -1,0 +1,12 @@
+{"depth": 131072, "run": -1, "ttft_seconds": 21.815095663999955, "decode_tps": 219.34691071041766}
+{"depth": 131072, "run": 0, "ttft_seconds": 22.038002562999964, "decode_tps": 225.97413488353826}
+{"depth": 131072, "run": 1, "ttft_seconds": 22.283441444000005, "decode_tps": 220.35251776304122}
+{"depth": 131072, "run": 2, "ttft_seconds": 22.35228640899993, "decode_tps": 216.20491810567913}
+{"depth": 261632, "run": -1, "ttft_seconds": 47.29946194899992, "decode_tps": 176.52351413831548}
+{"depth": 261632, "run": 0, "ttft_seconds": 46.67963263699994, "decode_tps": 224.85533363356737}
+{"depth": 261632, "run": 1, "ttft_seconds": 46.428179265999916, "decode_tps": 224.2269841987657}
+{"depth": 261632, "run": 2, "ttft_seconds": 46.69919257100014, "decode_tps": 223.42717343837967}
+{"depth": 523264, "run": -1, "ttft_seconds": 96.76331572000004, "decode_tps": 228.675657731978}
+{"depth": 523264, "run": 0, "ttft_seconds": 97.253099798, "decode_tps": 230.66465555553086}
+{"depth": 523264, "run": 1, "ttft_seconds": 97.200264694, "decode_tps": 227.25092495672993}
+{"depth": 523264, "run": 2, "ttft_seconds": 97.42003249000004, "decode_tps": 226.4007659100666}
