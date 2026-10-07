@@ -818,6 +818,10 @@ MoE path does not scale to high concurrency the way EXL3 does. Receipts:
 
 ## Deep quality: EXL3 vs NVIDIA NVFP4 vs RedHatAI NVFP4 (2026-10-07)
 
+A condensed summary with HF card links lives in
+[quality-comparison.md](quality-comparison.md); this section keeps the
+full receipts.
+
 The deep-quality comparison covers both NVFP4 builds. The standard
 `nvidia/Qwen3.8-Flash-Next-NVFP4` checkpoint (132.7 GB, ModelOpt
 MIXED_PRECISION: NVFP4 experts on 48 layers, FP8 block-128 MTP experts,
