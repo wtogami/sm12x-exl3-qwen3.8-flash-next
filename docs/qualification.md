@@ -856,15 +856,36 @@ errors: 70 problems EXL3 gets right that nvidia misses, 38 the other way
 (net -32, outside the ~0.8 pt stderr). All three correct on 1110
 (84.1%); none correct on 49 (3.7%).
 
+Paired statistics (exact McNemar on the per-item files, so item
+difficulty cancels): the nvidia GSM8K deficit is real — -2.43/-2.50
+pts, discordant 38/70, p=0.003 — while EXL3 vs RedHatAI is a dead tie
+(51/51 flexible swap, p=1.0). On IFEval all twelve pairwise metric
+comparisons tie (gaps 0.4-1.6 pts, paired CI ±2.0-2.7 pts, p≥0.22).
+
+Engine jitter was measured with an EXL3 repeat leg the same evening
+(same engine instance, no restarts, identical recipe): GSM8K flips
+41-44/1319 items per run (per-run sd ~0.35 pt); IFEval flips 6.3% of
+prompts / 7.1% of instructions (per-run sd ~0.65-0.76 pt). The repeat
+moved EXL3 GSM8K -0.4 pts (91.58/91.36) and IFEval +0.7 to +1.8 pts
+(prompt strict 80.59) — the two single legs sat on opposite edges of
+their bands, so r2's IFEval lead over the NVFP4 builds actually grew
+(+1.5/+1.9 prompt strict vs nvidia/RedHatAI).
+
 Findings: EXL3 and RedHatAI are statistically tied on GSM8K; nvidia
-NVFP4 is genuinely lower (-2.4-2.5 pts). On IFEval EXL3 leads both NVFP4
-builds by 0.6-1.5 pts (within stderr), with nvidia edging RedHatAI. The
-two NVFP4 builds trade differently: nvidia is the fastest (GSM8K 445 s /
-IFEval 673 s vs EXL3 492/689) but loses GSM8K quality; RedHatAI keeps
-EXL3-level GSM8K quality but is the slowest (550/862 s, +24%/+28% vs
-nvidia) — consistent with its 2x larger PLE table (102.5 GB BF16 vs
-51.2 GB FP8 in pinned host). The direction matches the core suite's
-NVFP4 regressions (orchid exact repetition, seven) on both builds.
+NVFP4 is genuinely lower (-2.4 pts, ~7× the measured per-run jitter).
+On IFEval EXL3 leads both NVFP4 builds (0.6-1.9 pts across the two
+runs) — directionally consistent but never significant; single-run
+IFEval gaps under ~2 pts are noise at 541 items. The two NVFP4 builds
+trade differently: nvidia is the fastest (GSM8K 445 s / IFEval 673 s
+vs EXL3 492/689) but loses GSM8K quality; RedHatAI keeps EXL3-level
+GSM8K quality but is the slowest (550/862 s, +24%/+28% vs nvidia) —
+consistent with its 2× larger PLE table (102.5 GB BF16 vs 51.2 GB FP8
+in pinned host). The direction matches the core suite's NVFP4
+regressions (orchid exact repetition, seven) on both builds. Receipts:
+`paired-analysis.txt` and the EXL3 `gsm8k-r2-results.json` /
+`ifeval-r2-results.json` in
+[quality-deep-20261007](../benchmarks/quality-deep-20261007/); analysis
+code `scripts/analyze-paired-quality.py`.
 
 Tool-eval-bench (88 cases, 19 Hard Mode, thinking on, temperature 0,
 parallel 8, pinned `cf54b4b` v2.6.1.dev45) completes the three-way
