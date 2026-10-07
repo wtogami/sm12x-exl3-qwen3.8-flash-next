@@ -28,6 +28,7 @@ defaults; C16 throughput tradeoffs are recorded below.
 | `exl3` | [EXL3 K4.25](https://huggingface.co/wrldsuksgo2mars/Qwen3.8-Flash-Next-EXL3-K4.25-v1) | BF16, about 95 GiB | 3 / 2 |
 | `exl3-ple8` | [EXL3 K4.25 PLE FP8](https://huggingface.co/wrldsuksgo2mars/Qwen3.8-Flash-Next-EXL3-K4.25-PLE-FP8-v1) | FP8 with shared scale, about 48 GiB | 3 / 2 |
 | `nvfp4` | [NVIDIA NVFP4](https://huggingface.co/nvidia/Qwen3.8-Flash-Next-NVFP4) | FP8 with shared scale, about 48 GiB | 2 / 2 |
+| `nvfp4-redhatai` | [RedHatAI NVFP4](https://huggingface.co/RedHatAI/Qwen3.8-Flash-Next-NVFP4) | BF16, about 95 GiB | 3 / 2 |
 
 EXL3 requires independent K4/K5 allocation for each expert's gate, up and down
 projection. The pinned B12x fork supports this geometry and preserves all 5951
