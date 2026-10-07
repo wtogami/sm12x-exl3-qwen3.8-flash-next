@@ -1,0 +1,16 @@
+{"quant": "nvfp4-nvidia", "mtp": 3, "watts": 300, "depth": 131072, "run": 0, "ttft_seconds": 15.58, "decode_tps": 232.4}
+{"quant": "nvfp4-nvidia", "mtp": 3, "watts": 300, "depth": 131072, "run": 1, "ttft_seconds": 15.67, "decode_tps": 231.9}
+{"quant": "nvfp4-nvidia", "mtp": 3, "watts": 300, "depth": 523264, "run": 0, "ttft_seconds": 68.3, "decode_tps": 246.0}
+{"quant": "nvfp4-nvidia", "mtp": 3, "watts": 300, "depth": 523264, "run": 1, "ttft_seconds": 68.53, "decode_tps": 250.1}
+{"quant": "nvfp4-nvidia", "mtp": 3, "watts": 330, "depth": 131072, "run": 0, "ttft_seconds": 14.35, "decode_tps": 237.5}
+{"quant": "nvfp4-nvidia", "mtp": 3, "watts": 330, "depth": 131072, "run": 1, "ttft_seconds": 14.39, "decode_tps": 232.6}
+{"quant": "nvfp4-nvidia", "mtp": 3, "watts": 330, "depth": 523264, "run": 0, "ttft_seconds": 62.79, "decode_tps": 259.7}
+{"quant": "nvfp4-nvidia", "mtp": 3, "watts": 330, "depth": 523264, "run": 1, "ttft_seconds": 62.94, "decode_tps": 258.7}
+{"quant": "nvfp4-nvidia", "mtp": 3, "watts": 450, "depth": 131072, "run": 0, "ttft_seconds": 11.24, "decode_tps": 249.8}
+{"quant": "nvfp4-nvidia", "mtp": 3, "watts": 450, "depth": 131072, "run": 1, "ttft_seconds": 11.28, "decode_tps": 249.8}
+{"quant": "nvfp4-nvidia", "mtp": 3, "watts": 450, "depth": 523264, "run": 0, "ttft_seconds": 49.67, "decode_tps": 264.7}
+{"quant": "nvfp4-nvidia", "mtp": 3, "watts": 450, "depth": 523264, "run": 1, "ttft_seconds": 49.78, "decode_tps": 260.6}
+{"quant": "nvfp4-nvidia", "mtp": 3, "watts": 600, "depth": 131072, "run": 0, "ttft_seconds": 9.5, "decode_tps": 251.0}
+{"quant": "nvfp4-nvidia", "mtp": 3, "watts": 600, "depth": 131072, "run": 1, "ttft_seconds": 9.56, "decode_tps": 251.4}
+{"quant": "nvfp4-nvidia", "mtp": 3, "watts": 600, "depth": 523264, "run": 0, "ttft_seconds": 42.79, "decode_tps": 261.4}
+{"quant": "nvfp4-nvidia", "mtp": 3, "watts": 600, "depth": 523264, "run": 1, "ttft_seconds": 43.06, "decode_tps": 260.7}

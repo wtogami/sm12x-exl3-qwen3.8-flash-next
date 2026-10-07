@@ -774,23 +774,28 @@ positions) at both MTP levels.
 MTP level: MTP3 (the recipe's recommendation) beats MTP2 — decode
 +21..25%, TTFT -1.5..-2.3%.
 
-Ladder, YaRN 512K, MTP3, TTFT s / 523K decode C1 tok/s (EXL3 330/300 W
-re-measured same day; 600 W reference same day; 131K EXL3 330/300 W from
-the tuning study above):
+Ladder, YaRN 512K, MTP3, TTFT s / 523K decode C1 tok/s. All three builds
+measured 2026-10-07 (EXL3 330/300 W re-measured same day; 600 W reference
+same day; 131K EXL3 330/300 W from the tuning study above; nvidia ladder
+measured same day):
 
-| Power | EXL3 131K | EXL3 523K | EXL3 decode | NVFP4 131K | NVFP4 523K | NVFP4 decode |
-|---|---|---|---|---|---|---|
-| 600 W | 13.1 s | 57.1 s | 261 | 9.7 s | 43.3 s | 262 |
-| 450 W | 15.5 s | 69.1 s | 260 | 11.0 s | 49.6 s | 264 |
-| 330 W | 21.1 s | 89.5 s | 244 | 13.9 s | 62.8 s | 251 |
-| 300 W | 22.3 s | 97.8 s | 226 | 15.4 s | 68.8 s | 242 |
+| Power | EXL3 131K | EXL3 523K | EXL3 decode | nvidia 131K | nvidia 523K | nvidia decode | RHA 131K | RHA 523K | RHA decode |
+|---|---|---|---|---|---|---|---|---|---|
+| 600 W | 13.1 s | 57.1 s | 261 | 9.5 s | 42.9 s | 261 | 9.7 s | 43.3 s | 262 |
+| 450 W | 15.5 s | 69.1 s | 260 | 11.3 s | 49.7 s | 263 | 11.0 s | 49.6 s | 264 |
+| 330 W | 21.1 s | 89.5 s | 244 | 14.4 s | 62.9 s | 259 | 13.9 s | 62.8 s | 251 |
+| 300 W | 22.3 s | 97.8 s | 226 | 15.6 s | 68.4 s | 248 | 15.4 s | 68.8 s | 242 |
 
-Findings: NVFP4 prefill is 24-30% faster at every power level (native FP4
-expert GEMMs on Blackwell); decode is a wash at 600/450 W and 3-8% faster
-at 330/300 W. NVFP4 at 300 W matches EXL3 at 450 W on prefill (68.8 s vs
-69.1 s) — the same speed for 150 W less. Decode degrades less under caps
-for NVFP4 (-7.6% 600->300 W vs -13.4% for EXL3). Receipts:
-[nvfp4-comparison-20261007](../benchmarks/nvfp4-comparison-20261007/).
+Findings: both NVFP4 builds beat EXL3 on prefill at every power level
+(native FP4 expert GEMMs on Blackwell) — nvidia 131K TTFT 9.5 s vs EXL3
+13.1 s at 600 W, and the gap widens at 523K (42.9 s vs 57.1 s). The two
+NVFP4 builds are near-identical (within 0.5 s on TTFT at every level).
+Decode is a wash at 600 W (~261 tok/s all three) but degrades least under
+caps for nvidia (-5.0% 600->300 W), then RHA (-7.6%), then EXL3 (-13.4%).
+nvidia at 300 W matches EXL3 at 450 W on prefill (68.4 s vs 69.1 s) — the
+same speed for 150 W less. Receipts:
+[nvfp4-comparison-20261007](../benchmarks/nvfp4-comparison-20261007/)
+(nvidia ladder: `nvfp4-nvidia-ladder.jsonl`).
 
 Core quality suite (both YaRN 512K, MTP3, 600 W, same day):
 
