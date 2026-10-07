@@ -866,29 +866,42 @@ nvidia) — consistent with its 2x larger PLE table (102.5 GB BF16 vs
 51.2 GB FP8 in pinned host). The direction matches the core suite's
 NVFP4 regressions (orchid exact repetition, seven) on both builds.
 
-Tool-eval-bench (88 cases, 19 Hard Mode, thinking on, temperature 0, one
-trial, parallel 8, pinned `cf54b4b` v2.6.1.dev45) completes the three-way
-quality picture. EXL3 has two records: the 400 W dev9 run (graph-mode dev
-config) and a 600 W rerun on the current release config (2026-10-07); the
-two agree within 7 raw pts (per-category deltas all within ±2), so the
-EXL3 tool-quality score is stable in the low-80s. The two NVFP4 legs ran
-on 2026-10-07 (MTP3, YaRN 512K, 600 W, same image, same day).
+Tool-eval-bench (88 cases, 19 Hard Mode, thinking on, temperature 0,
+parallel 8, pinned `cf54b4b` v2.6.1.dev45) completes the three-way
+quality picture. The harness is deterministic (fixed scenarios,
+deterministic mocks/noise/evaluators), but vLLM at temperature 0 is not
+reproducible run-to-run under parallel 8, so each quant was run 5 times
+on the identical release config (v0.31.0 image, MTP3, YaRN 512K, 600 W,
+2026-10-07, same engine instance per quant, no restarts between
+repeats). The earlier single-run records — nvidia 155, EXL3 152, RHA
+149 — were individual draws from this jitter (nvidia's 155 sat 6.6 pts
+above its 5-run mean; EXL3's 152, 4.8 above); the 400 W dev9 EXL3
+record (145) is excluded as a different engine/config.
 
-| Quant | Final | Points | Pass | Partial | Fail | Hard Mode |
-|---|---|---|---|---|---|---|
-| EXL3 (400 W dev9) | 82 | 145/176 | 64 | 17 | 7 | 29/38 |
-| EXL3 (600 W rerun) | 86 | 152/176 | 69 | 14 | 5 | 30/38 |
-| NVFP4 (nvidia) | 88 | 155/176 | 71 | 13 | 4 | 34/38 |
-| NVFP4 (RedHatAI) | 85 | 149/176 | 67 | 15 | 6 | 30/38 |
+| Quant | 5 runs (pts/176) | Mean | 95% CI | Hard Mode (of 38) |
+|---|---|---|---|---|
+| EXL3 | 152 145 148 147 144 | 147.2 (84/100) | ±3.9 | 28.2 (±2.0) |
+| NVFP4 (nvidia) | 150 149 144 148 151 | 148.4 (84/100) | ±3.4 | 28.6 (±1.9) |
+| NVFP4 (RedHatAI) | 147 150 151 151 150 | 149.8 (85/100) | ±2.0 | 29.4 (±3.2) |
 
-Findings: on tool/agentic quality the NVFP4 builds lead EXL3 — nvidia
-155/176 (88/100, Hard Mode 34/38), RedHatAI 149/176 (85/100, 30/38),
-EXL3 145-152/176 (82-86/100, 29-30/38 across the two records). This is
-the opposite of GSM8K, where EXL3 and RedHatAI tie and nvidia is lower:
-the NVFP4 expert GEMMs improve tool-call precision (nvidia +3-10 raw pts
-over EXL3) at the cost of GSM8K quality. nvidia leads RedHatAI by 6 raw
-pts, concentrated in Safety & Boundaries (20/26 vs 19/26), Autonomous
-Planning (5/6 vs 4/6) and Hard Mode (34/38 vs 30/38). Receipts:
-[quality-deep-20261007](../benchmarks/quality-deep-20261007/) (tools.json
-+ tools.md per quant; EXL3 dev9 record in
-[exl3-dev9-graph-tools](../benchmarks/exl3-dev9-graph-tools.md)).
+No pairwise difference is significant: Welch t on the 5-run totals gives
+nvidia vs EXL3 +1.2 pts (p=0.53), nvidia vs RedHatAI −1.4 (p=0.36),
+EXL3 vs RedHatAI −2.6 (p=0.15); Holm-corrected, all three pairs are
+tied. Per-scenario (n=88, paired on 5-run means) agrees: mean gaps
+≤0.03 pts/scenario, 55-60 of 88 scenarios tied, p≥0.31. 22-28 of 88
+scenarios flip verdict across the 5 repeats per quant (the borderline
+set), and Hard Mode means (28.2/28.6/29.4 of 38) are likewise within
+noise.
+
+Findings: on tool/agentic quality the three quants are statistically
+indistinguishable — the single-run impression that "NVFP4 leads EXL3"
+(and nvidia's 34/38 Hard Mode) was run-to-run variance, not a quant
+effect. RedHatAI happens to have the highest mean and the tightest
+spread (±2.0) but that too is within noise. The honest statement:
+EXL3 ≈ nvidia ≈ RedHatAI on tool quality at 84-85/100; the observed
+2-3 pt gaps would need ~20 runs per quant to resolve. Receipts:
+[tool-eval-repeats-20261007](../benchmarks/tool-eval-repeats-20261007/)
+(5 tools.json + tools.md per quant with per-run traces, plus
+analysis.txt); single-run records in
+[quality-deep-20261007](../benchmarks/quality-deep-20261007/); EXL3 dev9
+record in [exl3-dev9-graph-tools](../benchmarks/exl3-dev9-graph-tools.md).

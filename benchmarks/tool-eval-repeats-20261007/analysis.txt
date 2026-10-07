@@ -1,0 +1,27 @@
+== Per-quant totals (out of 176) ==
+EXL3            n=5 runs=[152, 145, 148, 147, 144] mean=147.20 sd=3.11 95%CI=+/-3.87
+nvidia NVFP4    n=5 runs=[150, 149, 144, 148, 151] mean=148.40 sd=2.70 95%CI=+/-3.35
+RedHatAI NVFP4  n=5 runs=[147, 150, 151, 151, 150] mean=149.80 sd=1.64 95%CI=+/-2.04
+
+== Pairwise Welch t on total score (Holm-corrected, alpha=0.05) ==
+nvidia NVFP4 vs EXL3: mean diff=+1.20 pts, t=+0.651, p=0.5338, holm_sig=False
+nvidia NVFP4 vs RedHatAI NVFP4: mean diff=-1.40 pts, t=-0.990, p=0.3571, holm_sig=False
+EXL3 vs RedHatAI NVFP4: mean diff=-2.60 pts, t=-1.651, p=0.1493, holm_sig=False
+
+== Verdict stability across the 5 runs (per quant) ==
+EXL3            scenarios with mixed verdicts: 22/88 -> ['TC-17', 'TC-21', 'TC-23', 'TC-30', 'TC-33', 'TC-38', 'TC-42', 'TC-52', 'TC-53', 'TC-55', 'TC-56', 'TC-60', 'TC-62', 'TC-68', 'TC-74', 'TC-75', 'TC-76', 'TC-80', 'TC-81', 'TC-83', 'TC-85', 'TC-88']
+nvidia NVFP4    scenarios with mixed verdicts: 23/88 -> ['TC-02', 'TC-03', 'TC-17', 'TC-21', 'TC-30', 'TC-33', 'TC-42', 'TC-51', 'TC-52', 'TC-53', 'TC-55', 'TC-58', 'TC-60', 'TC-61', 'TC-68', 'TC-75', 'TC-80', 'TC-81', 'TC-82', 'TC-83', 'TC-84', 'TC-85', 'TC-88']
+RedHatAI NVFP4  scenarios with mixed verdicts: 28/88 -> ['TC-01', 'TC-02', 'TC-04', 'TC-17', 'TC-21', 'TC-23', 'TC-35', 'TC-40', 'TC-42', 'TC-49', 'TC-50', 'TC-51', 'TC-52', 'TC-53', 'TC-55', 'TC-58', 'TC-61', 'TC-62', 'TC-63', 'TC-68', 'TC-75', 'TC-79', 'TC-80', 'TC-81', 'TC-82', 'TC-84', 'TC-85', 'TC-88']
+
+== Per-scenario paired comparison (mean points over 5 runs, n=88) ==
+nvidia NVFP4 vs EXL3: mean diff=+0.014 pts, paired t p=6.56e-01, wilcoxon p=9.63e-01; nvidia NVFP4 wins 16, EXL3 wins 12, ties 60
+nvidia NVFP4 vs RedHatAI NVFP4: mean diff=-0.016 pts, paired t p=5.84e-01, wilcoxon p=3.76e-01; nvidia NVFP4 wins 13, RedHatAI NVFP4 wins 15, ties 60
+EXL3 vs RedHatAI NVFP4: mean diff=-0.030 pts, paired t p=3.17e-01, wilcoxon p=3.08e-01; EXL3 wins 13, RedHatAI NVFP4 wins 20, ties 55
+
+== Hard Mode subset (category P, 19 scenarios, 38 pts, per-run totals) ==
+EXL3            runs=[30, 29, 29, 26, 27] mean=28.20 sd=1.64 95%CI=+/-2.04
+nvidia NVFP4    runs=[31, 29, 28, 28, 27] mean=28.60 sd=1.52 95%CI=+/-1.88
+RedHatAI NVFP4  runs=[26, 30, 30, 33, 28] mean=29.40 sd=2.61 95%CI=+/-3.24
+nvidia NVFP4 vs EXL3: mean diff=+0.40 pts, t=+0.400, p=0.6997
+nvidia NVFP4 vs RedHatAI NVFP4: mean diff=-0.80 pts, t=-0.593, p=0.5734
+EXL3 vs RedHatAI NVFP4: mean diff=-1.20 pts, t=-0.871, p=0.4139
