@@ -10,7 +10,9 @@ case "${QUANT:-exl3}" in
     ;;
   nvfp4)
     MODEL_REPO=nvidia/Qwen3.8-Flash-Next-NVFP4
-    MODEL_REVISION=2061e0b0c5d92bdf7c8fbd4241bbc2af239d7e2d
+    # 2026-10-07: re-pinned from 2061e0b0 (unreachable after the repo's
+    # super-squash; content verified identical) to the current main tip.
+    MODEL_REVISION=fc694b54fb0174e0913e6adf86691ef85a4ead47
     ;;
   *) echo "QUANT must be exl3, exl3-ple8, or nvfp4" >&2; exit 2 ;;
 esac

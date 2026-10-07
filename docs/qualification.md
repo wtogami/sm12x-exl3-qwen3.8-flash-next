@@ -810,3 +810,39 @@ quality regressed (orchid 0/5; two runs looped to the 1500-token cap,
 31% (601.8 vs 871.7 tok/s) while C1-C8 stay within noise — the NVFP4
 MoE path does not scale to high concurrency the way EXL3 does. Receipts:
 [quality-nvfp4-vs-exl3-20261007](../benchmarks/quality-nvfp4-vs-exl3-20261007/).
+
+## Deep quality: EXL3 vs NVIDIA NVFP4 (2026-10-07)
+
+The deep-quality comparison uses the standard `nvidia/Qwen3.8-Flash-Next-NVFP4`
+checkpoint (132.7 GB, ModelOpt MIXED_PRECISION: NVFP4 experts on 48 layers,
+FP8 block-128 MTP experts, FP8 per-tensor PLE n-gram table in a dedicated
+shard) rather than the RedHatAI CompressedTensors build. The nvidia
+checkpoint loads through the stock `ModelOptMixedPrecisionConfig` path —
+the FP8 PLE resolves via `quantized_layers` directly to
+`Qwen4ExpPLEFp8EmbeddingMethod` — so no engine patch or image rebuild was
+needed (the `port-nvfp4-ple-ct.py` fix stays RedHatAI-specific). The
+profile pin was re-pinned from `2061e0b0` (unreachable after the repo's
+super-squash; content verified identical) to `fc694b54`.
+
+GSM8K (1319, 5-shot) and IFEval (541) via lm_eval 0.4.13
+`local-chat-completions` + `--apply_chat_template` (server-side Qwen3
+template, reasoning parser strips thinking), 16 concurrent requests,
+`max_gen_toks=3072`, thinking on, temperature 0, offline. Both legs:
+YaRN 512K, MTP3, 600 W, same image, same day; 10-problem GSM8K smoke
+10/10 on NVFP4 before the battery.
+
+| Suite | Metric | EXL3 | NVFP4 | Delta |
+|---|---|---|---|---|
+| GSM8K | flexible-extract | 0.91964 | 0.89538 | -2.43 pts |
+| GSM8K | strict-match | 0.91812 | 0.89310 | -2.50 pts |
+| IFEval | prompt strict | 0.79852 | 0.79113 | -0.74 pts |
+| IFEval | inst strict | 0.80576 | 0.79856 | -0.72 pts |
+| IFEval | prompt loose | 0.81885 | 0.81331 | -0.55 pts |
+| IFEval | inst loose | 0.81894 | 0.81295 | -0.60 pts |
+
+EXL3 leads on both suites: GSM8K by ~2.4-2.5 pts (well outside the ~0.8 pt
+stderr), IFEval by ~0.6-0.7 pts (within stderr). The direction matches the
+core suite's NVFP4 regressions (orchid exact repetition, seven). NVFP4
+eval time is ~10% faster on GSM8K and ~2% on IFEval, consistent with the
+prefill-heavy mix of these suites. Receipts:
+[quality-deep-20261007](../benchmarks/quality-deep-20261007/).
