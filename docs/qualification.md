@@ -752,3 +752,44 @@ clock locks. 330 W sits at the knee: 7% faster than 300 W for ~10% more
 power. Receipts: [power-tuning-20261007](../benchmarks/power-tuning-20261007/).
 `nvidia-smi -pl` does not persist across reboots; persist via a boot unit
 if a cap should survive restarts.
+
+## NVFP4 (RedHatAI) vs EXL3 comparison (2026-10-07)
+
+Checkpoint: `RedHatAI/Qwen3.8-Flash-Next-NVFP4` @ `c8f2fb1b` — MoE expert
+GEMMs only in NVFP4 (1x16 blocks, fp8e4m3 scales); attention, dense, GDN,
+MTP heads, and the 102.5 GB PLE table stay BF16 (host-offloaded).
+GPU-resident weights ~81 GB, fits the 96 GB card at 0.94 utilization with
+room for the 512K YaRN KV cache.
+
+Engine fix: v0.31's `Qwen4ExpPLEEmbeddingMethod.from_quant_config` raised
+`NotImplementedError` for any non-FP8 quant config, blocking startup under
+`CompressedTensorsConfig`. `patches/port-nvfp4-ple-ct.py` adds a branch
+returning the unquantized PLE method for CompressedTensors configs (their
+targets cover Linear projections only, so the PLE table is never in
+scope). Image `8294c3c914c0`; EXL3 path re-verified after the rebuild.
+
+512K YaRN: works — retrieval 12/12 (8K/131K/240K/480K filler x 3
+positions) at both MTP levels.
+
+MTP level: MTP3 (the recipe's recommendation) beats MTP2 — decode
++21..25%, TTFT -1.5..-2.3%.
+
+Ladder, YaRN 512K, MTP3, TTFT s / 523K decode C1 tok/s (EXL3 330/300 W
+re-measured same day; 600 W reference same day; 131K EXL3 330/300 W from
+the tuning study above):
+
+| Power | EXL3 131K | EXL3 523K | EXL3 decode | NVFP4 131K | NVFP4 523K | NVFP4 decode |
+|---|---|---|---|---|---|---|
+| 600 W | 13.1 s | 57.1 s | 261 | 9.7 s | 43.3 s | 262 |
+| 450 W | 15.5 s | 69.1 s | 260 | 11.0 s | 49.6 s | 264 |
+| 330 W | 21.1 s | 89.5 s | 244 | 13.9 s | 62.8 s | 251 |
+| 300 W | 22.3 s | 97.8 s | 226 | 15.4 s | 68.8 s | 242 |
+
+Findings: NVFP4 prefill is 24-30% faster at every power level (native FP4
+expert GEMMs on Blackwell); decode is a wash at 600/450 W and 3-8% faster
+at 330/300 W. NVFP4 at 300 W matches EXL3 at 450 W on prefill (68.8 s vs
+69.1 s) — the same speed for 150 W less. Decode degrades less under caps
+for NVFP4 (-7.6% 600->300 W vs -13.4% for EXL3). Quality spot-checks
+passed (chat, tool calls, JSON mode, retrieval); the full core suite has
+not been run on NVFP4. Receipts:
+[nvfp4-comparison-20261007](../benchmarks/nvfp4-comparison-20261007/).

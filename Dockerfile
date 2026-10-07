@@ -43,10 +43,12 @@ LABEL io.tpurtell.ple-mmap.pr="58439+58835" \
 COPY patches/port-host-embedding.py /tmp/port-host-embedding.py
 COPY patches/port-vocab-projection.py /tmp/port-vocab-projection.py
 COPY patches/port-nvfp4-moe.py /tmp/port-nvfp4-moe.py
+COPY patches/port-nvfp4-ple-ct.py /tmp/port-nvfp4-ple-ct.py
 COPY patches/port-exl3-ple-fp8.py /tmp/port-exl3-ple-fp8.py
 RUN python3 /tmp/port-host-embedding.py /usr/local/lib/python3.12/dist-packages/vllm \
  && python3 /tmp/port-vocab-projection.py /usr/local/lib/python3.12/dist-packages/vllm \
  && python3 /tmp/port-nvfp4-moe.py /usr/local/lib/python3.12/dist-packages/vllm \
+ && python3 /tmp/port-nvfp4-ple-ct.py /usr/local/lib/python3.12/dist-packages/vllm \
  && python3 /tmp/port-exl3-ple-fp8.py /usr/local/lib/python3.12/dist-packages/vllm \
  && python3 -c 'from vllm.model_executor.layers.quantization import get_quantization_config; assert get_quantization_config("exl3").__name__ == "Exl3Config"' \
  && python3 -c 'import vllm.models.qwen4_exp.nvidia.ple_pageable, vllm.models.qwen4_exp.nvidia.ngram_embedding'
