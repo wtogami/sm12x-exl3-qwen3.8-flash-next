@@ -865,4 +865,26 @@ EXL3-level GSM8K quality but is the slowest (550/862 s, +24%/+28% vs
 nvidia) — consistent with its 2x larger PLE table (102.5 GB BF16 vs
 51.2 GB FP8 in pinned host). The direction matches the core suite's
 NVFP4 regressions (orchid exact repetition, seven) on both builds.
-Receipts: [quality-deep-20261007](../benchmarks/quality-deep-20261007/).
+
+Tool-eval-bench (88 cases, 19 Hard Mode, thinking on, temperature 0, one
+trial, parallel 8, pinned `cf54b4b` v2.6.1.dev45) completes the three-way
+quality picture. EXL3's record is the 400 W dev9 run (a quality test;
+power does not affect correctness); the two NVFP4 legs ran on 2026-10-07
+(MTP3, YaRN 512K, 600 W, same image, same day).
+
+| Quant | Final | Points | Pass | Partial | Fail | Hard Mode |
+|---|---|---|---|---|---|---|
+| EXL3 (400 W dev9) | 82 | 145/176 | 64 | 17 | 7 | 29/38 |
+| NVFP4 (nvidia) | 88 | 155/176 | 71 | 13 | 4 | 34/38 |
+| NVFP4 (RedHatAI) | 85 | 149/176 | 67 | 15 | 6 | 30/38 |
+
+Findings: on tool/agentic quality the NVFP4 builds lead EXL3 — nvidia
+155/176 (88/100, Hard Mode 34/38), RedHatAI 149/176 (85/100, 30/38),
+EXL3 145/176 (82/100, 29/38). This is the opposite of GSM8K, where EXL3
+and RedHatAI tie and nvidia is lower: the NVFP4 expert GEMMs improve
+tool-call precision (nvidia +10 raw pts over EXL3) at the cost of GSM8K
+quality. nvidia leads RedHatAI by 6 raw pts, concentrated in Safety &
+Boundaries (20/26 vs 19/26), Autonomous Planning (5/6 vs 4/6) and Hard
+Mode (34/38 vs 30/38). Receipts: [quality-deep-20261007](../benchmarks/quality-deep-20261007/)
+(tools.json + tools.md per quant; EXL3 dev9 record in
+[exl3-dev9-graph-tools](../benchmarks/exl3-dev9-graph-tools.md)).
