@@ -811,38 +811,53 @@ quality regressed (orchid 0/5; two runs looped to the 1500-token cap,
 MoE path does not scale to high concurrency the way EXL3 does. Receipts:
 [quality-nvfp4-vs-exl3-20261007](../benchmarks/quality-nvfp4-vs-exl3-20261007/).
 
-## Deep quality: EXL3 vs NVIDIA NVFP4 (2026-10-07)
+## Deep quality: EXL3 vs NVIDIA NVFP4 vs RedHatAI NVFP4 (2026-10-07)
 
-The deep-quality comparison uses the standard `nvidia/Qwen3.8-Flash-Next-NVFP4`
-checkpoint (132.7 GB, ModelOpt MIXED_PRECISION: NVFP4 experts on 48 layers,
-FP8 block-128 MTP experts, FP8 per-tensor PLE n-gram table in a dedicated
-shard) rather than the RedHatAI CompressedTensors build. The nvidia
-checkpoint loads through the stock `ModelOptMixedPrecisionConfig` path —
-the FP8 PLE resolves via `quantized_layers` directly to
-`Qwen4ExpPLEFp8EmbeddingMethod` — so no engine patch or image rebuild was
-needed (the `port-nvfp4-ple-ct.py` fix stays RedHatAI-specific). The
-profile pin was re-pinned from `2061e0b0` (unreachable after the repo's
-super-squash; content verified identical) to `fc694b54`.
+The deep-quality comparison covers both NVFP4 builds. The standard
+`nvidia/Qwen3.8-Flash-Next-NVFP4` checkpoint (132.7 GB, ModelOpt
+MIXED_PRECISION: NVFP4 experts on 48 layers, FP8 block-128 MTP experts,
+FP8 per-tensor PLE n-gram table in a dedicated shard) loads through the
+stock `ModelOptMixedPrecisionConfig` path — the FP8 PLE resolves via
+`quantized_layers` directly to `Qwen4ExpPLEFp8EmbeddingMethod` — so no
+engine patch or image rebuild was needed. The RedHatAI CompressedTensors
+build (174 GB; NVFP4 experts only, 102.5 GB BF16 PLE host-offloaded)
+loads through the `port-nvfp4-ple-ct.py` fix; the `nvfp4` profile was
+temporarily pointed at it for the leg (core-suite convention) and
+restored afterwards. The nvidia profile pin was re-pinned from `2061e0b0`
+(unreachable after the repo's super-squash; content verified identical)
+to `fc694b54`.
 
 GSM8K (1319, 5-shot) and IFEval (541) via lm_eval 0.4.13
 `local-chat-completions` + `--apply_chat_template` (server-side Qwen3
 template, reasoning parser strips thinking), 16 concurrent requests,
-`max_gen_toks=3072`, thinking on, temperature 0, offline. Both legs:
+`max_gen_toks=3072`, thinking on, temperature 0, offline. All legs:
 YaRN 512K, MTP3, 600 W, same image, same day; 10-problem GSM8K smoke
-10/10 on NVFP4 before the battery.
+10/10 on both NVFP4 legs before the battery.
 
-| Suite | Metric | EXL3 | NVFP4 | Delta |
+| Suite | Metric | EXL3 | NVFP4 (nvidia) | NVFP4 (RedHatAI) |
 |---|---|---|---|---|
-| GSM8K | flexible-extract | 0.91964 | 0.89538 | -2.43 pts |
-| GSM8K | strict-match | 0.91812 | 0.89310 | -2.50 pts |
-| IFEval | prompt strict | 0.79852 | 0.79113 | -0.74 pts |
-| IFEval | inst strict | 0.80576 | 0.79856 | -0.72 pts |
-| IFEval | prompt loose | 0.81885 | 0.81331 | -0.55 pts |
-| IFEval | inst loose | 0.81894 | 0.81295 | -0.60 pts |
+| GSM8K | flexible-extract | 0.91964 | 0.89538 | 0.91964 |
+| GSM8K | strict-match | 0.91812 | 0.89310 | 0.91888 |
+| IFEval | prompt strict | 0.79852 | 0.79113 | 0.78743 |
+| IFEval | inst strict | 0.80576 | 0.79856 | 0.79257 |
+| IFEval | prompt loose | 0.81885 | 0.81331 | 0.80407 |
+| IFEval | inst loose | 0.81894 | 0.81295 | 0.80336 |
 
-EXL3 leads on both suites: GSM8K by ~2.4-2.5 pts (well outside the ~0.8 pt
-stderr), IFEval by ~0.6-0.7 pts (within stderr). The direction matches the
-core suite's NVFP4 regressions (orchid exact repetition, seven). NVFP4
-eval time is ~10% faster on GSM8K and ~2% on IFEval, consistent with the
-prefill-heavy mix of these suites. Receipts:
-[quality-deep-20261007](../benchmarks/quality-deep-20261007/).
+GSM8K correct counts (flexible/strict): EXL3 1213/1211, nvidia 1181/1178,
+RedHatAI 1213/1212. Per-problem (flexible): EXL3 and RedHatAI agree on
+1217/1319 with a symmetric 51/51 swap — identical totals, different error
+sets (~102 problems). nvidia's gap is a net loss, not just different
+errors: 70 problems EXL3 gets right that nvidia misses, 38 the other way
+(net -32, outside the ~0.8 pt stderr). All three correct on 1110
+(84.1%); none correct on 49 (3.7%).
+
+Findings: EXL3 and RedHatAI are statistically tied on GSM8K; nvidia
+NVFP4 is genuinely lower (-2.4-2.5 pts). On IFEval EXL3 leads both NVFP4
+builds by 0.6-1.5 pts (within stderr), with nvidia edging RedHatAI. The
+two NVFP4 builds trade differently: nvidia is the fastest (GSM8K 445 s /
+IFEval 673 s vs EXL3 492/689) but loses GSM8K quality; RedHatAI keeps
+EXL3-level GSM8K quality but is the slowest (550/862 s, +24%/+28% vs
+nvidia) — consistent with its 2x larger PLE table (102.5 GB BF16 vs
+51.2 GB FP8 in pinned host). The direction matches the core suite's
+NVFP4 regressions (orchid exact repetition, seven) on both builds.
+Receipts: [quality-deep-20261007](../benchmarks/quality-deep-20261007/).
