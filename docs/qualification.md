@@ -789,7 +789,24 @@ Findings: NVFP4 prefill is 24-30% faster at every power level (native FP4
 expert GEMMs on Blackwell); decode is a wash at 600/450 W and 3-8% faster
 at 330/300 W. NVFP4 at 300 W matches EXL3 at 450 W on prefill (68.8 s vs
 69.1 s) — the same speed for 150 W less. Decode degrades less under caps
-for NVFP4 (-7.6% 600->300 W vs -13.4% for EXL3). Quality spot-checks
-passed (chat, tool calls, JSON mode, retrieval); the full core suite has
-not been run on NVFP4. Receipts:
+for NVFP4 (-7.6% 600->300 W vs -13.4% for EXL3). Receipts:
 [nvfp4-comparison-20261007](../benchmarks/nvfp4-comparison-20261007/).
+
+Core quality suite (both YaRN 512K, MTP3, 600 W, same day):
+
+| Check | EXL3 | NVFP4 |
+|---|---|---|
+| api-tools | 16/16 | 16/16 |
+| vision (1/4/16 images) | pass | pass |
+| seven (21 timed runs) | 20/21 | 19/21 |
+| orchid (exact x100 repetition) | 5/5 (100 every run) | 0/5 (750, 101, 750, 99, 110) |
+| decode C1/C2/C4/C8/C16 tok/s | 125.0 / 225.3 / 382.5 / 583.5 / 871.7 | 128.3 / 222.0 / 362.2 / 586.9 / 601.8 |
+
+The seven failures are all the documented fable word-count band (140..170;
+EXL3 183 words once, NVFP4 176/179 words twice) — no other contract
+failures on either side. Two NVFP4-specific findings: exact-repetition
+quality regressed (orchid 0/5; two runs looped to the 1500-token cap,
+750 = 1500/2 tokens per occurrence), and aggregate decode at C16 drops
+31% (601.8 vs 871.7 tok/s) while C1-C8 stay within noise — the NVFP4
+MoE path does not scale to high concurrency the way EXL3 does. Receipts:
+[quality-nvfp4-vs-exl3-20261007](../benchmarks/quality-nvfp4-vs-exl3-20261007/).
