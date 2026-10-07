@@ -1,0 +1,12 @@
+{"config": "pl330-unlocked", "depth": 131072, "run": 0, "ttft_seconds": 21.12, "decode_tps": 227.7}
+{"config": "pl330-unlocked", "depth": 131072, "run": 1, "ttft_seconds": 21.15, "decode_tps": 226.7}
+{"config": "pl330-unlocked", "depth": 523264, "run": 0, "ttft_seconds": 89.58, "decode_tps": 237.9}
+{"config": "pl330-unlocked", "depth": 523264, "run": 1, "ttft_seconds": 89.59, "decode_tps": 242.2}
+{"config": "lock1300+pl360", "depth": 131072, "run": 0, "ttft_seconds": 20.82, "decode_tps": 173.4}
+{"config": "lock1300+pl360", "depth": 131072, "run": 1, "ttft_seconds": 20.81, "decode_tps": 170.7}
+{"config": "lock1300+pl360", "depth": 523264, "run": 0, "ttft_seconds": 89.38, "decode_tps": 185.1}
+{"config": "lock1300+pl360", "depth": 523264, "run": 1, "ttft_seconds": 89.39, "decode_tps": 182.5}
+{"config": "lock1250+pl360", "depth": 131072, "run": 0, "ttft_seconds": 21.9, "decode_tps": 167.4}
+{"config": "lock1250+pl360", "depth": 131072, "run": 1, "ttft_seconds": 21.89, "decode_tps": 170.3}
+{"config": "lock1250+pl360", "depth": 523264, "run": 0, "ttft_seconds": 93.9, "decode_tps": 172.0}
+{"config": "lock1250+pl360", "depth": 523264, "run": 1, "ttft_seconds": 93.87, "decode_tps": 172.1}

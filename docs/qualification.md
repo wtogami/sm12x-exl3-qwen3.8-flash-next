@@ -725,3 +725,30 @@ flat ~1.7x. Receipts: [power-300w-20261006](../benchmarks/power-300w-20261006/).
 This also re-anchors the earlier caveat: the Oct 1 (v0.30.0) receipts were
 taken before the envelope change and remain non-comparable without a
 same-day A/B at matched limits.
+
+## Power-envelope tuning study (2026-10-07, 4x8-pin rewire)
+
+With four 8-pin connectors the card's VBIOS-declared limit returned to 600 W
+(12VHPWR sense pins decode cable capability; a 2x8-pin adapter declares
+300 W). Re-running the 523K/131K ladder across limits and clock policies:
+
+| Config | 131K TTFT | 523K TTFT | Load power |
+|---|---|---|---|
+| `-pl 300` hard | 22.3 s | 96.4 s | 300 W |
+| `-lgc 1250` + `-pl 360` | 21.9 s | 93.9 s | ~305 W |
+| `-lgc 1300` + `-pl 360` | 20.8 s | 89.4 s | mean 323 W, peak 339 W |
+| `-pl 330` unlocked | 21.1 s | 89.6 s | ~330 W |
+| `-pl 360` unlocked | — | 82.6 s | 360 W (pinned, ~1462 MHz) |
+| 600 W default | 13.1 s | 57.4 s | up to 600 W |
+
+Findings: throughput tracks **sustained average power**, not the shape of
+the limit. A clock-locked soft limit (headroom between operating point and
+clamp for transients) matched a plain cap at equal average power to within
+noise; the lock added nothing. Under the hard 300 W cap the governor is
+already quiescent (clock spread p10-p90 = 60 MHz), so there is no
+oscillation to damp and no undervolt-equivalent gain from `-lgc`.
+Recommendation: set `-pl` to the wanted sustained-wattage directly; skip
+clock locks. 330 W sits at the knee: 7% faster than 300 W for ~10% more
+power. Receipts: [power-tuning-20261007](../benchmarks/power-tuning-20261007/).
+`nvidia-smi -pl` does not persist across reboots; persist via a boot unit
+if a cap should survive restarts.
