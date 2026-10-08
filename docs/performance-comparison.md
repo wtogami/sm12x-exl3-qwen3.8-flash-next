@@ -118,9 +118,28 @@ formats: not the NVFP4 experts (NVIDIA NVFP4 is the best scaler) and not
 the BF16 PLE table (EXL3 carries the same format and scales to 856). The
 two NVFP4 builds differ jointly in quantization pipeline (LLM Compressor
 vs ModelOpt) and PLE format (BF16 vs FP8); neither axis is isolated at
-C16 here. Receipts:
+C16 here. Fifteen-run C16 blocks from the same day bracket the medians
+tightly — RedHatAI 595.6 (sd 6.4, 586.8–612.4) vs the same-session EXL3
+control 874.2 (sd 11.3, 855.6–891.7) — and localize the stall to the
+engine rather than the hardware (below).
+Receipts:
 [core-suite-20261007](../benchmarks/core-suite-20261007/),
-[ple8-quality-20261007](../benchmarks/ple8-quality-20261007/core/).
+[ple8-quality-20261007](../benchmarks/ple8-quality-20261007/core/),
+[c16-repeat-20261007](../benchmarks/c16-repeat-20261007/).
+
+**What the power data shows.** The repeat blocks also rule out the
+hardware side of the stall. EXL3's C16 block sits at the 600 W limit
+(clock 2636 MHz); RedHatAI runs 94 W below the limit (median 506 W) at a
+*higher* clock (2820 MHz). The median GPU utilization of both blocks is
+100% — the rare full-idle dips (min 56%, 4 of 48 samples for RedHatAI)
+are short host-side stalls, not the dominant state. So the card is
+neither power-limited nor clock-limited, and it is not sitting idle
+either: the gap is in useful work per unit time, i.e. on the engine side
+of the card. The ceiling is reached by C8 — RedHatAI's C8 (593.1) is
+already at its C16 level (595.6), while EXL3 scales from 586.5 to 874.2 —
+and adding clients past C8 does not lift it. The candidate paths are the
+two vLLM-side ones specific to this build: the LLM Compressor expert path
+and the BF16 PLE host path.
 
 ## End-to-end eval legs (wall-clock, 16-way concurrent requests)
 

@@ -1,0 +1,9 @@
+C16 scaling repeat blocks, 2026-10-07 (same-day record).
+
+Fifteen-run C8 + C16 decode blocks (256-token outputs, separate HTTP
+clients, MTP3, YaRN 512K, 600 W) for qwen38-nvfp4-redhatai and a
+same-session qwen38-exl3 control, one engine swap between the two.
+Per-block receipts: <quant>.json (per-run decode rates),
+<quant>-traffic.json (engine request counters, observed vs expected),
+<quant>-preempts.txt (retraction/preemption log count),
+<quant>-power.csv (2 Hz GPU power/clock/utilization).
