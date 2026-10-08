@@ -582,7 +582,7 @@ all six retrieval cases at 8K/240K filler depths. Content contracts pass
 18/21 and exact orchid repetition passes 2/5. The full tool suite scores **149/176 (85/100)**, with **32/38** Hard Mode
 points. Overall counts are 65 pass, 19 partial and 4 fail. The evaluator flags
 TC-33 internal-data request handling and TC-42 forbidden extra tool parameters.
-These findings are retained in the full report rather than treated as passes. No performance matrix is run for this extra profile.
+These findings are retained in the full report rather than treated as passes. No performance matrix is run for this extra profile. *(Superseded for v0.31.0 by § exl3-ple8: the FP8-PLE variant — current image, three-way protocol.)*
 
 The dev14 NVIDIA release-image regression also passes all 16 tool API checks;
 receipts are `benchmarks/nvfp4-release-api-dev14.jsonl` and its runtime JSON.
@@ -920,6 +920,9 @@ quality regressed (orchid 0/5; two runs looped to the 1500-token cap,
 31% (601.8 vs 871.7 tok/s) while C1-C8 stay within noise — the NVFP4
 MoE path does not scale to high concurrency the way EXL3 does. Receipts:
 [quality-nvfp4-vs-exl3-20261007](../benchmarks/quality-nvfp4-vs-exl3-20261007/).
+*(Partly superseded: the nvidia core numbers quoted in this section were
+pre-rebase dev13 receipts, and the NVFP4 orchid loops and the C16
+comparison are replaced by § Protocol-clean core suites + 10-run tool-eval.)*
 
 ## Deep quality: EXL3 vs NVIDIA NVFP4 vs RedHatAI NVFP4 (2026-10-07)
 

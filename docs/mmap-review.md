@@ -1,5 +1,10 @@
 # mmap PLE review and backport
 
+> **Historical record.** This reviews the v0.2.0-era PR #54129 gather-based
+> backport and its defaults; that port was removed by the v0.30/v0.31
+> rebases. The current checkpoint-mapped design is re-derived at v0.31 —
+> see README § Mmap PLE and docs/qualification.md § v0.31.0 rebase.
+
 This follow-on release ports [vLLM PR #54129](https://github.com/vllm-project/vllm/pull/54129)
 at `50a061f792f36364f5f95a93eee21f1e9d77f65e`. The PR is open at the time of
 review. Its description is not treated as qualification evidence for this

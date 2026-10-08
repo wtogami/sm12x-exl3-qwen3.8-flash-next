@@ -22,8 +22,11 @@ if args.mmap:
     roots["EXL3 PLE8 mmap"] = args.mmap
 if args.spark:
     roots["EXL3 mmap Spark (BF16 PLE)"] = args.spark
-lines = ["# Final serving measurements", "",
+lines = ["# Final serving measurements (historical)", "",
          "Generated from the linked raw receipts by `scripts/summarize-results.py`.", "",
+         "> **Historical record: pre-rebase v0.1.0–v0.3.1 images, 400 W RTX, "
+         "262144 context.** Current v0.31.0 / 600 W measurements: "
+         "`docs/performance-comparison.md` and `docs/quality-comparison.md`.", "",
          "RTX profiles run on one RTX PRO 6000 Blackwell 96 GB at a 400 W power limit. "
          "The Spark profile, when present, runs on one DGX Spark GB10 with unified memory. "
          "C1 is the default-selection priority. All use FP8 KV and host token embeddings. "

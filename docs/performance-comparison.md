@@ -1,17 +1,17 @@
-# Performance Comparison: EXL3 vs NVIDIA NVFP4 vs RedHatAI NVFP4
+# Performance Comparison: EXL3 vs NVIDIA NVFP4 vs RedHatAI NVFP4 (+ FP8-PLE variant)
 
-Three quantizations of **Qwen3.8-Flash-Next** ([base model](https://huggingface.co/Qwen/Qwen3.8-Flash-Next))
+Four checkpoints of **Qwen3.8-Flash-Next** ([base model](https://huggingface.co/Qwen/Qwen3.8-Flash-Next))
+— three quantizations plus `exl3-ple8`, an FP8-PLE variant of `exl3` —
 measured head-to-head on one RTX PRO 6000 Blackwell (96 GB GDDR7, 4x8-pin,
 600 W default limit) on 2026-10-07, all under one serving stack: engine
 image `8294c3c914c0` (vLLM v0.31.0 fork), MTP3 speculative decoding, YaRN
-512K context, 2048-token batch budget, plus a fourth checkpoint
-(`exl3-ple8`, an FP8-PLE variant of `exl3`). Power measurements use a 2 Hz
+512K context, 2048-token batch budget. Power measurements use a 2 Hz
 on-card sampler with exact run-window attribution. The companion quality
 verdict is [quality-comparison.md](quality-comparison.md).
 
 **Headline: both NVFP4 builds prefill 20-30% faster than EXL3 at every
 power level; single-stream decode is a three-way tie at 600 W. At C16 the
-fresh four-way sweep gives NVIDIA the lead (992 tok/s vs EXL3 856), with
+four-way sweep gives NVIDIA the lead (992 tok/s vs EXL3 856), with
 RedHatAI the only build that fails to scale (595). NVIDIA wins size and
 energy (prefill energy/token runs 14-31% under EXL3's best operating
 point). SM clock-lock sweep: locks Pareto-dominate power caps for the
@@ -112,16 +112,13 @@ HTTP requests, model name stamped in each receipt:
 Single-stream is a four-way tie. At C16 **NVIDIA NVFP4 leads (992)**,
 EXL3 and the FP8-PLE variant are close behind (856/861), and **RedHatAI
 is the one build that does not scale past C8 (594.5, +3% C8→C16 vs +44%
-for EXL3, +56% for NVIDIA)**. The earlier "EXL3 +45% at C16" note
-compared EXL3 only against RedHatAI and flagged nvidia as not-yet
-re-measured; with nvidia measured on the same stack that ordering is
-wrong — NVIDIA is the best scaler, not EXL3 (EXL3 is still +44% over
-RedHatAI). The C16 stall tracks the RedHatAI build specifically, not
-either of its headline formats: not the NVFP4 experts (NVIDIA NVFP4 is
-the best scaler) and not the BF16 PLE table (EXL3 carries the same
-format and scales to 856). The two NVFP4 builds differ jointly in
-quantization pipeline (LLM Compressor vs ModelOpt) and PLE format
-(BF16 vs FP8); neither axis is isolated at C16 here. Receipts:
+for EXL3, +56% for NVIDIA; EXL3 in turn is +44% over RedHatAI). The C16
+stall tracks the RedHatAI build specifically, not either of its headline
+formats: not the NVFP4 experts (NVIDIA NVFP4 is the best scaler) and not
+the BF16 PLE table (EXL3 carries the same format and scales to 856). The
+two NVFP4 builds differ jointly in quantization pipeline (LLM Compressor
+vs ModelOpt) and PLE format (BF16 vs FP8); neither axis is isolated at
+C16 here. Receipts:
 [core-suite-20261007](../benchmarks/core-suite-20261007/),
 [ple8-quality-20261007](../benchmarks/ple8-quality-20261007/core/).
 
@@ -132,9 +129,9 @@ quantization pipeline (LLM Compressor vs ModelOpt) and PLE format
 | GSM8K (1319 x 5-shot) | 492 s | **445 s** | 550 s | 500 s |
 | IFEval (541) | 689 s | **673 s** | 862 s | 699 s |
 
-The FP8-PLE variant refines the earlier PLE-format reading: swapping only
-the PLE table BF16→FP8 on the EXL3 path changed nothing (500/699 vs
-492/689 s), so PLE format alone does not set eval-leg wall time. The
+Swapping only the PLE table BF16→FP8 on the EXL3 path changes nothing
+(500/699 vs 492/689 s): PLE format alone does not set eval-leg wall time.
+The
 RHA-vs-nvidia gap (+24%/+28%) therefore reflects the combination of PLE
 format with each build's expert/serving path (compressed-tensors vs the
 FP4-GEMM/trellis paths), not the table size on its own.

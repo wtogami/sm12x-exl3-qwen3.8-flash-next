@@ -85,8 +85,8 @@ RedHatAI are directionally ahead of EXL3 but not significantly.
 
 ## Structural / repetition checks (core suite)
 
-Fresh, protocol-identical legs for all four quants (model names stamped;
-earlier pre-rebase nvidia numbers discarded):
+Protocol-identical legs for all four quants (served model names stamped in
+every receipt):
 
 | Check | EXL3 | NVIDIA | RedHatAI | exl3-ple8 |
 |---|---|---|---|---|
@@ -131,16 +131,13 @@ IFEval single-run gaps under ~2 pts are noise by construction.
 
 - **EXL3 ≈ RedHatAI ≈ exl3-ple8** on every quality axis measured (GSM8K,
   IFEval, tool-calling 10-run stats, retrieval, vision, tool constraints).
-- **NVIDIA NVFP4** is the smallest (132.7 GB) and fastest-prefilling build
-  (131K TTFT 9.5 s vs EXL3 13.1 s), leads C16 decode (992 vs 856 tok/s),
-  and now also shows the *least* repetition loss of the NVFP4 builds
-  (3/5) — but still costs a statistically real −2.4 pt GSM8K regression
-  against all three others.
-- **The deficit's cause is localized**: NVIDIA's ModelOpt NVFP4 expert
-  pipeline, not the FP8 PLE table — exl3-ple8 runs NVIDIA's PLE format
-  with identical EXL3 experts and stays at EXL3 quality. FP8 PLE's own
-  quality cost is one off-by-one orchid miss (4/5 vs 5/5); its host
-  memory win stands.
+- **NVIDIA NVFP4** is the smallest (132.7 GB), fastest-prefilling and
+  best-C16-scaling build, and loses the least exact repetition of the two
+  NVFP4 builds (orchid 3/5) — but still costs a statistically real −2.4 pt
+  GSM8K regression against all three others. The cause is localized: not
+  the FP8 PLE table (exl3-ple8 runs that format at EXL3 quality) but
+  NVIDIA's ModelOpt NVFP4 expert pipeline. FP8 PLE's own quality cost is
+  one off-by-one orchid miss (4/5 vs 5/5); its host-memory win stands.
 - RedHatAI pays nvidia's ~2x PLE host memory (102.5 GB BF16 vs 51.2 GB
   FP8 pinned; EXL3 carries the same BF16 table) for its quality —
   exl3-ple8 shows the FP8 PLE format is *not* what costs quality, so the

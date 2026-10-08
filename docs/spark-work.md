@@ -1,5 +1,9 @@
 # Spark qualification and tuning record
 
+> **Historical working record** of the v0.3.0 Spark bring-up; the image
+> publication and branch-merge plans described here have since changed
+> (see README § Platforms and docs/qualification.md).
+
 This branch extends the recipe to RTX SM120 and DGX Spark SM121. The corrected image will be qualified and uploaded, then `spark` will merge
 into `main` for stable v0.3.0 as requested.
 

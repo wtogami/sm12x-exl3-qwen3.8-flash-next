@@ -1,10 +1,15 @@
-# Final serving measurements
+# Final serving measurements (historical)
 
 Generated from the linked raw receipts by `scripts/summarize-results.py`.
 
+> **Historical record: pre-rebase v0.1.0–v0.3.1 images, 400 W RTX, 262144
+> context.** Current v0.31.0 / 600 W measurements:
+> [../docs/performance-comparison.md](../docs/performance-comparison.md) and
+> [../docs/quality-comparison.md](../docs/quality-comparison.md).
+
 RTX profiles run on one RTX PRO 6000 Blackwell 96 GB at a 400 W power limit. The Spark profile, when present, runs on one DGX Spark GB10 with unified memory. C1 is the default-selection priority. All use FP8 KV and host token embeddings. The mmap profiles read PLE rows from checkpoint-backed mappings; the original RTX profiles retain resident host tables. All decode rates below exclude prefill.
 
-EXL3 and NVFP4 columns retain the v0.1.0 measurements; only the mmap-enabled EXL3 PLE8 column records its v0.2.0 qualification. The RTX EXL3 baseline has a different PLE storage precision, so this is not a controlled mmap-on/off ablation. The mmap run uses existing Linux page cache and benchmark warmups; it is not a cold-disk or constrained-RAM test.
+EXL3 and NVFP4 columns retain the v0.1.0 measurements; only the mmap-enabled EXL3 PLE8 column records its v0.2.0 qualification. The RTX EXL3 baseline has a different PLE storage precision, so this is not a controlled mmap-on/off comparison. The mmap run uses existing Linux page cache and benchmark warmups; it is not a cold-disk or constrained-RAM test.
 
 The Spark column is newly qualified on native arm64 with the original BF16 PLE checkpoint.
 
