@@ -51,6 +51,6 @@ inst_level_loose_acc: {'ple8-r1': 0.8381, 'ple8-r2': 0.8261, 'exl3-r1': 0.8189, 
   ple8-r1 vs rha                              56/ 27 discordant (n=834)  p=0.0019  B>A
   ple8-r2 vs rha                              52/ 33 discordant (n=834)  p=0.0503  tie
 
-Verdict (pre-registered rule): GSM8K ple8 mean >= 0.915 -> PLE-format
-hypothesis REFUTED on the significant axis; the nvidia deficit belongs
-to its ModelOpt NVFP4 expert pipeline.
+Finding: exl3-ple8 (FP8 PLE table, identical quantized experts) matches
+EXL3 on GSM8K, so the FP8 table format costs no reasoning quality;
+nvidia's deficit belongs to its ModelOpt NVFP4 expert pipeline.

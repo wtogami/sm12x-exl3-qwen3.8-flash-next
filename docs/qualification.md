@@ -1045,16 +1045,13 @@ same machine, same climate-controlled ambient, same image and config, so
 they are directly comparable to the daytime legs. Receipt-internal UTC
 timestamps are kept as recorded.
 
-## exl3-ple8: PLE-format ablation (2026-10-07)
+## exl3-ple8: the FP8-PLE variant (2026-10-07)
 
-Hypothesis under test: the measurable quality gap between NVIDIA NVFP4 and
-the EXL3/RedHatAI pair is caused by NVIDIA's **FP8 PLE table** (51.2 GB)
-rather than by the expert quantization — the two BF16-PLE builds tie each
-other on GSM8K and the FP8-PLE build sits 2.4 pts lower, so the deficit
-tracked PLE format in the three-way data. `exl3-ple8` isolates that axis:
-identical K4.25 EXL3 trellis experts and calibration pipeline as the live
-EXL3 checkpoint, with only the PLE n-gram table in FP8 (~48 GiB payload
-vs ~95 GiB BF16). Checkpoint
+To find out whether NVIDIA's GSM8K deficit could be explained by its FP8
+PLE table alone, the `exl3-ple8` profile changes only that axis:
+identical K4.25 EXL3 trellis experts and calibration pipeline as the
+live EXL3 checkpoint, with the PLE n-gram table materialized in FP8
+(~48 GiB payload vs ~95 GiB BF16). Checkpoint
 `wrldsuksgo2mars/Qwen3.8-Flash-Next-EXL3-K4.25-PLE-FP8-v1` @ `888306bd`
 (128.3 GB). (MTP-expert format can't be a confound: spec-decode
 verification is lossless.)
@@ -1065,9 +1062,9 @@ clean (71.9 GiB GPU allocation, static MTP3 capture, retrieval 6/6 at
 `8294c3c914c0`, MTP3, YaRN 524288, 600 W, temp 0, thinking on,
 16-way concurrency).
 
-**GSM8K — hypothesis refuted on the significant axis.** ple8 scored 0.9196
-and 0.9242 (flexible-extract; mean **0.9219**, above EXL3's 0.9177 mean
-and RHA's 0.9196), not near NVIDIA's 0.8954. Paired exact McNemar:
+**GSM8K — the FP8 table does not reproduce NVIDIA's deficit.** ple8 scored
+0.9196 and 0.9242 (flexible-extract; mean **0.9219**, above EXL3's 0.9177
+mean and RHA's 0.9196), not near NVIDIA's 0.8954. Paired exact McNemar:
 
 | Pair | Discordant | p |
 |---|---|---|
@@ -1078,9 +1075,9 @@ and RHA's 0.9196), not near NVIDIA's 0.8954. Paired exact McNemar:
 
 FP8 PLE on trellis experts does not reproduce the deficit: ple8 ties
 EXL3 and beats nvidia significantly. The three-way pattern plus this
-ablation puts the GSM8K regression on NVIDIA's **ModelOpt NVFP4 expert
-pipeline**, not the PLE format (RHA's CT-quantized NVFP4 experts with
-BF16 PLE also tie EXL3).
+single-variable comparison puts the GSM8K regression on NVIDIA's
+**ModelOpt NVFP4 expert pipeline**, not the PLE format (RHA's
+CT-quantized NVFP4 experts with BF16 PLE also tie EXL3).
 
 **IFEval — ties.** ple8 means 0.8124 prompt-strict / 0.8172 inst-strict /
 0.8345 prompt-loose / 0.8321 inst-loose (best of the four on all four
@@ -1095,7 +1092,7 @@ orchid **4/5** (occurrences 100,100,99,100,100 — the miss is off-by-one,
 not a loop). Decode C1–C16 120.8/210.0/356.9/595.2/861.0 — a wash with
 EXL3's fresh leg. So on exact repetition the FP8 PLE table costs ~1 run
 (4/5 vs EXL3's 5/5) while NVFP4 experts cost more (nvidia 3/5, RHA 1/5):
-partial support for the hypothesis on the repetition axis only.
+the PLE format has a small, real effect on the repetition axis only.
 
 **Tool-eval-bench:** 5 runs at 148.4 pts mean, then extended to 10 with
 the other quants (next section) — ple8 is the top mean (149.7) but
@@ -1106,10 +1103,10 @@ changing only the PLE format on the EXL3 path did not move wall time,
 which refines the earlier two-factor attribution of RHA's eval-leg lag
 (see performance-comparison.md § End-to-end eval legs).
 
-Verdict: **the PLE-format hypothesis is rejected as the explanation of
-NVIDIA's GSM8K deficit** (pre-registered rule: ≥0.915 refutes; ple8
-landed 0.9219). The nvidia-vs-RHA difference the hypothesis pointed at is
-reproduced by the expert-quantization axis, not the PLE table; FP8 PLE's
+Finding: the FP8 PLE table is not what lowers GSM8K — swapping only the
+PLE format on EXL3 experts kept EXL3-level quality (ple8 0.9219, ≥ the
+0.915 threshold set before the run). NVIDIA's deficit against RedHatAI
+reproduces on the expert-quantization axis, not the PLE table; FP8 PLE's
 own measurable cost is one off-by-one orchid miss. Receipts:
 [ple8-quality-20261007](../benchmarks/ple8-quality-20261007/) (core
 suite, GSM8K×2 + IFEval×2 with per-item samples, tools run-001..005).
@@ -1142,7 +1139,7 @@ Core suite (fresh, model-name-stamped, YaRN 512K, MTP3, 600 W, temp 0):
 All seven failures on every quant are the documented fable word-count band
 (140–170 words). The orchid picture replaces the pre-rebase rows: every
 NVFP4-quantized build loses exact repetition to some degree (nvidia 3/5,
-RHA 1/5), the FP8-PLE ablation loses one run (4/5). The miss mode in the
+RHA 1/5), the FP8-PLE variant loses one run (4/5). The miss mode in the
 clean legs is off-by-one counts (99–102); the 1500-token runaway loops of
 the earlier RHA leg (and the dev13-era nvidia record) did not recur in
 any of the four clean legs, so loop-to-cap is treated as a rare

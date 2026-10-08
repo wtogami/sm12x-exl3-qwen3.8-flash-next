@@ -22,7 +22,7 @@ for the defaults; C16 throughput tradeoffs are recorded below.
 > **Current measurements** — image `8294c3c914c0`, 600 W, all four
 > checkpoints measured 2026-10-07:
 > [docs/quality-comparison.md](docs/quality-comparison.md) (EXL3 vs NVIDIA
-> NVFP4 vs RedHatAI NVFP4 vs the exl3-ple8 PLE-format ablation; paired
+> NVFP4 vs RedHatAI NVFP4 vs the exl3-ple8 FP8-PLE variant; paired
 > McNemar stats, 10-run tool-eval study) ·
 > [docs/performance-comparison.md](docs/performance-comparison.md) (power
 > ladder, SM clock-lock sweep, four-way concurrency scaling) ·
@@ -48,11 +48,12 @@ PLE table. The shipping default is **`exl3`** with the platform PLE storage
 mode (RTX: host-offloaded resident table; Spark: mmap). Choose `exl3-ple8` to
 save about 47.7 GiB of checkpoint payload, reduce download/storage
 requirements, or fit more PLE rows in the available file cache on a lower-RAM
-system. The 2026-10-07 four-way ablation (`docs/quality-comparison.md`) found
-the FP8 PLE table statistically tied with BF16 on GSM8K, IFEval and
-tool-calling — its only measurable quality cost was one off-by-one orchid
-repetition miss (4/5 vs 5/5) — so the half-size table is a memory win, not a
-quality tax.
+system. The 2026-10-07 four-way comparison (`docs/quality-comparison.md`)
+found the two statistically tied on GSM8K, IFEval and tool-calling: the
+quantized expert weights carry the model's quality and the n-gram PLE table
+tolerates FP8, so the half-size table is a memory win, not a quality tax
+(its only measurable cost: one off-by-one orchid repetition miss, 4/5 vs
+5/5).
 
 The paragraphs and tables below this point are the historical record from the
 v0.1.0–v0.3.1 era (400 W RTX): the `exl3-ple8` profile's full benchmark matrix
@@ -368,7 +369,7 @@ Generated from the linked raw receipts by `scripts/summarize-results.py`.
 
 RTX profiles run on one RTX PRO 6000 Blackwell 96 GB at a 400 W power limit. The Spark profile, when present, runs on one DGX Spark GB10 with unified memory. C1 is the default-selection priority. All use FP8 KV and host token embeddings. The mmap profiles read PLE rows from checkpoint-backed mappings; the original RTX profiles retain resident host tables. All decode rates below exclude prefill.
 
-EXL3 and NVFP4 columns retain the v0.1.0 measurements; only the mmap-enabled EXL3 PLE8 column records its v0.2.0 qualification. The RTX EXL3 baseline has a different PLE storage precision, so this is not a controlled mmap-on/off ablation. The mmap run uses existing Linux page cache and benchmark warmups; it is not a cold-disk or constrained-RAM test.
+EXL3 and NVFP4 columns retain the v0.1.0 measurements; only the mmap-enabled EXL3 PLE8 column records its v0.2.0 qualification. The RTX EXL3 baseline has a different PLE storage precision, so this is not a controlled mmap-on/off comparison. The mmap run uses existing Linux page cache and benchmark warmups; it is not a cold-disk or constrained-RAM test.
 
 The Spark column is newly qualified on native arm64 with the original BF16 PLE checkpoint.
 

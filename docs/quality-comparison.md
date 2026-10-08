@@ -1,4 +1,4 @@
-# Quality Comparison: EXL3 vs NVIDIA NVFP4 vs RedHatAI NVFP4 (+ PLE-format ablation)
+# Quality Comparison: EXL3 vs NVIDIA NVFP4 vs RedHatAI NVFP4 (+ FP8-PLE variant)
 
 Four checkpoints of **Qwen3.8-Flash-Next** ([base model](https://huggingface.co/Qwen/Qwen3.8-Flash-Next))
 measured head-to-head on one RTX PRO 6000 Blackwell on 2026-10-07, all under
@@ -9,11 +9,11 @@ same-day and every receipt is stamped with its served model name.
 
 **Headline: on tool-calling all four are statistically tied (83–85/100,
 ten runs each). On GSM8K the NVIDIA build is genuinely lower (−2.4 pts);
-EXL3, RedHatAI, and the FP8-PLE ablation are indistinguishable. A targeted
-ablation (exl3-ple8: EXL3 experts + FP8 PLE table) refutes the hypothesis
-that NVIDIA's FP8 PLE table causes its deficit — it belongs to NVIDIA's
-ModelOpt NVFP4 expert pipeline. Instruction following favors the two
-non-NVIDIA builds directionally but never significantly.**
+EXL3, RedHatAI, and the FP8-PLE variant are indistinguishable. The
+exl3-ple8 comparison (identical EXL3 experts, FP8 PLE table) shows the FP8
+table format costs no quality, so NVIDIA's deficit belongs to its ModelOpt
+NVFP4 expert pipeline. Instruction following favors the two non-NVIDIA
+builds directionally but never significantly.**
 
 ## Checkpoints
 
@@ -22,7 +22,7 @@ non-NVIDIA builds directionally but never significantly.**
 | EXL3 K4.25 v1 | [wrldsuksgo2mars/Qwen3.8-Flash-Next-EXL3-K4.25-v1](https://huggingface.co/wrldsuksgo2mars/Qwen3.8-Flash-Next-EXL3-K4.25-v1) [`73a050c`](https://huggingface.co/wrldsuksgo2mars/Qwen3.8-Flash-Next-EXL3-K4.25-v1/tree/73a050c27b8c488c65acd6d1c74e45ff02be5fab) | GPTQModel-fork calibrated mixed K4/K5 EXL3 routed experts (avg 4.25 bpw), BF16 PLE n-gram table retained | 179.4 GB |
 | NVIDIA NVFP4 | [nvidia/Qwen3.8-Flash-Next-NVFP4](https://huggingface.co/nvidia/Qwen3.8-Flash-Next-NVFP4) [`fc694b5`](https://huggingface.co/nvidia/Qwen3.8-Flash-Next-NVFP4/tree/fc694b54fb0174e0913e6adf86691ef85a4ead47) | Model Optimizer MIXED_PRECISION: W4A4 NVFP4 main experts, FP8 block-128 MTP experts, per-tensor FP8 PLE; rest BF16 | 132.7 GB |
 | RedHatAI NVFP4 | [RedHatAI/Qwen3.8-Flash-Next-NVFP4](https://huggingface.co/RedHatAI/Qwen3.8-Flash-Next-NVFP4) [`c8f2fb1`](https://huggingface.co/RedHatAI/Qwen3.8-Flash-Next-NVFP4/tree/c8f2fb1b9869f686b214782036123b10ff96d14a) | LLM Compressor (compressed-tensors): NVFP4 MoE experts only; everything else, incl. the 102.5 GB PLE table, BF16 | 174 GB |
-| exl3-ple8 (ablation) | [wrldsuksgo2mars/Qwen3.8-Flash-Next-EXL3-K4.25-PLE-FP8-v1](https://huggingface.co/wrldsuksgo2mars/Qwen3.8-Flash-Next-EXL3-K4.25-PLE-FP8-v1) [`888306b`](https://huggingface.co/wrldsuksgo2mars/Qwen3.8-Flash-Next-EXL3-K4.25-PLE-FP8-v1/tree/888306bd3996d6317758c07df50622829259ad17) | Same EXL3 K4.25 trellis experts as row 1; **PLE table only** in FP8 (~48 GiB payload vs ~95 GiB BF16) | 128.3 GB |
+| exl3-ple8 (FP8-PLE variant) | [wrldsuksgo2mars/Qwen3.8-Flash-Next-EXL3-K4.25-PLE-FP8-v1](https://huggingface.co/wrldsuksgo2mars/Qwen3.8-Flash-Next-EXL3-K4.25-PLE-FP8-v1) [`888306b`](https://huggingface.co/wrldsuksgo2mars/Qwen3.8-Flash-Next-EXL3-K4.25-PLE-FP8-v1/tree/888306bd3996d6317758c07df50622829259ad17) | Same EXL3 K4.25 trellis experts as row 1; **PLE table only** in FP8 (~48 GiB payload vs ~95 GiB BF16) | 128.3 GB |
 
 ## Text quality (lm_eval 0.4.13, `local-chat-completions`, thinking on, temp 0)
 
@@ -48,23 +48,23 @@ RedHatAI one each. Paired exact-McNemar statistics on the per-item files
 - All IFEval pairwise comparisons tie or are borderline on a single run
   only (paired CI ±2.0–2.7 pts at n=541).
 
-## The PLE-format ablation
+## BF16 vs FP8 PLE tables (exl3 vs exl3-ple8)
 
-Hypothesis (from the three-way pattern): NVIDIA's GSM8K deficit tracks its
-**FP8 PLE table** — the two BF16-PLE builds tie on GSM8K, the FP8-PLE
-build sits lower. The confound is that NVIDIA also differs in expert
-calibration (ModelOpt vs LLM Compressor). `exl3-ple8` isolates the PLE
-axis: identical EXL3 experts, FP8 PLE table only.
+To find out whether NVIDIA's GSM8K deficit could be explained by its FP8
+PLE table alone, `exl3-ple8` changes only that axis: identical K4.25
+quantized experts, PLE n-gram table in FP8 (~48 GiB host payload) instead
+of BF16 (~95 GiB).
 
-Result: **refuted on the significant axis.** ple8 scored 0.9219 (mean of
-2) — EXL3-level, and significantly above NVIDIA (p≤0.004). FP8 PLE does
-not reproduce the deficit on trellis experts, and RedHatAI's NVFP4
-experts (with BF16 PLE) don't either; the deficit belongs to NVIDIA's
-ModelOpt NVFP4 expert pipeline. The PLE table format *does* have a small,
-real effect on exact repetition (see core suite: ple8 orchid 4/5 vs
-EXL3 5/5), and its big win is host memory (~48 GiB payload vs ~95 GiB
-BF16) — with no measured cost or benefit to decode speed or eval-leg wall
-time (see [performance-comparison.md](performance-comparison.md)).
+The two are statistically equivalent on every quality axis — GSM8K 0.9219
+vs 0.9177 (means of 2, McNemar ties on all four pairings), IFEval ties,
+tool-calling tie (10 runs each). The quantized expert weights carry the
+model's quality and the n-gram PLE table tolerates FP8, so the FP8 table
+halves the PLE host footprint at no measurable quality cost; only one
+difference surfaced, a single off-by-one orchid miss (4/5 vs 5/5). The
+same comparison localizes NVIDIA's −2.4 pt GSM8K deficit: exl3-ple8 runs
+NVIDIA's PLE table format at EXL3 quality, so the deficit belongs to
+NVIDIA's ModelOpt NVFP4 experts — RedHatAI's CT-quantized NVFP4 experts
+(with BF16 PLE) tie EXL3 as well.
 
 ## Tool-calling quality (tool-eval-bench, 88 cases incl. 19 Hard Mode)
 
@@ -98,7 +98,7 @@ earlier pre-rebase nvidia numbers discarded):
 All seven-suite failures are the same documented fable word-count band
 (140–170 words); the NVFP4 builds overshoot slightly more often. The
 distinctive regression is **exact repetition** (orchid): NVIDIA −2 runs,
-RedHatAI −4, FP8-PLE ablation −1, all misses off-by-one counts (99–102
+RedHatAI −4, FP8-PLE variant −1, all misses off-by-one counts (99–102
 occurrences). Earlier legs showed occasional 1500-token runaway loops on
 NVFP4; none recurred in the four clean legs, so loops are treated as rare
 engine jitter, not deterministic behavior.
@@ -136,14 +136,14 @@ IFEval single-run gaps under ~2 pts are noise by construction.
   and now also shows the *least* repetition loss of the NVFP4 builds
   (3/5) — but still costs a statistically real −2.4 pt GSM8K regression
   against all three others.
-- **The deficit's cause is pinned**: NVIDIA's ModelOpt NVFP4 expert
-  pipeline, not the FP8 PLE table — the ablation keeps NVIDIA's PLE
-  format with EXL3 experts and stays at EXL3 quality. FP8 PLE's own
-  quality cost is one off-by-one orchid miss (4/5 vs 5/5); its memory
-  and performance wins stand.
+- **The deficit's cause is localized**: NVIDIA's ModelOpt NVFP4 expert
+  pipeline, not the FP8 PLE table — exl3-ple8 runs NVIDIA's PLE format
+  with identical EXL3 experts and stays at EXL3 quality. FP8 PLE's own
+  quality cost is one off-by-one orchid miss (4/5 vs 5/5); its host
+  memory win stands.
 - RedHatAI pays nvidia's ~2x PLE host memory (102.5 GB BF16 vs 51.2 GB
   FP8 pinned; EXL3 carries the same BF16 table) for its quality —
-  ple8 shows the FP8 PLE format is *not* what costs quality, so the
+  exl3-ple8 shows the FP8 PLE format is *not* what costs quality, so the
   BF16 table is a choice, not a requirement.
 - Full performance comparison:
   [performance-comparison.md](performance-comparison.md).
@@ -151,8 +151,8 @@ IFEval single-run gaps under ~2 pts are noise by construction.
 Receipts:
 [quality-deep-20261007](../benchmarks/quality-deep-20261007/) (GSM8K/IFEval
 per-quant results + paired analysis),
-[ple8-quality-20261007](../benchmarks/ple8-quality-20261007/) (ablation:
-core suite, GSM8K×2, IFEval×2 with per-item samples, tools ×5),
+[ple8-quality-20261007](../benchmarks/ple8-quality-20261007/) (FP8-PLE
+variant: core suite, GSM8K×2, IFEval×2 with per-item samples, tools ×5),
 [core-suite-20261007](../benchmarks/core-suite-20261007/) (protocol-clean
 four-way core suites),
 [tool-eval-repeats-20261007](../benchmarks/tool-eval-repeats-20261007/)

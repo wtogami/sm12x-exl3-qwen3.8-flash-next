@@ -33,7 +33,7 @@ if args.mmap:
     lines += ["EXL3 and NVFP4 columns retain the v0.1.0 measurements; only the mmap-enabled "
               "EXL3 PLE8 column records its v0.2.0 qualification. The RTX EXL3 baseline has "
               "a different "
-              "PLE storage precision, so this is not a controlled mmap-on/off ablation. "
+              "PLE storage precision, so this is not a controlled mmap-on/off comparison. "
               "The mmap run uses existing Linux page cache and benchmark warmups; it is "
               "not a cold-disk or constrained-RAM test.", ""]
 

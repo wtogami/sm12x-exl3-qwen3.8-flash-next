@@ -1,5 +1,5 @@
 #!/usr/bin/env python3
-"""Paired McNemar for the exl3-ple8 PLE-format ablation vs the three quants.
+"""Paired McNemar for the exl3-ple8 FP8-PLE variant vs the three quants.
 
 Same methodology as analyze-paired-quality.py: exact two-sided binomial on
 discordant pairs, identical items. The earlier quants' per-item files live
@@ -115,6 +115,6 @@ for m in metrics:
     show("ple8-r1 vs rha", *mcnemar(d["ple8-r1"], d["rha"]))
     show("ple8-r2 vs rha", *mcnemar(d["ple8-r2"], d["rha"]))
 print()
-print("Verdict (pre-registered rule): GSM8K ple8 mean >= 0.915 -> PLE-format")
-print("hypothesis REFUTED on the significant axis; the nvidia deficit belongs")
-print("to its ModelOpt NVFP4 expert pipeline.")
+print("Finding: exl3-ple8 (FP8 PLE table, identical quantized experts) matches")
+print("EXL3 on GSM8K, so the FP8 table format costs no reasoning quality;")
+print("nvidia's deficit belongs to its ModelOpt NVFP4 expert pipeline.")

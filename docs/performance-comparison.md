@@ -5,7 +5,7 @@ measured head-to-head on one RTX PRO 6000 Blackwell (96 GB GDDR7, 4x8-pin,
 600 W default limit) on 2026-10-07, all under one serving stack: engine
 image `8294c3c914c0` (vLLM v0.31.0 fork), MTP3 speculative decoding, YaRN
 512K context, 2048-token batch budget, plus a fourth checkpoint
-(`exl3-ple8`) as a PLE-format ablation. Power measurements use a 2 Hz
+(`exl3-ple8`, an FP8-PLE variant of `exl3`). Power measurements use a 2 Hz
 on-card sampler with exact run-window attribution. The companion quality
 verdict is [quality-comparison.md](quality-comparison.md).
 
@@ -25,7 +25,7 @@ NVFP4 builds and roughly tie for EXL3; decode energy drops ~40% at a
 | EXL3 K4.25 v1 | [wrldsuksgo2mars/Qwen3.8-Flash-Next-EXL3-K4.25-v1](https://huggingface.co/wrldsuksgo2mars/Qwen3.8-Flash-Next-EXL3-K4.25-v1) [`73a050c`](https://huggingface.co/wrldsuksgo2mars/Qwen3.8-Flash-Next-EXL3-K4.25-v1/tree/73a050c27b8c488c65acd6d1c74e45ff02be5fab) | 179.4 GB | mixed K4/K5 EXL3 experts + BF16 non-experts on GPU; ~102 GB (95 GiB) BF16 PLE table host-mmap — same table as RHA |
 | NVIDIA NVFP4 | [nvidia/Qwen3.8-Flash-Next-NVFP4](https://huggingface.co/nvidia/Qwen3.8-Flash-Next-NVFP4) [`fc694b5`](https://huggingface.co/nvidia/Qwen3.8-Flash-Next-NVFP4/tree/fc694b54fb0174e0913e6adf86691ef85a4ead47) | 132.7 GB | NVFP4 main experts on GPU; FP8 PLE 51.2 GB pinned host |
 | RedHatAI NVFP4 | [RedHatAI/Qwen3.8-Flash-Next-NVFP4](https://huggingface.co/RedHatAI/Qwen3.8-Flash-Next-NVFP4) [`c8f2fb1`](https://huggingface.co/RedHatAI/Qwen3.8-Flash-Next-NVFP4/tree/c8f2fb1b9869f686b214782036123b10ff96d14a) | 174 GB | NVFP4 experts + BF16 non-experts ~81 GB on GPU; 102.5 GB BF16 PLE host-offloaded |
-| exl3-ple8 (ablation) | [wrldsuksgo2mars/Qwen3.8-Flash-Next-EXL3-K4.25-PLE-FP8-v1](https://huggingface.co/wrldsuksgo2mars/Qwen3.8-Flash-Next-EXL3-K4.25-PLE-FP8-v1) [`888306b`](https://huggingface.co/wrldsuksgo2mars/Qwen3.8-Flash-Next-EXL3-K4.25-PLE-FP8-v1/tree/888306bd3996d6317758c07df50622829259ad17) | 128.3 GB | EXL3 K4.25 experts (same as row 1); **FP8 PLE** ~48 GiB host-mmap — the PLE-format control for EXL3 |
+| exl3-ple8 (FP8-PLE variant) | [wrldsuksgo2mars/Qwen3.8-Flash-Next-EXL3-K4.25-PLE-FP8-v1](https://huggingface.co/wrldsuksgo2mars/Qwen3.8-Flash-Next-EXL3-K4.25-PLE-FP8-v1) [`888306b`](https://huggingface.co/wrldsuksgo2mars/Qwen3.8-Flash-Next-EXL3-K4.25-PLE-FP8-v1/tree/888306bd3996d6317758c07df50622829259ad17) | 128.3 GB | EXL3 K4.25 experts (same as row 1); **FP8 PLE** ~48 GiB host-mmap — differs from row 1 only in PLE table format |
 
 ## Power ladder (YaRN 512K, MTP3, C1; same day 2026-10-07)
 
@@ -110,7 +110,7 @@ HTTP requests, model name stamped in each receipt:
 | exl3-ple8 tok/s | 120.8 | 210.0 | 356.9 | 595.2 | **861.0** |
 
 Single-stream is a four-way tie. At C16 **NVIDIA NVFP4 leads (992)**,
-EXL3 and its FP8-PLE ablation are close behind (856/861), and **RedHatAI
+EXL3 and the FP8-PLE variant are close behind (856/861), and **RedHatAI
 is the one build that does not scale past C8 (594.5, +3% C8→C16 vs +44%
 for EXL3, +56% for NVIDIA)**. The earlier "EXL3 +45% at C16" note
 compared EXL3 only against RedHatAI and flagged nvidia as not-yet
@@ -132,7 +132,7 @@ quantization pipeline (LLM Compressor vs ModelOpt) and PLE format
 | GSM8K (1319 x 5-shot) | 492 s | **445 s** | 550 s | 500 s |
 | IFEval (541) | 689 s | **673 s** | 862 s | 699 s |
 
-The ple8 ablation refines the earlier PLE-format reading: swapping only
+The FP8-PLE variant refines the earlier PLE-format reading: swapping only
 the PLE table BF16→FP8 on the EXL3 path changed nothing (500/699 vs
 492/689 s), so PLE format alone does not set eval-leg wall time. The
 RHA-vs-nvidia gap (+24%/+28%) therefore reflects the combination of PLE
@@ -172,4 +172,4 @@ Receipts:
 (Oct-7 morning core leg), [core-suite-20261007](../benchmarks/core-suite-20261007/)
 (four-way C1-C16 + stamped core suites), [quality-deep-20261007](../benchmarks/quality-deep-20261007/)
 (eval leg times), [ple8-quality-20261007](../benchmarks/ple8-quality-20261007/)
-(PLE-format ablation). Full record: [qualification.md](qualification.md).
+(FP8-PLE variant). Full record: [qualification.md](qualification.md).
