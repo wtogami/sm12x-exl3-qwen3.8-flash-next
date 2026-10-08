@@ -1,27 +1,23 @@
-== Per-quant totals (out of 176) ==
-EXL3            n=5 runs=[152, 145, 148, 147, 144] mean=147.20 sd=3.11 95%CI=+/-3.87
-nvidia NVFP4    n=5 runs=[150, 149, 144, 148, 151] mean=148.40 sd=2.70 95%CI=+/-3.35
-RedHatAI NVFP4  n=5 runs=[147, 150, 151, 151, 150] mean=149.80 sd=1.64 95%CI=+/-2.04
+=== CORE SUITE (protocol: seven x21, orchid x5, api-tools, vision, retrieval 6, decode C1-C16) ===
+EXL3       seven 20/21 (fails: ['fable'])  orchid 5/5 occ=[100, 100, 100, 100, 100]  api 16/16  vision True  retrieval 6/6  decode [127.5, 219.8, 359.5, 592.2, 855.7]
+RedHatAI   seven 19/21 (fails: ['fable'])  orchid 1/5 occ=[101, 101, 99, 101, 100]  api 16/16  vision True  retrieval 6/6  decode [123.6, 214.7, 383.9, 574.7, 594.5]
+nvidia     seven 18/21 (fails: ['fable'])  orchid 3/5 occ=[102, 100, 100, 101, 100]  api 16/16  vision True  retrieval 6/6  decode [133.7, 239.8, 415.9, 637.1, 992.3]
+exl3-ple8  seven 18/21 (fails: ['fable'])  orchid 4/5 occ=[100, 100, 99, 100, 100]  api 16/16  vision True  retrieval 6/6  decode [120.8, 210.0, 356.9, 595.2, 861.0]
 
-== Pairwise Welch t on total score (Holm-corrected, alpha=0.05) ==
-nvidia NVFP4 vs EXL3: mean diff=+1.20 pts, t=+0.651, p=0.5338, holm_sig=False
-nvidia NVFP4 vs RedHatAI NVFP4: mean diff=-1.40 pts, t=-0.990, p=0.3571, holm_sig=False
-EXL3 vs RedHatAI NVFP4: mean diff=-2.60 pts, t=-1.651, p=0.1493, holm_sig=False
+=== TOOL-EVAL-BENCH (10 runs each, 88 cases, hardmode, 176 pts) ===
+EXL3       total [152, 145, 148, 147, 144, 149, 144, 149, 144, 146]  mean 146.8 sd 2.70  95%CI [144.9, 148.7]
+           hard  [30, 29, 29, 26, 27, 31, 27, 32, 26, 24]  mean 28.1  95%CI [26.3, 29.9]
+RedHatAI   total [147, 150, 151, 151, 150, 151, 146, 155, 148, 145]  mean 149.4 sd 2.95  95%CI [147.3, 151.5]
+           hard  [26, 30, 30, 33, 28, 32, 29, 34, 30, 30]  mean 30.2  95%CI [28.5, 31.9]
+nvidia     total [150, 149, 144, 148, 151, 142, 149, 154, 145, 148]  mean 148.0 sd 3.53  95%CI [145.5, 150.5]
+           hard  [31, 29, 28, 28, 27, 28, 30, 36, 26, 26]  mean 28.9  95%CI [26.8, 31.0]
+exl3-ple8  total [151, 149, 144, 149, 149, 147, 154, 151, 152, 151]  mean 149.7 sd 2.79  95%CI [147.7, 151.7]
+           hard  [32, 29, 26, 27, 33, 31, 32, 32, 33, 32]  mean 30.7  95%CI [28.9, 32.5]
 
-== Verdict stability across the 5 runs (per quant) ==
-EXL3            scenarios with mixed verdicts: 22/88 -> ['TC-17', 'TC-21', 'TC-23', 'TC-30', 'TC-33', 'TC-38', 'TC-42', 'TC-52', 'TC-53', 'TC-55', 'TC-56', 'TC-60', 'TC-62', 'TC-68', 'TC-74', 'TC-75', 'TC-76', 'TC-80', 'TC-81', 'TC-83', 'TC-85', 'TC-88']
-nvidia NVFP4    scenarios with mixed verdicts: 23/88 -> ['TC-02', 'TC-03', 'TC-17', 'TC-21', 'TC-30', 'TC-33', 'TC-42', 'TC-51', 'TC-52', 'TC-53', 'TC-55', 'TC-58', 'TC-60', 'TC-61', 'TC-68', 'TC-75', 'TC-80', 'TC-81', 'TC-82', 'TC-83', 'TC-84', 'TC-85', 'TC-88']
-RedHatAI NVFP4  scenarios with mixed verdicts: 28/88 -> ['TC-01', 'TC-02', 'TC-04', 'TC-17', 'TC-21', 'TC-23', 'TC-35', 'TC-40', 'TC-42', 'TC-49', 'TC-50', 'TC-51', 'TC-52', 'TC-53', 'TC-55', 'TC-58', 'TC-61', 'TC-62', 'TC-63', 'TC-68', 'TC-75', 'TC-79', 'TC-80', 'TC-81', 'TC-82', 'TC-84', 'TC-85', 'TC-88']
-
-== Per-scenario paired comparison (mean points over 5 runs, n=88) ==
-nvidia NVFP4 vs EXL3: mean diff=+0.014 pts, paired t p=6.56e-01, wilcoxon p=9.63e-01; nvidia NVFP4 wins 16, EXL3 wins 12, ties 60
-nvidia NVFP4 vs RedHatAI NVFP4: mean diff=-0.016 pts, paired t p=5.84e-01, wilcoxon p=3.76e-01; nvidia NVFP4 wins 13, RedHatAI NVFP4 wins 15, ties 60
-EXL3 vs RedHatAI NVFP4: mean diff=-0.030 pts, paired t p=3.17e-01, wilcoxon p=3.08e-01; EXL3 wins 13, RedHatAI NVFP4 wins 20, ties 55
-
-== Hard Mode subset (category P, 19 scenarios, 38 pts, per-run totals) ==
-EXL3            runs=[30, 29, 29, 26, 27] mean=28.20 sd=1.64 95%CI=+/-2.04
-nvidia NVFP4    runs=[31, 29, 28, 28, 27] mean=28.60 sd=1.52 95%CI=+/-1.88
-RedHatAI NVFP4  runs=[26, 30, 30, 33, 28] mean=29.40 sd=2.61 95%CI=+/-3.24
-nvidia NVFP4 vs EXL3: mean diff=+0.40 pts, t=+0.400, p=0.6997
-nvidia NVFP4 vs RedHatAI NVFP4: mean diff=-0.80 pts, t=-0.593, p=0.5734
-EXL3 vs RedHatAI NVFP4: mean diff=-1.20 pts, t=-0.871, p=0.4139
+=== PAIRWISE (Welch t, Holm-corrected, 6 pairs) ===
+EXL3       vs exl3-ple8   diff -2.9 pts  Welch p=0.0297  Holm p=0.1781  tie
+EXL3       vs RedHatAI    diff -2.6 pts  Welch p=0.0548  Holm p=0.2738  tie
+nvidia     vs exl3-ple8   diff -1.7 pts  Welch p=0.2484  Holm p=0.9934  tie
+RedHatAI   vs nvidia      diff +1.4 pts  Welch p=0.3489  Holm p=1.0000  tie
+EXL3       vs nvidia      diff -1.2 pts  Welch p=0.4050  Holm p=0.8099  tie
+RedHatAI   vs exl3-ple8   diff -0.3 pts  Welch p=0.8180  Holm p=0.8180  tie

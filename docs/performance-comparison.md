@@ -4,17 +4,19 @@ Three quantizations of **Qwen3.8-Flash-Next** ([base model](https://huggingface.
 measured head-to-head on one RTX PRO 6000 Blackwell (96 GB GDDR7, 4x8-pin,
 600 W default limit) on 2026-10-07, all under one serving stack: engine
 image `8294c3c914c0` (vLLM v0.31.0 fork), MTP3 speculative decoding, YaRN
-512K context, 2048-token batch budget. Power measurements use a 2 Hz
+512K context, 2048-token batch budget, plus a fourth checkpoint
+(`exl3-ple8`) as a PLE-format ablation. Power measurements use a 2 Hz
 on-card sampler with exact run-window attribution. The companion quality
 verdict is [quality-comparison.md](quality-comparison.md).
 
 **Headline: both NVFP4 builds prefill 20-30% faster than EXL3 at every
-power level; single-stream decode is a three-way tie at 600 W. EXL3 wins
-concurrency (C16 aggregate decode +45%), NVIDIA wins size and energy
-(prefill energy/token runs 14-31% under EXL3's best operating point). SM
-clock-lock sweep: locks Pareto-dominate power caps for the NVFP4 builds
-and roughly tie for EXL3; decode energy drops ~40% at a 1300-1600 MHz
-lock.**
+power level; single-stream decode is a three-way tie at 600 W. At C16 the
+fresh four-way sweep gives NVIDIA the lead (992 tok/s vs EXL3 856), with
+RedHatAI the only build that fails to scale (595). NVIDIA wins size and
+energy (prefill energy/token runs 14-31% under EXL3's best operating
+point). SM clock-lock sweep: locks Pareto-dominate power caps for the
+NVFP4 builds and roughly tie for EXL3; decode energy drops ~40% at a
+1300-1600 MHz lock.**
 
 ## Checkpoints
 
@@ -23,6 +25,7 @@ lock.**
 | EXL3 K4.25 v1 | [wrldsuksgo2mars/Qwen3.8-Flash-Next-EXL3-K4.25-v1](https://huggingface.co/wrldsuksgo2mars/Qwen3.8-Flash-Next-EXL3-K4.25-v1) [`73a050c`](https://huggingface.co/wrldsuksgo2mars/Qwen3.8-Flash-Next-EXL3-K4.25-v1/tree/73a050c27b8c488c65acd6d1c74e45ff02be5fab) | 179.4 GB | mixed K4/K5 EXL3 experts + BF16 non-experts on GPU; ~102 GB (95 GiB) BF16 PLE table host-mmap — same table as RHA |
 | NVIDIA NVFP4 | [nvidia/Qwen3.8-Flash-Next-NVFP4](https://huggingface.co/nvidia/Qwen3.8-Flash-Next-NVFP4) [`fc694b5`](https://huggingface.co/nvidia/Qwen3.8-Flash-Next-NVFP4/tree/fc694b54fb0174e0913e6adf86691ef85a4ead47) | 132.7 GB | NVFP4 main experts on GPU; FP8 PLE 51.2 GB pinned host |
 | RedHatAI NVFP4 | [RedHatAI/Qwen3.8-Flash-Next-NVFP4](https://huggingface.co/RedHatAI/Qwen3.8-Flash-Next-NVFP4) [`c8f2fb1`](https://huggingface.co/RedHatAI/Qwen3.8-Flash-Next-NVFP4/tree/c8f2fb1b9869f686b214782036123b10ff96d14a) | 174 GB | NVFP4 experts + BF16 non-experts ~81 GB on GPU; 102.5 GB BF16 PLE host-offloaded |
+| exl3-ple8 (ablation) | [wrldsuksgo2mars/Qwen3.8-Flash-Next-EXL3-K4.25-PLE-FP8-v1](https://huggingface.co/wrldsuksgo2mars/Qwen3.8-Flash-Next-EXL3-K4.25-PLE-FP8-v1) [`888306b`](https://huggingface.co/wrldsuksgo2mars/Qwen3.8-Flash-Next-EXL3-K4.25-PLE-FP8-v1/tree/888306bd3996d6317758c07df50622829259ad17) | 128.3 GB | EXL3 K4.25 experts (same as row 1); **FP8 PLE** ~48 GiB host-mmap — the PLE-format control for EXL3 |
 
 ## Power ladder (YaRN 512K, MTP3, C1; same day 2026-10-07)
 
@@ -82,7 +85,7 @@ J/1k = measured mean-window W x TTFT):
 - Cross-quant: **nvidia locked at 1900 MHz out-prefills EXL3 at full
   power** (51.0 s @ 402 W vs 56.0 s @ 580 W).
 - Full eight-point tables + methodology:
-  [qualification.md § SM clock-lock sweep](qualification.md#sm-clock-lock-sweep-2026-10-0708).
+  [qualification.md § SM clock-lock sweep](qualification.md#sm-clock-lock-sweep-2026-10-07).
 
 ## External evidence vs measured
 
@@ -94,38 +97,57 @@ J/1k = measured mean-window W x TTFT):
 | Treeru blog (this card) | 450 W costs −19% prefill, −1.3% decode | Matches our cap ladder (69.1 vs 57.1 s; 260 vs 261 tok/s) |
 | Undervolt community (LACT/VF-offset) | V/F-curve offset beats clock lock | Out of scope here: needs pynvml/root beyond this host's nvidia-smi-only grant; clock lock alone already recovers most of it on this workload |
 
-## Concurrency scaling (post-rebase core suite, EXL3 vs RedHatAI)
+## Concurrency scaling (protocol-clean core-suite legs, all four quants)
+
+Aggregate decode tok/s (C1/C2/C4/C8/C16), 256-token outputs, separate
+HTTP requests, model name stamped in each receipt:
 
 | Concurrency | C1 | C2 | C4 | C8 | C16 |
 |---|---|---|---|---|---|
-| EXL3 tok/s | 125.0 | 225.3 | 382.5 | 583.5 | **871.7** |
-| RHA NVFP4 tok/s | 128.3 | 222.0 | 362.2 | 586.9 | **601.8** |
+| EXL3 tok/s | 127.5 | 219.8 | 359.5 | 592.2 | **855.7** |
+| NVIDIA NVFP4 tok/s | 133.7 | 239.8 | 415.9 | 637.1 | **992.3** |
+| RedHatAI NVFP4 tok/s | 123.6 | 214.7 | 383.9 | 574.7 | **594.5** |
+| exl3-ple8 tok/s | 120.8 | 210.0 | 356.9 | 595.2 | **861.0** |
 
-Single-stream is identical; **EXL3 holds a +45% aggregate-decode lead at
-C16** — the NVFP4 MoE path does not scale to high concurrency the way
-the EXL3 path does (nvidia C16 not re-measured post-rebase).
+Single-stream is a four-way tie. At C16 **NVIDIA NVFP4 leads (992)**,
+EXL3 and its FP8-PLE ablation are close behind (856/861), and **RedHatAI
+is the one build that does not scale past C8 (594.5, +3% C8→C16 vs +44%
+for EXL3, +56% for NVIDIA)**. The earlier "EXL3 +45% at C16" note
+compared EXL3 only against RedHatAI and flagged nvidia as not-yet
+re-measured; with nvidia measured on the same stack that ordering is
+wrong — NVIDIA is the best scaler, not EXL3 (EXL3 is still +44% over
+RedHatAI). The C16 stall tracks the RedHatAI build specifically, not
+either of its headline formats: not the NVFP4 experts (NVIDIA NVFP4 is
+the best scaler) and not the BF16 PLE table (EXL3 carries the same
+format and scales to 856). The two NVFP4 builds differ jointly in
+quantization pipeline (LLM Compressor vs ModelOpt) and PLE format
+(BF16 vs FP8); neither axis is isolated at C16 here. Receipts:
+[core-suite-20261007](../benchmarks/core-suite-20261007/),
+[ple8-quality-20261007](../benchmarks/ple8-quality-20261007/core/).
 
 ## End-to-end eval legs (wall-clock, 16-way concurrent requests)
 
-| Leg | EXL3 | nvidia | RHA |
-|---|---|---|---|
-| GSM8K (1319 x 5-shot) | 492 s | **445 s** | 550 s |
-| IFEval (541) | 689 s | **673 s** | 862 s |
+| Leg | EXL3 | nvidia | RHA | exl3-ple8 |
+|---|---|---|---|---|
+| GSM8K (1319 x 5-shot) | 492 s | **445 s** | 550 s | 500 s |
+| IFEval (541) | 689 s | **673 s** | 862 s | 699 s |
 
-RHA's lag vs nvidia (+24%/+28%) is consistent with its 102.5 GB BF16 PLE
-host traffic vs 51.2 GB FP8 — the PLE table format matters on eval legs.
-It is not the only factor: EXL3 carries the same BF16 table yet still
-beats RHA (+12%/+25%), so the expert/serving path (compressed-tensors
-NVFP4 vs EXL3 trellis) contributes as well.
+The ple8 ablation refines the earlier PLE-format reading: swapping only
+the PLE table BF16→FP8 on the EXL3 path changed nothing (500/699 vs
+492/689 s), so PLE format alone does not set eval-leg wall time. The
+RHA-vs-nvidia gap (+24%/+28%) therefore reflects the combination of PLE
+format with each build's expert/serving path (compressed-tensors vs the
+FP4-GEMM/trellis paths), not the table size on its own.
 
 ## Bottom line
 
 - **Speed-first interactive (prefill-dominated):** nvidia NVFP4 at 600 W
   free-running — fastest TTFT at every depth, smallest checkpoint
   (132.7 GB), lowest energy/token of any build x config combination.
-- **Throughput-first multi-user:** EXL3 — the only build that keeps
-  scaling past C8 (871.7 tok/s at C16); its quality is also the joint
-  best (GSM8K 0.9196, orchid 5/5).
+- **Throughput-first multi-user:** nvidia NVFP4 — best C16 aggregate
+  decode (992.3 tok/s) on top of its prefill lead; EXL3 is second
+  (855.7) and remains the pick when quality must also be top-tier
+  (joint-best GSM8K, the only 5/5 orchid).
 - **Energy-constrained serving:** lock 2200 MHz for interactive use
   (~94% decode speed, ~2/3 decode power) or 1300-1600 MHz for
   batch/offline work (−13/−19% prefill J, −39/−40% decode J per token).
@@ -133,10 +155,11 @@ NVFP4 vs EXL3 trellis) contributes as well.
   at worst free.
 - **RHA NVFP4** matches EXL3 quality and nvidia prefill but pays nvidia's
   2x PLE host memory (the same ~102 GB BF16 table EXL3 carries — only
-  nvidia ships FP8 at 51.2 GB) and the worst eval-leg wall time; keep it
-  as the CT-format reference, not the performance pick.
+  nvidia ships FP8 at 51.2 GB), has the worst eval-leg wall time, and is
+  the only build that stalls at C16; keep it as the CT-format reference,
+  not the performance pick.
 - No cross-release comparisons: every number above is same-day
-  (2026-10-07/08) on image `8294c3c914c0`; `nvidia-smi -pl`/`-lgc` do
+  (2026-10-07) on image `8294c3c914c0`; `nvidia-smi -pl`/`-lgc` do
   not persist across reboots.
 
 Receipts:
@@ -146,5 +169,7 @@ Receipts:
 (ladders), [power-tuning-20261007](../benchmarks/power-tuning-20261007/),
 [power-300w-20261006](../benchmarks/power-300w-20261006/),
 [quality-nvfp4-vs-exl3-20261007](../benchmarks/quality-nvfp4-vs-exl3-20261007/)
-(C1-C16 + core suite), [quality-deep-20261007](../benchmarks/quality-deep-20261007/)
-(eval leg times). Full record: [qualification.md](qualification.md).
+(Oct-7 morning core leg), [core-suite-20261007](../benchmarks/core-suite-20261007/)
+(four-way C1-C16 + stamped core suites), [quality-deep-20261007](../benchmarks/quality-deep-20261007/)
+(eval leg times), [ple8-quality-20261007](../benchmarks/ple8-quality-20261007/)
+(PLE-format ablation). Full record: [qualification.md](qualification.md).

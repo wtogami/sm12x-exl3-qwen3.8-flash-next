@@ -1,0 +1,56 @@
+=== GSM8K (flexible-extract, 1319 items) ===
+scores: {'ple8-r1': 0.9196, 'ple8-r2': 0.9242, 'exl3-r1': 0.9196, 'exl3-r2': 0.9158, 'nvfp4': 0.8954, 'rha': 0.9196}
+ple8 mean of 2 runs: 0.9219
+EXL3 vs ple8 (direct PLE-format A/B, constant trellis experts):
+  ple8-r1 vs exl3-r1                          27/ 27 discordant (n=1319)  p=1.0000  tie
+  ple8-r2 vs exl3-r2                          40/ 29 discordant (n=1319)  p=0.2284  tie
+  ple8-r1 vs exl3-r2 (cross)                  40/ 35 discordant (n=1319)  p=0.6445  tie
+  ple8-r2 vs exl3-r1 (cross)                  32/ 26 discordant (n=1319)  p=0.5118  tie
+ple8 vs nvidia (FP8 PLE + NVFP4 experts):
+  ple8-r1 vs nvfp4                            74/ 42 discordant (n=1319)  p=0.0038  B>A
+  ple8-r2 vs nvfp4                            70/ 32 discordant (n=1319)  p=0.0002  B>A
+ple8 vs RHA (FP8 PLE vs BF16 PLE, NVFP4 experts):
+  ple8-r1 vs rha                              53/ 53 discordant (n=1319)  p=1.0000  tie
+  ple8-r2 vs rha                              51/ 45 discordant (n=1319)  p=0.6101  tie
+reference (recomputed from the three-way legs):
+  nvfp4 vs exl3-r1                            38/ 70 discordant (n=1319)  p=0.0027  A>B
+  nvfp4 vs rha                                39/ 71 discordant (n=1319)  p=0.0029  A>B
+  exl3-r1 vs rha                              51/ 51 discordant (n=1319)  p=1.0000  tie
+
+=== IFEval (541 prompts / 834 instructions) ===
+prompt_level_strict_acc: {'ple8-r1': 0.8189, 'ple8-r2': 0.8059, 'exl3-r1': 0.7985, 'exl3-r2': 0.8059, 'nvfp4': 0.7911, 'rha': 0.7874}
+  ple8 mean: 0.8124
+  ple8-r1 vs exl3-r1                          29/ 18 discordant (n=541)  p=0.1439  tie
+  ple8-r2 vs exl3-r2                          20/ 20 discordant (n=541)  p=1.0000  tie
+  ple8-r1 vs nvfp4                            31/ 16 discordant (n=541)  p=0.0400  B>A
+  ple8-r2 vs nvfp4                            26/ 18 discordant (n=541)  p=0.2912  tie
+  ple8-r1 vs rha                              34/ 17 discordant (n=541)  p=0.0241  B>A
+  ple8-r2 vs rha                              29/ 19 discordant (n=541)  p=0.1934  tie
+inst_level_strict_acc: {'ple8-r1': 0.8225, 'ple8-r2': 0.8118, 'exl3-r1': 0.8058, 'exl3-r2': 0.8213, 'nvfp4': 0.7986, 'rha': 0.7926}
+  ple8 mean: 0.8172
+  ple8-r1 vs exl3-r1                          44/ 30 discordant (n=834)  p=0.1302  tie
+  ple8-r2 vs exl3-r2                          30/ 38 discordant (n=834)  p=0.3961  tie
+  ple8-r1 vs nvfp4                            46/ 26 discordant (n=834)  p=0.0245  B>A
+  ple8-r2 vs nvfp4                            44/ 33 discordant (n=834)  p=0.2543  tie
+  ple8-r1 vs rha                              54/ 29 discordant (n=834)  p=0.0080  B>A
+  ple8-r2 vs rha                              49/ 33 discordant (n=834)  p=0.0970  tie
+prompt_level_loose_acc: {'ple8-r1': 0.841, 'ple8-r2': 0.8281, 'exl3-r1': 0.8189, 'exl3-r2': 0.8299, 'nvfp4': 0.8133, 'rha': 0.8041}
+  ple8 mean: 0.8345
+  ple8-r1 vs exl3-r1                          30/ 18 discordant (n=541)  p=0.1114  tie
+  ple8-r2 vs exl3-r2                          20/ 21 discordant (n=541)  p=1.0000  tie
+  ple8-r1 vs nvfp4                            31/ 16 discordant (n=541)  p=0.0400  B>A
+  ple8-r2 vs nvfp4                            27/ 19 discordant (n=541)  p=0.3020  tie
+  ple8-r1 vs rha                              35/ 15 discordant (n=541)  p=0.0066  B>A
+  ple8-r2 vs rha                              32/ 19 discordant (n=541)  p=0.0919  tie
+inst_level_loose_acc: {'ple8-r1': 0.8381, 'ple8-r2': 0.8261, 'exl3-r1': 0.8189, 'exl3-r2': 0.8369, 'nvfp4': 0.8129, 'rha': 0.8034}
+  ple8 mean: 0.8321
+  ple8-r1 vs exl3-r1                          45/ 29 discordant (n=834)  p=0.0805  tie
+  ple8-r2 vs exl3-r2                          30/ 39 discordant (n=834)  p=0.3356  tie
+  ple8-r1 vs nvfp4                            46/ 25 discordant (n=834)  p=0.0170  B>A
+  ple8-r2 vs nvfp4                            45/ 34 discordant (n=834)  p=0.2604  tie
+  ple8-r1 vs rha                              56/ 27 discordant (n=834)  p=0.0019  B>A
+  ple8-r2 vs rha                              52/ 33 discordant (n=834)  p=0.0503  tie
+
+Verdict (pre-registered rule): GSM8K ple8 mean >= 0.915 -> PLE-format
+hypothesis REFUTED on the significant axis; the nvidia deficit belongs
+to its ModelOpt NVFP4 expert pipeline.
