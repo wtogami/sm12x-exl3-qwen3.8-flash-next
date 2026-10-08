@@ -20,7 +20,7 @@ lock.**
 
 | Quant | HF card (measured revision) | Size | Weight footprint |
 |---|---|---|---|
-| EXL3 K4.25 v1 | [wrldsuksgo2mars/Qwen3.8-Flash-Next-EXL3-K4.25-v1](https://huggingface.co/wrldsuksgo2mars/Qwen3.8-Flash-Next-EXL3-K4.25-v1) [`73a050c`](https://huggingface.co/wrldsuksgo2mars/Qwen3.8-Flash-Next-EXL3-K4.25-v1/tree/73a050c27b8c488c65acd6d1c74e45ff02be5fab) | 179.4 GB | mixed K4/K5 EXL3 experts + BF16 non-experts on GPU; ~95 GiB BF16 PLE table host-mmap |
+| EXL3 K4.25 v1 | [wrldsuksgo2mars/Qwen3.8-Flash-Next-EXL3-K4.25-v1](https://huggingface.co/wrldsuksgo2mars/Qwen3.8-Flash-Next-EXL3-K4.25-v1) [`73a050c`](https://huggingface.co/wrldsuksgo2mars/Qwen3.8-Flash-Next-EXL3-K4.25-v1/tree/73a050c27b8c488c65acd6d1c74e45ff02be5fab) | 179.4 GB | mixed K4/K5 EXL3 experts + BF16 non-experts on GPU; ~102 GB (95 GiB) BF16 PLE table host-mmap — same table as RHA |
 | NVIDIA NVFP4 | [nvidia/Qwen3.8-Flash-Next-NVFP4](https://huggingface.co/nvidia/Qwen3.8-Flash-Next-NVFP4) [`fc694b5`](https://huggingface.co/nvidia/Qwen3.8-Flash-Next-NVFP4/tree/fc694b54fb0174e0913e6adf86691ef85a4ead47) | 132.7 GB | NVFP4 main experts on GPU; FP8 PLE 51.2 GB pinned host |
 | RedHatAI NVFP4 | [RedHatAI/Qwen3.8-Flash-Next-NVFP4](https://huggingface.co/RedHatAI/Qwen3.8-Flash-Next-NVFP4) [`c8f2fb1`](https://huggingface.co/RedHatAI/Qwen3.8-Flash-Next-NVFP4/tree/c8f2fb1b9869f686b214782036123b10ff96d14a) | 174 GB | NVFP4 experts + BF16 non-experts ~81 GB on GPU; 102.5 GB BF16 PLE host-offloaded |
 
@@ -112,9 +112,11 @@ the EXL3 path does (nvidia C16 not re-measured post-rebase).
 | GSM8K (1319 x 5-shot) | 492 s | **445 s** | 550 s |
 | IFEval (541) | 689 s | **673 s** | 862 s |
 
-RHA's ~2x penalty is consistent with its 102.5 GB BF16 PLE host traffic
-vs 51.2 GB FP8 (nvidia) — the PLE table format, not the expert quant,
-sets the long-context decode bandwidth floor.
+RHA's lag vs nvidia (+24%/+28%) is consistent with its 102.5 GB BF16 PLE
+host traffic vs 51.2 GB FP8 — the PLE table format matters on eval legs.
+It is not the only factor: EXL3 carries the same BF16 table yet still
+beats RHA (+12%/+25%), so the expert/serving path (compressed-tensors
+NVFP4 vs EXL3 trellis) contributes as well.
 
 ## Bottom line
 
@@ -129,9 +131,10 @@ sets the long-context decode bandwidth floor.
   batch/offline work (−13/−19% prefill J, −39/−40% decode J per token).
   Locks beat caps on every NVFP4 axis and tie them on EXL3 — locking is
   at worst free.
-- **RHA NVFP4** matches EXL3 quality and nvidia prefill but pays 2x PLE
-  host memory and the worst eval-leg wall time; keep it as the
-  CT-format reference, not the performance pick.
+- **RHA NVFP4** matches EXL3 quality and nvidia prefill but pays nvidia's
+  2x PLE host memory (the same ~102 GB BF16 table EXL3 carries — only
+  nvidia ships FP8 at 51.2 GB) and the worst eval-leg wall time; keep it
+  as the CT-format reference, not the performance pick.
 - No cross-release comparisons: every number above is same-day
   (2026-10-07/08) on image `8294c3c914c0`; `nvidia-smi -pl`/`-lgc` do
   not persist across reboots.

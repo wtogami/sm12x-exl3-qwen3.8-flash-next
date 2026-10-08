@@ -91,8 +91,9 @@ resolvable with the run counts used here; IFEval single-run gaps under
 
 ## Bottom line
 
-- **EXL3 ≈ RedHatAI** on every quality axis measured; RedHatAI pays ~2x
-  PLE memory (102.5 GB BF16 vs 51.2 GB FP8 pinned host) for it.
+- **EXL3 ≈ RedHatAI** on every quality axis measured; RedHatAI pays
+  nvidia's ~2x PLE memory (102.5 GB BF16 vs 51.2 GB FP8 pinned host;
+  EXL3 carries the same BF16 table) for it.
 - **NVIDIA NVFP4** is the smallest (132.7 GB) and fastest-prefilling build
   (131K TTFT 9.5 s vs EXL3 13.1 s) but costs a statistically real −2.4 pt
   GSM8K regression and shares the exact-repetition weakness.
