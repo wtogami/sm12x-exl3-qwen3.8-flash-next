@@ -2,26 +2,36 @@
 
 A TP=1 SM12x serving recipe with host-resident token embeddings and
 mmap-backed (checkpoint-mapped) PLE n-gram tables, FP8 KV cache, vision, CUDA
-graphs, and tuned MTP. The configured context is 262144 tokens and the
-scheduler has 16 request slots. C1 performance is the priority for the
-defaults; C16 throughput tradeoffs are recorded below.
+graphs, and tuned MTP. RTX defaults to a 524288-token context via YaRN 2.0
+scaling of the 262144-native window (`LONGCTX=1`); Spark serves the native
+262144. The scheduler has 16 request slots. C1 performance is the priority
+for the defaults; C16 throughput tradeoffs are recorded below.
 
-> **Rebased to vLLM v0.30.0 (unreleased).** The runtime now builds on the
-> official `vllm/vllm-openai:v0.30.0` image (CUDA 13.0.2), the newest tag with
-> published images; the latest tag, `v0.31.0rc1`, has no published image yet.
-> The model ships upstream as `vllm/models/qwen4_exp` (Qwen4Exp is the
-> upstream codename for Qwen3.8-Flash-Next; the pinned checkpoints declare
-> `model_type: qwen4_exp`), so this recipe no longer needs a custom vLLM base.
-> Several former ports are now upstream code and were dropped, FP8 QSA comes
-> from merged upstream PR 55557 instead of the B12x bridge, and the mmap PLE
-> backport follows the redesigned upstream PRs 58439+58835 (checkpoint-mapped
-> PLE). That design requires a GPU that dereferences pageable host memory
-> through the host page tables: it is supported on DGX Spark (GB10) and is
-> rejected at startup on discrete RTX cards, whose default is the upstream
-> host-offloaded resident table (`cpu_offload`, the v0.1.0-era behavior). All
-> benchmark numbers below were measured on the pre-rebase v0.3.1 image and are
-> retained as historical evidence; they are **not** new measurements of this
-> rebase. See [PROVENANCE.md](PROVENANCE.md).
+> **Current: vLLM v0.31.0 rebase, last full measurement day 2026-10-07.**
+> The runtime builds on the released official `vllm/vllm-openai:v0.31.0`
+> digest (CUDA 13.0, multiarch); the model ships upstream as
+> `vllm/models/qwen4_exp` (Qwen4Exp is the upstream codename for
+> Qwen3.8-Flash-Next), so no custom vLLM base is needed. FP8 QSA KV (PR
+> 55557) shipped upstream in v0.31.0 and the vendored copy was dropped; the
+> checkpoint-mapped PLE backport is re-derived at v0.31 as
+> `patches/ple-mmap-pr58439-58835-v0.31.patch` (upstream PRs 58439+58835
+> plus a pinned post-cut correction). RTX defaults: `exl3`, MTP3, YaRN
+> 512K, FP8 KV, host-offloaded PLE table (`PLE_MMAP=0`; discrete RTX
+> cannot dereference checkpoint mappings — Spark (GB10) defaults to mmap).
+>
+> **Current measurements** — image `8294c3c914c0`, 600 W, all four
+> checkpoints measured 2026-10-07:
+> [docs/quality-comparison.md](docs/quality-comparison.md) (EXL3 vs NVIDIA
+> NVFP4 vs RedHatAI NVFP4 vs the exl3-ple8 PLE-format ablation; paired
+> McNemar stats, 10-run tool-eval study) ·
+> [docs/performance-comparison.md](docs/performance-comparison.md) (power
+> ladder, SM clock-lock sweep, four-way concurrency scaling) ·
+> [docs/qualification.md](docs/qualification.md) (full dated record).
+>
+> **Historical:** every benchmark table further down in this file
+> predates the rebase (v0.1.0–v0.3.1-era images, 400 W RTX, 262144
+> context) and is retained as provenance, not as a current measurement.
+> See [PROVENANCE.md](PROVENANCE.md).
 
 | Profile (`QUANT`) | Checkpoint | PLE table format | Default MTP (RTX / Spark) |
 |---|---|---|---:|
@@ -33,21 +43,26 @@ defaults; C16 throughput tradeoffs are recorded below.
 EXL3 requires independent K4/K5 allocation for each expert's gate, up and down
 projection. The pinned B12x fork supports this geometry and preserves all 5951
 experts with unequal projection tiers across target and MTP layers. The
-`exl3-ple8` profile keeps those expert weights and uses NVIDIA's FP8 PLE table.
-The shipping default is **`exl3` with mmap enabled**, retaining the original
-BF16 PLE table. Choose `exl3-ple8` to save about 47.7 GiB of checkpoint payload,
-reduce download/storage requirements, or fit more PLE rows in the available
-file cache on a lower-RAM system. Its FP8 PLE table is approximately half the
-size of the BF16 table. The existing RTX measurements do not include a new
-BF16 mmap default run.
+`exl3-ple8` profile keeps those expert weights and uses an FP8 materialized
+PLE table. The shipping default is **`exl3`** with the platform PLE storage
+mode (RTX: host-offloaded resident table; Spark: mmap). Choose `exl3-ple8` to
+save about 47.7 GiB of checkpoint payload, reduce download/storage
+requirements, or fit more PLE rows in the available file cache on a lower-RAM
+system. The 2026-10-07 four-way ablation (`docs/quality-comparison.md`) found
+the FP8 PLE table statistically tied with BF16 on GSM8K, IFEval and
+tool-calling — its only measurable quality cost was one off-by-one orchid
+repetition miss (4/5 vs 5/5) — so the half-size table is a memory win, not a
+quality tax.
 
-The `exl3-ple8` profile now has a full benchmark matrix with **mmap enabled**
-in v0.2.0, including the quality checks in the main tables below.
-The original EXL3/NVIDIA performance columns below are unchanged historical
-results, not new runs. They differ in quantization and PLE precision from the
-mmap profile; this is not a controlled mmap-on/off comparison.
+The paragraphs and tables below this point are the historical record from the
+v0.1.0–v0.3.1 era (400 W RTX): the `exl3-ple8` profile's full benchmark matrix
+with mmap enabled from v0.2.0, including its quality checks. The original
+EXL3/NVIDIA columns are unchanged historical results, not new runs; they
+differ in quantization, PLE precision and runtime, so they are not a
+controlled mmap-on/off comparison.
 
-Selected-profile results: RTX columns use one 400 W card; Spark uses one GB10.
+Selected-profile results (historical, pre-rebase v0.3.1-era images): RTX
+columns use one 400 W card; Spark uses one GB10.
 
 | Measurement | EXL3 resident, MTP3 (v0.1.0) | NVFP4 resident, MTP2 (v0.1.0) | EXL3 PLE8 mmap, MTP3 | EXL3 mmap Spark (BF16 PLE), MTP2 |
 |---|---:|---:|---:|---:|
@@ -79,7 +94,7 @@ for checkpoint pages and the host. A lower value is configurable.
 | EXL3 MTP draft tokens | 3 | 2 |
 | Vocabulary projection | Native | B12x |
 | PLE storage | host-offloaded resident table | BF16 mmap checkpoint mapping |
-| Maximum context / request slots | 262144 / 16 | 262144 / 16 |
+| Maximum context / request slots | 524288 (YaRN, default) or 262144 native / 16 | 262144 / 16 |
 
 Use `B12X_VOCAB=0` for the native vocabulary projection or
 `B12X_VOCAB=1` to opt the RTX build in. `PLE_MMAP` overrides the platform
@@ -116,18 +131,21 @@ used by `start.sh`. Immutable image digests are recorded in
 
 | Platform | Image package | Status |
 |---|---|---|
-| RTX, linux/amd64 | `ghcr.io/tpurtell/rtx6k-exl3-qwen3.8-flash-next` | v0.3.1 (pre-rebase) |
-| Spark, linux/arm64 | `ghcr.io/tpurtell/spark-exl3-qwen3.8-flash-next` | v0.3.1 (pre-rebase) |
+| RTX, linux/amd64 | `ghcr.io/tpurtell/rtx6k-exl3-qwen3.8-flash-next` | v0.3.1 (predates the v0.30.0 and v0.31.0 rebases) |
+| Spark, linux/arm64 | `ghcr.io/tpurtell/spark-exl3-qwen3.8-flash-next` | v0.3.1 (predates the v0.30.0 and v0.31.0 rebases) |
 
-The published packages above predate the v0.30.0 rebase; `pull.sh` installs
+The published packages above predate both rebases; `pull.sh` installs
 them until rebased images are published. **Build with `build.sh` to get the
 rebased runtime.** The Spark package currently requires registry
 authentication while its visibility is private. The package owner can enable
 public pulls in GitHub package settings.
 
-The RTX measurements use one RTX PRO 6000 Blackwell 96 GB at **400 W**, driver
-595.71.05, and a Threadripper 9970X host with 183 GiB CPU RAM. Spark uses a GB10
-with approximately 121.63 GiB shared CPU/GPU memory and driver 580.159.03.
+Current RTX test host: one RTX PRO 6000 Blackwell 96 GB at its **600 W**
+default limit (4x8-pin power), driver 615.71.09, on a Threadripper 9970X with
+183 GiB CPU RAM; 2026-10-07 measurements under the v0.31.0 image use this
+configuration. The historical 400 W columns below were measured on the same
+class of card at a 400 W limit. Spark uses a GB10 with approximately
+121.63 GiB shared CPU/GPU memory and driver 580.159.03.
 Each target/draft token embedding adds approximately 1.184 GiB of host storage
 beyond the PLE table. Leave additional memory for model loading, the server
 and the operating system; 95/48 GiB are table sizes, not whole-server memory
@@ -138,12 +156,14 @@ requirements. Checkpoint weights are downloaded separately.
 bash stop.sh
 QUANT=exl3-ple8 bash download.sh
 QUANT=exl3-ple8 bash start.sh
-# NVIDIA: use QUANT=nvfp4 for download.sh, start.sh and stop.sh.
+# NVIDIA: use QUANT=nvfp4; RedHatAI: QUANT=nvfp4-redhatai
+# (download.sh, start.sh and stop.sh alike).
 # GPU=1 selects another GPU on a multi-GPU RTX host.
 ```
 
 The OpenAI-compatible endpoint is `http://127.0.0.1:8001/v1`, with served
-aliases `qwen38-exl3`, `qwen38-exl3-ple8` and `qwen38-nvfp4`. Tool calls use
+aliases `qwen38-exl3`, `qwen38-exl3-ple8`, `qwen38-nvfp4` and
+`qwen38-nvfp4-redhatai`. Tool calls use
 `qwen3_coder`; reasoning uses `qwen3`. Send
 `"chat_template_kwargs":{"enable_thinking":false}` for the non-thinking mode
 used in performance tests. The full tool-quality suite uses thinking enabled.
@@ -156,8 +176,8 @@ under `~/.cache/qwen38-rtx/<profile>`; checkpoint caches are mounted
 read-only. The launcher uses the native multiprocessing executor and passes
 the PLE storage mode through `--engram-config`.
 
-Sixteen scheduler slots do **not** mean sixteen simultaneous 262144-token
-requests fit in the KV pool. The final tests include sixteen overlapping
+Sixteen scheduler slots do **not** mean sixteen simultaneous full-context
+requests (262144 native, 524288 with the YaRN default) fit in the KV pool. The final tests include sixteen overlapping
 short-context client streams and a separate exact full-context boundary test.
 The KV pool is profiled at startup and can differ between hosts even with the
 same memory-utilization setting; runtime receipts retain the actual capacity.
@@ -173,10 +193,12 @@ request mix. Use the context and concurrency tables below to distinguish those c
 The lookup kernel reads rows in place from read-only mappings of the
 checkpoint's safetensors shards; a model-runner input-prep pass issues
 readahead for the rows a step needs. There is no table-sized device or pinned
-allocation. This is the upstream redesign from merged-into-main PRs
+allocation. This is the upstream redesign from PRs
 [#58439](https://github.com/vllm-project/vllm/pull/58439) and
 [#58835](https://github.com/vllm-project/vllm/pull/58835) (stacked, at head
-`47b9933db82d`), vendored and rebased onto v0.30.0 by this recipe.
+`47b9933db82d`), re-derived for the v0.31.0 base as
+`ple-mmap-pr58439-58835-v0.31.patch` with strict base hashes plus one pinned
+post-branch-cut upstream correction.
 
 **Platform support.** Direct checkpoint mapping requires a GPU that
 dereferences pageable host memory through the host page tables
@@ -273,9 +295,10 @@ from the final client matrix.
 
 - **EXL3 mixed MoE:** B12x, including the Qwen H2560/I640 projection planner fix
   pushed to the [fork](https://github.com/tpurtell/sparkinfer-glmrt/commit/c76a40ee684cb3ef7d2c223d56a9b9cff25a3a1e).
-- **QSA attention:** native upstream Triton QSA with the merged FP8 main-KV-cache
-  support (PR 55557, vendored for v0.30.0). The FP8 cache is dequantized inside
-  the QSA kernel with the layer's host-side scales; the indexer side caches and
+- **QSA attention:** native upstream Triton QSA with FP8 main-KV-cache
+  support (PR 55557), shipped in v0.31.0 itself — the v0.30-era vendored
+  copy is gone. The FP8 cache is dequantized inside the QSA kernel with the
+  layer's host-side scales; the indexer side caches and
   GDN state are unchanged. The former B12x QSA bridge is retired because v0.30.0
   rejects FP8 main caches and the merged upstream change supersedes the bridge;
   its pre-rebase measurements remain historical.
@@ -293,19 +316,23 @@ from the final client matrix.
 The [Dockerfile](Dockerfile) pins the base image and B12x revision. The
 [patches](patches) now carry the EXL3 namespace/MTP-mapping loader port, the
 qflashrt FP8-PLE annotation for EXL3 hybrids, exact host token embeddings, the
-optional B12x vocabulary projection and NVFP4 expert bridges, plus two
-strict-hash vendored upstream backports (QSA FP8 main cache, PR 55557;
-checkpoint-mapped PLE, PRs 58439+58835). The former MTP remap, FP8 draft
-weights, ModelOpt PLE selection and structured-output ports are upstream code
-in v0.30.0 and were dropped.
+optional B12x vocabulary projection and NVFP4 expert bridges, the
+CompressedTensors PLE branch that lets RedHatAI's checkpoint start under
+vLLM v0.31, and the strict-hash checkpoint-mapped PLE backport (upstream
+PRs 58439+58835 re-derived for v0.31.0). The QSA FP8 main-cache backport
+shipped upstream in v0.31.0 and was dropped, as were the former MTP remap,
+FP8 draft weights, ModelOpt PLE selection and structured-output ports
+(upstream code since v0.30/v0.31).
 [Provenance](PROVENANCE.md) distinguishes borrowed benchmark contracts from new
 integration work. Model licenses apply separately from the recipe's [license](LICENSE).
 
 The v0.1.0 runtime receipts retain the original image IDs. The follow-on
 v0.2.0 release adds mmap support and its reviewed validation fixes, with full
-`exl3-ple8` mmap qualification on RTX. This branch adds native Spark support
-and qualification of the original BF16 PLE default. Historical RTX evidence
-is retained.
+`exl3-ple8` mmap qualification on RTX; v0.3.0/v0.3.1 add native Spark support
+and the resident-mode repair. The current branch completes two engine
+rebases (v0.30.0, then released-v0.31.0) and carries the 2026-10-07 four-way
+RTX comparison in `docs/` — rebased release images are not yet published.
+Historical RTX evidence is retained.
 
 ## Reproduce qualification
 
@@ -332,6 +359,10 @@ is unreliable, and throughput figures include outputs that fail contracts.
 
 
 ## Final serving measurements
+
+> **Historical (pre-rebase v0.1.0–v0.3.1 images, 400 W RTX, 262144
+> context).** For current v0.31.0 / 600 W numbers see
+> [docs/performance-comparison.md](docs/performance-comparison.md).
 
 Generated from the linked raw receipts by `scripts/summarize-results.py`.
 
