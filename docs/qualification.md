@@ -856,6 +856,10 @@ speed-first leave 600 W free-running (locks above 2450 do nothing).
 
 ## NVFP4 (RedHatAI) vs EXL3 comparison (2026-10-07)
 
+A condensed three-way performance summary with HF card links lives in
+[performance-comparison.md](performance-comparison.md); this section keeps
+the full receipts.
+
 Checkpoint: `RedHatAI/Qwen3.8-Flash-Next-NVFP4` @ `c8f2fb1b` — MoE expert
 GEMMs only in NVFP4 (1x16 blocks, fp8e4m3 scales); attention, dense, GDN,
 MTP heads, and the 102.5 GB PLE table stay BF16 (host-offloaded).

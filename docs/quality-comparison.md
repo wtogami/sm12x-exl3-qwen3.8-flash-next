@@ -100,7 +100,8 @@ resolvable with the run counts used here; IFEval single-run gaps under
   plausibly had the most to lose, they don't.
 - Quality-equivalence comes with a performance caveat in the other
   direction: EXL3 scales far better at C16 decode (871.7 vs 601.8 tok/s).
-  Full performance ladder: [qualification.md](qualification.md).
+  Full performance comparison:
+  [performance-comparison.md](performance-comparison.md).
 
 Receipts:
 [quality-deep-20261007](../benchmarks/quality-deep-20261007/) (GSM8K/IFEval
