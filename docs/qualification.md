@@ -753,6 +753,107 @@ power. Receipts: [power-tuning-20261007](../benchmarks/power-tuning-20261007/).
 `nvidia-smi -pl` does not persist across reboots; persist via a boot unit
 if a cap should survive restarts.
 
+## SM clock-lock sweep (2026-10-07/08)
+
+Follow-up to the tuning study above, which tested locks only at two points
+chosen to *match* a 360 W cap. Here `-lgc` is the primary control: the
+power limit stays at the 600 W maximum so the lock is the intended limiter.
+Points: free-running reference + {1300, 1600, 1900, 2200, 2450, 2700,
+2900} MHz, interleaved low/high order, 90 s settle per point; per point a
+131K warmup, 2x 523K + 2x 131K prefills (256-token outputs) and a
+sustained C1 decode block (`benchmark-decode.py`, 4096 tokens x 3 runs).
+A 2 Hz sampler logs power.draw / clocks.sm / temperature and run windows
+are attributed exactly, so mean-window power and energy/token are
+measured, not inferred from the cap. Both engines (EXL3, nvidia NVFP4),
+same night, MTP3, YaRN 512K, image `8294c3c914c0`. Runner
+`scripts/clock-sweep.py`, analysis `scripts/analyze-clock-sweep.py`,
+receipts: [clock-sweep-20261007](../benchmarks/clock-sweep-20261007/).
+
+TTFT medians; W = mean over the 523K prefill window; J/1k = energy per
+1000 prefill tokens; decode = sustained short-prompt C1 (the core-suite
+metric; the ladder's ~261 tok/s is a different, post-prefill measurement).
+
+EXL3 (free-running reference: eff 2365 MHz):
+
+| Lock | eff MHz | 131K s | 523K s | pf W | J/1k pf | dec tok/s | dec W |
+|---|---|---|---|---|---|---|---|
+| 1300 | 1297 | 20.8 | 89.4 | 317 | **54.1** | 95.7 | 228 |
+| 1600 | 1590 | 17.7 | 75.8 | 375 | 54.4 | 106.4 | 256 |
+| 1900 | 1877 | 15.3 | 65.7 | 452 | 56.7 | 115.8 | 289 |
+| 2200 | 2107 | 14.1 | 60.2 | 512 | 58.9 | 123.2 | 322 |
+| 2450 | 2250 | 13.6 | 57.7 | 542 | 59.8 | 127.0 | 344 |
+| 2700 | 2331 | 13.5 | 56.5 | 581 | 62.7 | 129.8 | 403 |
+| 2900 | 2318 | 13.6 | 57.2 | 581 | 63.4 | 132.4 | 513 |
+| free | 2365 | 13.6 | 56.0 | 580 | 62.1 | 132.1 | 515 |
+
+nvidia NVFP4 (free-running reference: eff 2616 MHz):
+
+| Lock | eff MHz | 131K s | 523K s | pf W | J/1k pf | dec tok/s | dec W |
+|---|---|---|---|---|---|---|---|
+| 1300 | 1297 | 15.2 | 67.2 | 291 | **37.3** | 105.9 | 231 |
+| 1600 | 1590 | 13.1 | 57.7 | 339 | 37.4 | 117.2 | 256 |
+| 1900 | 1884 | 11.6 | 51.0 | 402 | 39.2 | 124.8 | 286 |
+| 2200 | 2170 | 10.6 | 46.5 | 462 | 41.1 | 129.8 | 316 |
+| 2450 | 2369 | 10.2 | 44.5 | 492 | 41.8 | 130.2 | 335 |
+| 2700 | 2587 | 9.8 | 42.3 | 573 | 46.3 | 136.6 | 394 |
+| 2900 | 2586 | 9.9 | 42.5 | 576 | 46.8 | 134.9 | 497 |
+| free | 2616 | 9.8 | 42.1 | 575 | 46.3 | 136.0 | 493 |
+
+Findings:
+
+- **`-lgc` is a ceiling, not a pin.** Requests above the power-cooled
+  ceiling throttle to it: the EXL3 ceiling is ~2300-2365 MHz (even the
+  2200 lock averages 2107 under sustained prefill), while nvidia's FP4
+  GEMMs draw less per watt of clock and hold ~2590. Locks at 2700/2900
+  are indistinguishable from free-running, and 2450 is slightly *worse*
+  on prefill (57.7 s vs 56.0 s) — locking near/above the ceiling trades
+  DVFS's smooth clock choice for a boost-then-throttle oscillation.
+- **TTFT tracks clock sub-linearly** (~clock^0.75-0.8 prefill; decode
+  more memory-bound at ~clock^0.4-0.55 but decidedly *not* clock-blind).
+- **Prefill energy optimum is a flat basin at 1300-1600 MHz**: EXL3
+  54.1-54.4 J/1k (−12.8% vs free-running 62.1), nvidia 37.3-37.4
+  (−19.3% vs 46.3). GreenLLM's mid-band optimum confirmed; the curve is
+  a basin plus linear rise, not a sharp U.
+- **Decode is where locks win outright**: at 1300-1600 MHz the card
+  draws ~230-256 W instead of ~493-515 W free-running, for 72-86% of
+  the speed — decode energy per token −38.8% (EXL3) / −40.0% (nvidia),
+  exceeding the H200 study's ≤32%. Their lock-dominates-caps direction
+  confirms on Blackwell workstation; their "decode flat above ~1590 MHz"
+  does not — free-running decode here sustains 2365-2616 MHz at ~500 W
+  (MoE expert GEMMs + MTP3 speculation are compute-bound enough to keep
+  scaling with clock). The 2200 lock is the interactive compromise:
+  −6.7%/−4.6% decode speed for −33%/−33% decode energy.
+- **Lock vs cap frontier** (cap points from the same-day ladders; their
+  measured draw is unknown but bounded above by the cap — free-running
+  prefill draws ~96% of 600 W and hard caps hold within a few W of the
+  limit): for nvidia locks dominate caps — lock1600 (57.7 s, 37.4 J)
+  beats pl330 (62.9 s, ≤39.7 J) on both axes and lock2200 (46.5 s,
+  41.1 J) is 6% faster than pl450 (49.7 s, ≤42.8 J) at equal-or-better
+  energy. For EXL3 locks and caps converge within ~1 J/1k at matched
+  operating points (lock1300 54.1 J vs pl330/pl300 corrected to
+  ~54-56) — the tuning study's "shape of the limit doesn't matter"
+  holds for trellis-heavy prefill, but with FP4 GEMMs the driver's DVFS
+  becomes measurably wasteful and a clean lock recovers it.
+- Community ~310 W "sweet spot" claims for this card land inside the
+  1300-1600 MHz basin (291-375 W draw), and the "raise the limit, limit
+  the clocks" recipe is exactly this sweep — confirmed.
+- **Cross-quant headline**: nvidia locked at 1900 MHz prefill is *faster*
+  than EXL3 free-running at full power (51.0 s @ 402 W vs 56.0 s @
+  580 W); locked at 1600 MHz it stays within 3% of EXL3's unlocked
+  prefill using 58% of the power (339 vs 580 W).
+- Lock only at or below the ceiling: locked at 2900 (over the ceiling),
+  sustained decode draws ~100 W more than at the 2700 lock for the same
+  speed on both quants — the overdriven boost target costs voltage and
+  buys nothing.
+- Reference jitter: the morning free-running reference (57.4 s median)
+  vs the evening sweep's (56.0 s) differ by 2.4% at identical config —
+  treat single prefill legs as ±3%.
+
+Operating points: batch/energy-first serving lock 1300-1600 MHz (prefill
+−13/−19% J, decode −39/−40% J); interactive lock 2200 MHz (~5% energy
+margin at ~7% speed cost, free-running decode power halved);
+speed-first leave 600 W free-running (locks above 2450 do nothing).
+
 ## NVFP4 (RedHatAI) vs EXL3 comparison (2026-10-07)
 
 Checkpoint: `RedHatAI/Qwen3.8-Flash-Next-NVFP4` @ `c8f2fb1b` — MoE expert

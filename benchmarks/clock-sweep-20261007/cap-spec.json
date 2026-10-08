@@ -1,0 +1,13 @@
+[
+  {"quant": "exl3", "label": "pl600", "watts": 600, "file": "benchmarks/clock-sweep-20261007/cap-receipts/exl3-600w.json"},
+  {"quant": "exl3", "label": "pl450", "watts": 450, "file": "benchmarks/clock-sweep-20261007/cap-receipts/exl3-450w.json"},
+  {"quant": "exl3", "label": "pl330", "watts": 330, "file": "benchmarks/power-tuning-20261007/ttft-matrix.jsonl", "config": "pl330-unlocked"},
+  {"quant": "exl3", "label": "pl300", "watts": 300, "file": "benchmarks/clock-sweep-20261007/cap-receipts/exl3-300w.json"},
+  {"quant": "exl3", "label": "pl360", "watts": 360, "file": "benchmarks/clock-sweep-20261007/cap-receipts/exl3-pl360.json"},
+  {"quant": "exl3", "label": "lock1300+pl360", "watts": 360, "file": "benchmarks/power-tuning-20261007/ttft-matrix.jsonl", "config": "lock1300+pl360"},
+  {"quant": "exl3", "label": "lock1250+pl360", "watts": 360, "file": "benchmarks/power-tuning-20261007/ttft-matrix.jsonl", "config": "lock1250+pl360"},
+  {"quant": "nvfp4", "label": "pl600", "watts": 600, "file": "benchmarks/nvfp4-comparison-20261007/nvfp4-nvidia-ladder.jsonl"},
+  {"quant": "nvfp4", "label": "pl450", "watts": 450, "file": "benchmarks/nvfp4-comparison-20261007/nvfp4-nvidia-ladder.jsonl"},
+  {"quant": "nvfp4", "label": "pl330", "watts": 330, "file": "benchmarks/nvfp4-comparison-20261007/nvfp4-nvidia-ladder.jsonl"},
+  {"quant": "nvfp4", "label": "pl300", "watts": 300, "file": "benchmarks/nvfp4-comparison-20261007/nvfp4-nvidia-ladder.jsonl"}
+]

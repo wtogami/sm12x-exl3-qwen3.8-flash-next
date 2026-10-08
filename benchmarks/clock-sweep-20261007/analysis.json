@@ -1,0 +1,267 @@
+{
+  "exl3": {
+    "points": {
+      "unlocked": {
+        "requested_mhz": "unlocked",
+        "effective_mhz": 2364.7,
+        "ttft_131k_s": 13.56,
+        "ttft_523k_s": 56.03,
+        "prefill_tok_s": 9338.4,
+        "mean_w_prefill": 579.7,
+        "j_per_1k_prefill_tok": 62.072,
+        "decode_tps": 132.1,
+        "mean_w_decode": 514.8
+      },
+      "2200": {
+        "requested_mhz": "2200",
+        "effective_mhz": 2107.3,
+        "ttft_131k_s": 14.12,
+        "ttft_523k_s": 60.19,
+        "prefill_tok_s": 8694.1,
+        "mean_w_prefill": 511.6,
+        "j_per_1k_prefill_tok": 58.847,
+        "decode_tps": 123.2,
+        "mean_w_decode": 322.3
+      },
+      "1900": {
+        "requested_mhz": "1900",
+        "effective_mhz": 1877.4,
+        "ttft_131k_s": 15.32,
+        "ttft_523k_s": 65.74,
+        "prefill_tok_s": 7959.1,
+        "mean_w_prefill": 451.5,
+        "j_per_1k_prefill_tok": 56.725,
+        "decode_tps": 115.8,
+        "mean_w_decode": 288.9
+      },
+      "2450": {
+        "requested_mhz": "2450",
+        "effective_mhz": 2249.9,
+        "ttft_131k_s": 13.62,
+        "ttft_523k_s": 57.72,
+        "prefill_tok_s": 9066.2,
+        "mean_w_prefill": 541.7,
+        "j_per_1k_prefill_tok": 59.748,
+        "decode_tps": 127.0,
+        "mean_w_decode": 344.0
+      },
+      "1600": {
+        "requested_mhz": "1600",
+        "effective_mhz": 1590.2,
+        "ttft_131k_s": 17.66,
+        "ttft_523k_s": 75.77,
+        "prefill_tok_s": 6906.2,
+        "mean_w_prefill": 375.4,
+        "j_per_1k_prefill_tok": 54.358,
+        "decode_tps": 106.4,
+        "mean_w_decode": 256.2
+      },
+      "2700": {
+        "requested_mhz": "2700",
+        "effective_mhz": 2331.2,
+        "ttft_131k_s": 13.53,
+        "ttft_523k_s": 56.47,
+        "prefill_tok_s": 9266.0,
+        "mean_w_prefill": 580.9,
+        "j_per_1k_prefill_tok": 62.69,
+        "decode_tps": 129.8,
+        "mean_w_decode": 403.1
+      },
+      "1300": {
+        "requested_mhz": "1300",
+        "effective_mhz": 1297.0,
+        "ttft_131k_s": 20.82,
+        "ttft_523k_s": 89.43,
+        "prefill_tok_s": 5851.3,
+        "mean_w_prefill": 316.8,
+        "j_per_1k_prefill_tok": 54.138,
+        "decode_tps": 95.7,
+        "mean_w_decode": 228.1
+      },
+      "2900": {
+        "requested_mhz": "2900",
+        "effective_mhz": 2318.3,
+        "ttft_131k_s": 13.62,
+        "ttft_523k_s": 57.17,
+        "prefill_tok_s": 9152.7,
+        "mean_w_prefill": 580.5,
+        "j_per_1k_prefill_tok": 63.423,
+        "decode_tps": 132.4,
+        "mean_w_decode": 512.7
+      }
+    },
+    "cap_points": {
+      "pl600": {
+        "watts": 600.0,
+        "ttft_523k_s": 57.1,
+        "ttft_131k_s": null,
+        "decode_tps": 261.3,
+        "j_per_1k_prefill_tok_upper": 65.472
+      },
+      "pl450": {
+        "watts": 450.0,
+        "ttft_523k_s": 68.85,
+        "ttft_131k_s": 15.4,
+        "decode_tps": 260.9,
+        "j_per_1k_prefill_tok_upper": 59.213
+      },
+      "pl330": {
+        "watts": 330.0,
+        "ttft_523k_s": 89.59,
+        "ttft_131k_s": 21.13,
+        "decode_tps": 240.1,
+        "j_per_1k_prefill_tok_upper": 56.497
+      },
+      "pl300": {
+        "watts": 300.0,
+        "ttft_523k_s": 97.71,
+        "ttft_131k_s": null,
+        "decode_tps": 224.9,
+        "j_per_1k_prefill_tok_upper": 56.017
+      },
+      "pl360": {
+        "watts": 360.0,
+        "ttft_523k_s": 83.14,
+        "ttft_131k_s": null,
+        "decode_tps": 249.2,
+        "j_per_1k_prefill_tok_upper": 57.199
+      },
+      "lock1300+pl360": {
+        "watts": 360.0,
+        "ttft_523k_s": 89.38,
+        "ttft_131k_s": 20.81,
+        "decode_tps": 183.8,
+        "j_per_1k_prefill_tok_upper": 61.496
+      },
+      "lock1250+pl360": {
+        "watts": 360.0,
+        "ttft_523k_s": 93.89,
+        "ttft_131k_s": 21.89,
+        "decode_tps": 172.1,
+        "j_per_1k_prefill_tok_upper": 64.592
+      }
+    }
+  },
+  "nvfp4": {
+    "points": {
+      "unlocked": {
+        "requested_mhz": "unlocked",
+        "effective_mhz": 2616.3,
+        "ttft_131k_s": 9.85,
+        "ttft_523k_s": 42.12,
+        "prefill_tok_s": 12423.2,
+        "mean_w_prefill": 574.6,
+        "j_per_1k_prefill_tok": 46.249,
+        "decode_tps": 136.0,
+        "mean_w_decode": 493.1
+      },
+      "2200": {
+        "requested_mhz": "2200",
+        "effective_mhz": 2170.1,
+        "ttft_131k_s": 10.64,
+        "ttft_523k_s": 46.54,
+        "prefill_tok_s": 11243.6,
+        "mean_w_prefill": 461.7,
+        "j_per_1k_prefill_tok": 41.067,
+        "decode_tps": 129.8,
+        "mean_w_decode": 316.2
+      },
+      "1900": {
+        "requested_mhz": "1900",
+        "effective_mhz": 1883.8,
+        "ttft_131k_s": 11.62,
+        "ttft_523k_s": 51.0,
+        "prefill_tok_s": 10259.3,
+        "mean_w_prefill": 402.1,
+        "j_per_1k_prefill_tok": 39.193,
+        "decode_tps": 124.8,
+        "mean_w_decode": 285.7
+      },
+      "2450": {
+        "requested_mhz": "2450",
+        "effective_mhz": 2368.8,
+        "ttft_131k_s": 10.19,
+        "ttft_523k_s": 44.46,
+        "prefill_tok_s": 11769.6,
+        "mean_w_prefill": 492.3,
+        "j_per_1k_prefill_tok": 41.83,
+        "decode_tps": 130.2,
+        "mean_w_decode": 334.5
+      },
+      "1600": {
+        "requested_mhz": "1600",
+        "effective_mhz": 1590.2,
+        "ttft_131k_s": 13.11,
+        "ttft_523k_s": 57.7,
+        "prefill_tok_s": 9069.4,
+        "mean_w_prefill": 339.0,
+        "j_per_1k_prefill_tok": 37.38,
+        "decode_tps": 117.2,
+        "mean_w_decode": 255.6
+      },
+      "2700": {
+        "requested_mhz": "2700",
+        "effective_mhz": 2586.6,
+        "ttft_131k_s": 9.85,
+        "ttft_523k_s": 42.28,
+        "prefill_tok_s": 12376.1,
+        "mean_w_prefill": 572.9,
+        "j_per_1k_prefill_tok": 46.289,
+        "decode_tps": 136.6,
+        "mean_w_decode": 393.6
+      },
+      "1300": {
+        "requested_mhz": "1300",
+        "effective_mhz": 1297.0,
+        "ttft_131k_s": 15.24,
+        "ttft_523k_s": 67.17,
+        "prefill_tok_s": 7789.9,
+        "mean_w_prefill": 290.7,
+        "j_per_1k_prefill_tok": 37.316,
+        "decode_tps": 105.9,
+        "mean_w_decode": 230.6
+      },
+      "2900": {
+        "requested_mhz": "2900",
+        "effective_mhz": 2585.6,
+        "ttft_131k_s": 9.91,
+        "ttft_523k_s": 42.51,
+        "prefill_tok_s": 12307.9,
+        "mean_w_prefill": 576.3,
+        "j_per_1k_prefill_tok": 46.82,
+        "decode_tps": 134.9,
+        "mean_w_decode": 496.5
+      }
+    },
+    "cap_points": {
+      "pl600": {
+        "watts": 600.0,
+        "ttft_523k_s": 42.92,
+        "ttft_131k_s": 9.53,
+        "decode_tps": 261.0,
+        "j_per_1k_prefill_tok_upper": 49.22
+      },
+      "pl450": {
+        "watts": 450.0,
+        "ttft_523k_s": 49.73,
+        "ttft_131k_s": 11.26,
+        "decode_tps": 262.6,
+        "j_per_1k_prefill_tok_upper": 42.763
+      },
+      "pl330": {
+        "watts": 330.0,
+        "ttft_523k_s": 62.86,
+        "ttft_131k_s": 14.37,
+        "decode_tps": 259.2,
+        "j_per_1k_prefill_tok_upper": 39.646
+      },
+      "pl300": {
+        "watts": 300.0,
+        "ttft_523k_s": 68.41,
+        "ttft_131k_s": 15.62,
+        "decode_tps": 248.1,
+        "j_per_1k_prefill_tok_upper": 39.224
+      }
+    }
+  }
+}
