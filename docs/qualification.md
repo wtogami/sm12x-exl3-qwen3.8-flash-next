@@ -1036,15 +1036,6 @@ analysis.txt); single-run records in
 [quality-deep-20261007](../benchmarks/quality-deep-20261007/); EXL3 dev9
 record in [exl3-dev9-graph-tools](../benchmarks/exl3-dev9-graph-tools.md).
 
-## Date convention (2026-10-07)
-
-The host's local day is what this report uses. Legs that ran across UTC
-midnight on the night of 2026-10-07 (SM clock-lock sweep, exl3-ple8 deep
-quality, the protocol-clean re-runs) are dated 2026-10-07 throughout:
-same machine, same climate-controlled ambient, same image and config, so
-they are directly comparable to the daytime legs. Receipt-internal UTC
-timestamps are kept as recorded.
-
 ## exl3-ple8: the FP8-PLE variant (2026-10-07)
 
 To find out whether NVIDIA's GSM8K deficit could be explained by its FP8
