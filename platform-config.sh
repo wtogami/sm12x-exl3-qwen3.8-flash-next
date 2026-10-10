@@ -56,7 +56,7 @@ qwen38_ensure_cdi() {
     echo "  dnf install nvidia-container-toolkit nvidia-container-toolkit-selinux" >&2
     return 1
   fi
-  driver="$(nvidia-smi --query-gpu=driver_version --format=csv,noheader 2>/dev/null | head -n1)"
+  driver="$(nvidia-smi --query-gpu=driver_version --format=csv,noheader 2>/dev/null | head -n1 || true)"
   reason=""
   if [[ ! -s "$spec" ]]; then
     reason="absent"
