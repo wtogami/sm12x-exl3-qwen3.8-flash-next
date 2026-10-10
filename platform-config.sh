@@ -32,3 +32,50 @@ case "$(uname -m)" in
     ;;
   *) echo "Unsupported architecture: $(uname -m)" >&2; exit 2 ;;
 esac
+
+# Docker wants --gpus; podman's docker shim rejects its device= syntax and
+# resolves GPUs through CDI instead.
+qwen38_is_podman() { docker --version 2>/dev/null | grep -qi podman; }
+
+# podman only reads CDI specs from the cdi_spec_dirs list in containers.conf,
+# whose defaults (/etc/cdi and /var/run/cdi) are root-owned, and a spec is not
+# portable: it pins absolute host driver paths carrying the driver version. So
+# both the spec and the directory registration live under $HOME and are
+# refreshed whenever the installed driver no longer matches the spec. This
+# needs no root, only the nvidia-container-toolkit package.
+qwen38_ensure_cdi() {
+  local config_home="${XDG_CONFIG_HOME:-$HOME/.config}"
+  local spec_dir="$config_home/cdi"
+  local spec="$spec_dir/nvidia.yaml"
+  local dropin="$config_home/containers/containers.conf.d/99-qwen38-nvidia-cdi.conf"
+  local driver reason
+  if ! command -v nvidia-ctk >/dev/null 2>&1 || ! command -v nvidia-cdi-hook >/dev/null 2>&1; then
+    echo "nvidia-ctk and nvidia-cdi-hook are required for podman GPU passthrough and are not" >&2
+    echo "installed. Neither Fedora nor RPM Fusion packages them; on Fedora 44 use the COPR:" >&2
+    echo "  dnf copr enable @ai-ml/nvidia-container-toolkit" >&2
+    echo "  dnf install nvidia-container-toolkit nvidia-container-toolkit-selinux" >&2
+    return 1
+  fi
+  driver="$(nvidia-smi --query-gpu=driver_version --format=csv,noheader 2>/dev/null | head -n1)"
+  reason=""
+  if [[ ! -s "$spec" ]]; then
+    reason="absent"
+  elif [[ -n "$driver" ]] && ! grep -q "$driver" "$spec"; then
+    reason="pins a driver other than the installed $driver"
+  elif ! grep -q "name: all" "$spec"; then
+    reason="has no nvidia.com/gpu=all entity"
+  fi
+  if [[ -n "$reason" ]]; then
+    echo "Generating $spec ($reason)" >&2
+    mkdir -p "$spec_dir"
+    nvidia-ctk --quiet cdi generate --output="$spec" \
+      || { echo "nvidia-ctk cdi generate failed writing $spec" >&2; return 1; }
+  fi
+  # A drop-in leaves any containers.conf the deployment already owns untouched.
+  if ! grep -qs "\"$spec_dir\"" "$config_home/containers/containers.conf" \
+       "$config_home"/containers/containers.conf.d/*.conf /etc/containers/containers.conf; then
+    mkdir -p "$(dirname "$dropin")"
+    printf '[engine]\ncdi_spec_dirs = ["/etc/cdi", "/var/run/cdi", "%s"]\n' "$spec_dir" >"$dropin"
+    echo "Registered $spec_dir as a cdi_spec_dirs entry in $dropin" >&2
+  fi
+}
