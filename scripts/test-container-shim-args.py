@@ -54,9 +54,19 @@ def sandbox(tmp: Path, shim: str, driver: str | None, hermetic: bool = True) -> 
     home = tmp / 'home'
     home.mkdir(parents=True, exist_ok=True)
     base = {key: value for key, value in os.environ.items()
-            if key not in ('XDG_CONFIG_HOME', 'IMAGE', 'QUANT', 'HF_TOKEN', 'HOME')}
-    return base | {'PATH': path, 'HOME': str(home),
-                   'TEST_ARCH': 'x86_64', 'HF_CACHE': str(tmp / 'hf')}
+            if key not in ('XDG_CONFIG_HOME', 'IMAGE', 'QUANT', 'HF_TOKEN', 'HOME', 'RUNTIME_CACHE',
+                           'PLE_MMAP', 'VLLM_PLE_MMAP', 'MTP_TOKENS', 'LONGCTX', 'GPU', 'ENFORCE_EAGER')}
+    return base | {'PATH': path, 'HOME': str(home), 'TEST_ARCH': 'x86_64',
+                   'HF_CACHE': str(tmp / 'hf'), 'RUNTIME_CACHE': str(tmp / 'runtime')}
+
+
+def checkpoint(env: dict) -> None:
+    """start.sh refuses to launch without an unpacked checkpoint on the host."""
+    folder = (Path(env['HF_CACHE']) / 'hub'
+              / 'models--wrldsuksgo2mars--Qwen3.8-Flash-Next-EXL3-K4.25-v1'
+              / 'snapshots' / '73a050c27b8c488c65acd6d1c74e45ff02be5fab')
+    folder.mkdir(parents=True, exist_ok=True)
+    (folder / 'config.json').write_text('{}')
 
 
 def run(script: str, env: dict) -> str:
@@ -70,25 +80,40 @@ for shim in ('docker', 'podman'):
     with tempfile.TemporaryDirectory() as folder:
         tmp = Path(folder) / shim
         env = sandbox(tmp, shim, DRIVER)
+        checkpoint(env)
         download = run('download.sh', env).splitlines()
         assert f'{tmp}/hf:/hf:z' in download, 'the cache mount must be relabelled with :z'
         assert ('--userns=keep-id' in download) == (shim == 'podman')
         assert 'HF_TOKEN' not in download
         assert 'HF_TOKEN' in run('download.sh', env | {'HF_TOKEN': 'hf_secret'})
+        # start.sh runs first so a bare pull.sh deployment is covered: it has
+        # to reach the GPU without build.sh having provisioned anything.
+        start = run('start.sh', env).splitlines()
+        assert f'{tmp}/runtime:/root/.cache:z' in start, 'the runtime cache mount must be relabelled'
+        assert f'{tmp}/hf:/root/.cache/huggingface:ro,z' in start, ':Z would isolate it from download.sh'
+        assert ('--gpus' in start) == (shim == 'docker'), 'podman rejects the docker device= syntax'
+        assert ('nvidia.com/gpu=all' in start) == (shim == 'podman')
+        assert ('NVIDIA_VISIBLE_DEVICES=all' in start) == (shim == 'podman')
         build = run('build.sh', env)
         assert 'CUTE_DSL_ARCH=sm_120a' in build
         spec = tmp / 'home' / '.config' / 'cdi' / 'nvidia.yaml'
         assert spec.is_file() == (shim == 'podman'), 'CDI provisioning must follow the shim'
         results.append({'shim': shim, 'userns_keep_id': shim == 'podman',
-                        'cdi_provisioned': shim == 'podman', 'passed': True})
+                        'relabelled_mounts': True, 'cdi_provisioned': shim == 'podman', 'passed': True})
 
-# build.sh must still build when CDI provisioning cannot succeed.
+# build.sh must still build when CDI provisioning cannot succeed, but start.sh
+# cannot run at all without a GPU, so it stops there.
 with tempfile.TemporaryDirectory() as folder:
     env = sandbox(Path(folder), 'podman', driver=None)
+    checkpoint(env)
     build = run('build.sh', env)
     assert 'nvidia-container-toolkit' in build, 'a missing toolkit must name the package'
     assert 'CUTE_DSL_ARCH=sm_120a' in build, 'a CDI failure must not stop the GPU-free build'
-    results.append({'toolkit': 'missing', 'build_still_runs': True, 'passed': True})
+    refused = subprocess.run(['/bin/bash', str(root / 'start.sh')], env=env,
+                             capture_output=True, text=True)
+    assert refused.returncode != 0 and 'nvidia-container-toolkit' in refused.stderr
+    assert not (Path(env['HOME']) / '.config' / 'cdi').exists()
+    results.append({'toolkit': 'missing', 'build_still_runs': True, 'start_refuses': True, 'passed': True})
 
 with tempfile.TemporaryDirectory() as folder:
     tmp = Path(folder)

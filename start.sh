@@ -60,13 +60,23 @@ esac
 if [[ "${MTP_TOKENS:-3}" != 0 ]]; then
   EXTRA_ARGS+=(--speculative-config "{\"method\":\"mtp\",\"num_speculative_tokens\":${MTP_TOKENS:-3}}")
 fi
-# Docker wants --gpus; podman's docker shim rejects its device= syntax and
-# resolves GPUs through CDI instead.
-if docker --version 2>/dev/null | grep -qi podman; then
+# The GPU half of the docker/podman split lives in platform-config.sh. Serving
+# is where the GPU is actually needed, and a pull.sh deployment never runs
+# build.sh, so the CDI spec is provisioned here as well. Unlike build.sh this
+# one is fatal: without it the container cannot start at all.
+if qwen38_is_podman; then
+  qwen38_ensure_cdi
   GPU_ARGS=(--device nvidia.com/gpu=all -e NVIDIA_VISIBLE_DEVICES="${GPU:-all}")
 else
   GPU_ARGS=(--gpus "device=${GPU:-0}")
 fi
+# The container writes its triton and cuda build caches into RUNTIME_CACHE and
+# runs as root so the image's /root/.cache paths resolve. Under rootless podman
+# container uid 0 is the invoking host user, so those caches land user-owned
+# without a keep-id mapping. The :z relabel is the separate SELinux half: both
+# mounts keep their host cache_home_t label, which container_t cannot access.
+# :z rather than :Z because these caches are shared with download.sh, and :Z
+# would isolate each run behind its own MCS category.
 docker run -d --name "${CONTAINER_NAME:-qwen38-${QUANT:-exl3}}" \
   "${GPU_ARGS[@]}" \
   --ipc=host --network=host \
@@ -75,8 +85,8 @@ docker run -d --name "${CONTAINER_NAME:-qwen38-${QUANT:-exl3}}" \
   -e TRITON_CACHE_DIR=/root/.cache/triton \
   -e QWEN38_B12X_VOCAB="${B12X_VOCAB:-$DEFAULT_B12X_VOCAB}" \
   -e QWEN38_B12X_NVFP4="${B12X_NVFP4:-0}" \
-  -v "$RUNTIME_CACHE:/root/.cache" \
-  -v "$HF_CACHE:/root/.cache/huggingface:ro" \
+  -v "$RUNTIME_CACHE:/root/.cache:z" \
+  -v "$HF_CACHE:/root/.cache/huggingface:ro,z" \
   "${IMAGE:-$DEFAULT_IMAGE}" "$MODEL_PATH" \
   --served-model-name "qwen38-${QUANT:-exl3}" --port "${PORT:-8001}" \
   --tensor-parallel-size 1 --distributed-executor-backend mp \
