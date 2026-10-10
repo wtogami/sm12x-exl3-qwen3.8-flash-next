@@ -103,20 +103,24 @@ qwen38_ensure_cdi() {
     # routine launch stays quiet.
     recorded="$(sed -n 2p "$marker" 2>/dev/null || true)"
     mkdir -p "$spec_dir" || return 1
-    # Written beside the spec and moved into place, so a concurrent container
-    # start never sees a half-written spec and a failed generation never
-    # truncates the good one. The name avoids a .yaml suffix so podman's
-    # cdi_spec_dirs scan skips it.
-    fresh="$(mktemp "$spec_dir/.nvidia-cdi-XXXXXX")" || return 1
-    if nvidia-ctk --quiet cdi generate --output="$fresh"; then
-      mv -f "$fresh" "$spec"
+    # Stage outside spec_dir: a partially written file there would end in .yaml
+    # and be scanned as a second spec of the same kind, which podman rejects
+    # outright. nvidia-ctk also rewrites an --output path whose extension it
+    # does not recognise, appending .yaml, so the file it produces is not the
+    # one we asked for. Generating as nvidia.yaml avoids that, and the move is
+    # atomic because both sides are under $HOME.
+    stage="$(mktemp -d "$config_home/.qwen38-cdi-XXXXXX")" || return 1
+    if nvidia-ctk --quiet cdi generate --output="$stage/nvidia.yaml" && [[ -s "$stage/nvidia.yaml" ]]; then
+      mv -f "$stage/nvidia.yaml" "$spec"
+      rm -rf "$stage"
       printf '%s\n%s\n' "$(sha256sum "$spec" | cut -d' ' -f1)" "${driver:-unknown}" >"$marker"
       [[ -n "$recorded" && "$recorded" == "$driver" ]] \
         || echo "Generated $spec (driver ${recorded:-none} -> ${driver:-unknown})" >&2
     else
-      rm -f "$fresh"
-      # Generation is atomic, so the previous spec is intact; keep serving from
-      # it while it still resolves rather than failing an otherwise good launch.
+      rm -rf "$stage"
+      # The previous spec was never opened by the generator, so it is intact;
+      # keep serving from it while it still resolves rather than failing an
+      # otherwise good launch.
       if [[ -s "$spec" ]] && [[ -z "$(qwen38_cdi_stale_paths "$spec")" ]]; then
         echo "nvidia-ctk cdi generate failed; continuing with the existing $spec" >&2
       else

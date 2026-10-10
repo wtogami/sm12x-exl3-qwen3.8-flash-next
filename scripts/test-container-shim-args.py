@@ -16,6 +16,9 @@ OLD, NEW = '615.71.09', '620.11.01'
 # satisfiability can be exercised.
 CDI_SCRIPT = """#!/bin/sh
 for arg in "$@"; do case "$arg" in --output=*) out="${arg#--output=}";; esac; done
+# nvidia-ctk rewrites an --output path whose extension it does not recognise
+# rather than writing where it was told; any caller must expect this.
+case "$out" in *.yaml|*.json) ;; *) out="$out.yaml";; esac
 {
   printf 'cdiVersion: 0.7.0\\nkind: nvidia.com/gpu\\ndevices:\\n  - name: all\\n  - name: 0\\n'
   printf '    containerEdits:\\n      deviceNodes:\\n        - path: /dev/null\\n      mounts:\\n'
@@ -138,7 +141,12 @@ for shim in ('docker', 'podman'):
         assert spec.is_file() == (shim == 'podman'), 'CDI provisioning must follow the shim'
         if shim == 'podman':
             assert (spec.parent / '.nvidia.yaml.qwen38').is_file(), 'a generated spec records its digest'
-            assert not list(spec.parent.glob('.nvidia-cdi-*')), 'the temp spec must not survive'
+            # A second *.yaml in a scanned directory is a second spec of the
+            # same kind, which makes podman reject the whole directory, so a
+            # leftover here is not cosmetic.
+            assert [p.name for p in spec.parent.glob('*.yaml')] == ['nvidia.yaml'], 'no spec leftovers'
+            assert 'kind: nvidia.com/gpu' in spec.read_text(), 'the installed spec has content'
+            assert not list(Path(env['HOME'], '.config').glob('.qwen38-cdi-*')), 'staging dir is removed'
         results.append({'shim': shim, 'userns_keep_id': shim == 'podman',
                         'relabelled_mounts': True, 'cdi_provisioned': shim == 'podman', 'passed': True})
 
@@ -175,6 +183,7 @@ with tempfile.TemporaryDirectory() as folder:
     out = ok('build.sh', env)
     assert f'(driver {OLD} -> {NEW})' in out and f'.so.{NEW}' in spec.read_text()
     assert f'.so.{OLD}' not in spec.read_text() and NEW in marker.read_text()
+    assert [p.name for p in spec.parent.glob('*.yaml')] == ['nvidia.yaml'], 'no spec leftovers'
 
     # A library the newer driver adds is invisible to any existence check,
     # because the old spec simply never referenced it. Regeneration finds it.
