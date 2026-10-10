@@ -138,44 +138,72 @@ Two facts that are easy to get wrong:
    cdi_spec_dirs = ["/etc/cdi", "/var/run/cdi", "/home/rtx/.config/cdi"]
    ```
 
-`build.sh` performs both steps on a podman host through `qwen38_ensure_cdi` in
-`platform-config.sh`, and re-running it is a no-op.
+`build.sh` and `start.sh` perform both steps on a podman host through
+`qwen38_ensure_cdi` in `platform-config.sh`.
 
-### When the spec must be regenerated
+### Regeneration policy: regenerate ours, validate theirs
 
-`build.sh` regenerates automatically when the spec is missing, when the version
-reported by `nvidia-smi --query-gpu=driver_version` no longer appears in the
-spec, or when the `nvidia.com/gpu=all` entity is absent. The manual list:
+Regenerating unconditionally is the transparent answer to driver updates, and
+at 0.22s it costs nothing. But it is the wrong answer applied to the wrong file:
+a spec is also an access-control artefact. Narrowing discovery to particular
+GPUs — `nvidia-ctk cdi generate --device-ids 0`, or dropping the `all` entity —
+is how you stop a container reaching GPUs it was never given, and CDI enforces
+that at the device node and cgroup level, unlike `NVIDIA_VISIBLE_DEVICES`,
+which is a soft in-container filter. Rewriting such a spec silently widens GPU
+exposure, on a path the operator did not choose, and the only symptom is a GPU
+showing up in `nvidia-smi`.
 
-- **Any driver update — mandatory, and the common case.** The spec pins 103
-  absolute host paths embedding the driver version:
-  `/usr/lib64/libcuda.so.615.71.09`,
-  `/usr/lib64/libnvidia-ptxjitcompiler.so.615.71.09`,
-  `/lib/firmware/nvidia/615.71.09/gsp_ga10x.bin`, and so on. Once the package
-  is upgraded those paths do not exist and the container fails during CDI setup
-  before any process starts. Also regenerate when switching driver *source*
-  (RPM Fusion to a `.run` installer), which moves the libraries.
-- **GPU topology changes.** Adding, removing, or replacing a GPU changes the
-  index and UUID entities; enabling or disabling MIG replaces them wholesale.
-  The spec also carries the DRM nodes (`/dev/dri/card1`, `/dev/dri/renderD128`)
-  and their GIDs, so a change of render node ordering counts.
-- **Enabling a service the spec probes for.** Generation records what it found
-  and warns about what it did not: `/nvidia-persistenced/socket`,
-  `/nvidia-fabricmanager/socket` (NVSwitch), `/tmp/nvidia-cuda-mps`, `nvidia-imex`.
-  Turning one on later, e.g. `systemctl enable --now nvidia-persistenced`,
-  needs a regeneration to pick up its socket.
-- **A podman or toolkit upgrade** that moves the supported `cdiVersion`
-  (currently 0.7.0) or changes hook handling.
+So ownership decides the behaviour, recorded as the spec's digest in
+`~/.config/cdi/.nvidia.yaml.qwen38`:
 
-No regeneration needed for: rebuilding or re-pulling the image (the spec is
-host-side state), a reboot (it is a plain file), or changing `QUANT`, `GPU`, or
-any model argument.
+- **Absent, or ours** → regenerate on every run. Generation writes a temp file
+  and moves it into place, so a concurrent start never sees a partial spec and a
+  failed generator cannot truncate a good one. Output stays quiet unless the
+  driver version actually changed.
+- **Not ours** (never generated here, or hand-edited since — the digest catches
+  both) → validated, never rewritten. If every host path it names still resolves,
+  it is used as-is. If not, `start.sh` fails naming each missing path and says
+  how to proceed, rather than quietly replacing it.
+- **Generator fails** → if the previous spec still resolves, keep serving from
+  it with a warning; only fail when nothing usable remains.
 
-When in doubt, force it:
+The host-path check reads `hostPath` from mounts and `path` from device nodes,
+which CDI treats as the host source when no `hostPath` is given, and ignores
+`containerPath`. On `gg` that is 60 + 24 entries, 67 unique, resolved in under a
+millisecond.
+
+Handing a spec to the recipe, or taking it back:
 
 ```sh
-rm ~/.config/cdi/nvidia.yaml && ./build.sh
+rm ~/.config/cdi/nvidia.yaml ~/.config/cdi/.nvidia.yaml.qwen38 && ./build.sh   # recipe owns it
+nvidia-ctk cdi generate --device-ids 0 --output=~/.config/cdi/nvidia.yaml      # you own it
 ```
+
+An existing spec written before this policy existed has no digest and is
+therefore treated as yours until you delete it once and let `build.sh` recreate
+it.
+
+### What regeneration picks up
+
+Because our own spec is rebuilt from live host state, all of these are handled
+without a heuristic:
+
+- **Any driver update — the common case.** The spec embeds 103 host paths
+  carrying the driver version: `/usr/lib64/libcuda.so.615.71.09`,
+  `/lib/firmware/nvidia/615.71.09/gsp_ga10x.bin`, and so on. A stale one fails
+  during CDI setup, before any process starts. This also covers switching driver
+  *source*, RPM Fusion to a `.run` installer, which relocates the libraries at
+  the same version — a case a version comparison gets wrong in both directions.
+- **Libraries and sockets the new driver adds.** An existence check can only see
+  paths the old spec already named, so additions are invisible to it by
+  definition. Regeneration finds them: `/nvidia-persistenced/socket`,
+  `/nvidia-fabricmanager/socket`, `/tmp/nvidia-cuda-mps`, `nvidia-imex`.
+- **GPU topology**: adding, removing or replacing a GPU, MIG enable/disable, and
+  DRM node renumbering (`/dev/dri/renderD128` and its GID are in the spec).
+- **A podman or toolkit upgrade** moving the supported `cdiVersion`.
+
+Nothing to do for: rebuilding or re-pulling the image, a reboot, or changing
+`QUANT`, `GPU`, or any model argument.
 
 ## Rootless bind mounts: `download.sh` and `start.sh`
 
