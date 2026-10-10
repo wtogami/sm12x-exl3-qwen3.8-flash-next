@@ -179,6 +179,12 @@ rm ~/.config/cdi/nvidia.yaml ~/.config/cdi/.nvidia.yaml.qwen38 && ./build.sh   #
 nvidia-ctk cdi generate --device-ids 0 --output=~/.config/cdi/nvidia.yaml      # you own it
 ```
 
+Narrow by device id rather than by deleting the `all` entity. `--device-ids 0`
+still emits an `all` entity scoped to that device, so `start.sh`, which always
+asks for `nvidia.com/gpu=all`, keeps working. Delete `all` instead and podman
+reports the device unresolvable and `start.sh` stops — correctly, but confusingly,
+since the spec looks fine.
+
 An existing spec written before this policy existed has no digest and is
 therefore treated as yours until you delete it once and let `build.sh` recreate
 it.
