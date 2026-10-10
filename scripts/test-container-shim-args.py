@@ -67,7 +67,7 @@ def run(script: str, env: dict) -> str:
 
 results = []
 for shim in ('docker', 'podman'):
-    with tempfile.TemporaryDirectory(dir='/tmp/opencode') as folder:
+    with tempfile.TemporaryDirectory() as folder:
         tmp = Path(folder) / shim
         env = sandbox(tmp, shim, DRIVER)
         download = run('download.sh', env).splitlines()
@@ -83,14 +83,14 @@ for shim in ('docker', 'podman'):
                         'cdi_provisioned': shim == 'podman', 'passed': True})
 
 # build.sh must still build when CDI provisioning cannot succeed.
-with tempfile.TemporaryDirectory(dir='/tmp/opencode') as folder:
+with tempfile.TemporaryDirectory() as folder:
     env = sandbox(Path(folder), 'podman', driver=None)
     build = run('build.sh', env)
     assert 'nvidia-container-toolkit' in build, 'a missing toolkit must name the package'
     assert 'CUTE_DSL_ARCH=sm_120a' in build, 'a CDI failure must not stop the GPU-free build'
     results.append({'toolkit': 'missing', 'build_still_runs': True, 'passed': True})
 
-with tempfile.TemporaryDirectory(dir='/tmp/opencode') as folder:
+with tempfile.TemporaryDirectory() as folder:
     tmp = Path(folder)
     env = sandbox(tmp, 'podman', DRIVER)
     spec = tmp / 'home' / '.config' / 'cdi' / 'nvidia.yaml'
