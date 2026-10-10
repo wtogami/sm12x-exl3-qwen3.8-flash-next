@@ -180,8 +180,8 @@ rm ~/.config/cdi/nvidia.yaml && ./build.sh
 ## Rootless bind mounts: `download.sh` and `start.sh`
 
 Mounting a host cache into a rootless container hits two unrelated faults that
-produce the identical `PermissionError: [Errno 13] Permission denied`. Both are
-fixed for `download.sh`; `start.sh` needs the same treatment on its two mounts.
+produce the identical `PermissionError: [Errno 13] Permission denied`. All three
+scripts now carry the fix; `download.sh` was the first to show it.
 
 **Container UIDs are not host UIDs.** `download.sh` pins the container user with
 `--user $(id -u):$(id -g)`, which is right under docker — it shares the host uid
@@ -208,6 +208,33 @@ Relabeling is recursive and persists on the host directory; `restorecon -R
 ```
 -rw-r--r--. 1 rtx rtx system_u:object_r:container_file_t:s0 201279328 ...
 ```
+
+`start.sh` needs no `--userns=keep-id`: it deliberately runs as container root so
+the image's `/root/.cache` paths resolve, and under rootless podman container uid
+0 is already the invoking user. Verified — its cache writes arrive as `rtx:rtx`.
+
+## Docker behaviour is unchanged
+
+Every podman-specific change is behind `qwen38_is_podman`, so a docker host
+executes the same command line it did before:
+
+| | docker | rootless podman |
+| --- | --- | --- |
+| GPU | `--gpus device=$GPU` | `--device nvidia.com/gpu=all` |
+| CDI provisioning | not run | spec + `containers.conf.d` drop-in |
+| `download.sh` user namespace | none | `--userns=keep-id` |
+| `--user $(id -u):$(id -g)` | unchanged | unchanged |
+
+One change is deliberately unconditional: the `:z` mount option. It is a
+standard volume mode that docker also accepts, and it is a no-op wherever
+SELinux is off, which is the common docker deployment. Where docker runs on an
+SELinux-enforcing host the relabel is required there too, so gating it would
+only reintroduce the same bug on a different engine.
+
+The added `HF_TOKEN` passthrough is likewise engine-independent and strictly
+additive: the token was never forwarded before, so gated checkpoints could not
+be fetched at all. It is passed by name (`-e HF_TOKEN`), so the secret does not
+appear in the image history or in the container's argv.
 
 ## Checked and *not* a problem
 
