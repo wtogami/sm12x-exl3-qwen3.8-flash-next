@@ -513,6 +513,87 @@ gather leaves the GPU.
 
 ---
 
+## 7. RedHatAI's C16 plateau is not a storage effect
+
+Prompted by this profile holding the most compressed PLE bytes of anything that
+actually serves on `burst` (69.11 GiB of its 95.37 GiB table inside compressed
+extents): could btrfs zstd be why `nvfp4-redhatai` alone stops scaling past C8,
+594.5 tok/s at C16 against EXL3's 855.7? No. Five measurements, three of them
+independent, kill it.
+
+| control | measured | consequence |
+| --- | --- | --- |
+| serving path | `platform-config.sh:31` sets `DEFAULT_PLE_MMAP=0` on x86_64; the three RTX finals holding a runtime capture (`exl3-final`, `exl3-ple8-final`, `nvfp4-final`) all show `VLLM_PLE_CPU_OFFLOAD=1` and a `PleOffloadWorker` | the table lives in pinned host RAM; decode issues no filesystem reads |
+| storage traffic | live worker `read_bytes: 36864` against `RssShmem: 136,613,268 kB` | 36 KiB of block I/O for a whole session, with a 95 GiB table in play |
+| residency | `fincore` on the RHA PLE blob: RES 95.4G / SIZE 95.4G, 25,000,126 pages; `Cached: 692 GiB` of 995 GiB | even a mapped path would find every page warm |
+| table identity | shard_0 of exl3 and of RHA are both `[2500012, 160] BF16`; first and last 32 MiB sha256 equal (`85514f34…`, `178df174…`) | the PLE axis is *controlled* between the two builds, not merely similar |
+| compression direction | exl3 80.47/95.37 GiB compressed (84.4%) vs RHA 69.11/95.37 (72.5%) | the better-scaling build is the more compressed one |
+
+### The identity result is new to this repo
+
+EXL3 and RedHatAI carry byte-identical n-gram tables, which nothing here
+recorded before. Their blobs share **zero** filenames (checked pairwise across
+all four repos: exl3 vs RHA 0, RHA vs nvidia 0; only exl3 vs exl3-ple8 share,
+9 blobs / 62.2 GiB of identical expert tensors). The files differ, not the
+data: EXL3 spreads its 128 shard tensors across 14 files, RedHatAI keeps all
+95.37 GiB in a single `model-00001-of-00005.safetensors`, so the same bytes sit
+at absolute offset 5,613,256,936 in one and 20,768 in the other. Different
+offsets give different extent boundaries, which is exactly why identical logical
+data reads as 84.4% versus 72.5% compressed. This is also the evidence that
+`performance-comparison.md`'s "same table as RHA" note was literally true, and
+the reason the section 3 compression finding cannot be the C16 differentiator.
+
+### What the compression finding is actually for
+
+Not for these numbers. It bears on:
+
+* cold load, where ~19% fewer device bytes trades against decompressing the
+  whole table — roughly a wash on a sequential read, and unmeasured here;
+* the **mapped** path: the Spark default, and any future streaming engine, where
+  a random 4 KiB gather against a compressed extent pays the full ~26x;
+* nothing on the pinned RTX serve path.
+
+### A repo comment that is wrong, deliberately left unedited
+
+`platform-config.sh:28-31` and `start.sh:28-34` both justify `DEFAULT_PLE_MMAP=0`
+by asserting the CUDA driver rejects the checkpoint mapping on discrete cards.
+Section 4 showed that is false, and three RTX legs are direct
+counter-evidence — `exl3-ple8-mmap-final`, `resident-v031-mmap` and
+`rtx-structured-final` all ran `VLLM_PLE_MMAP=1` on this platform and started;
+the last one's startup log reads "PLE mmap: readahead pre-pass active (posix_fadvise WILLNEED), 14/14 shard
+files opened" and "layer 1 attached, 128 shards, 320001536 rows x 320 B
+(95.37 GiB on disk), 32 workers". The default is still right — section 4 measures
+~55 us per cold page — but the stated reason is the false premise P2 was parked
+on. Left untouched only because that file needs its own approval; the fix is to
+keep the default and correct the comment, not to flip the gate.
+
+### Two archive defects this turned up
+
+1. `benchmark-decode.py:151` and `benchmark-prefill.py:135` hardcoded a
+   `--profile` enum missing `nvfp4-redhatai` while `model-profiles.sh` knows four
+   quants. `benchmark-suite.sh:27,30` passes `--profile "$QUANT"`, so
+   `QUANT=nvfp4-redhatai` died in argparse before issuing a request, and the
+   workaround stamped RedHatAI receipts `quant_profile: "nvfp4"` — the NVIDIA
+   profile, whose `PLE_BYTES_PER_ELEMENT` is 1, i.e. an FP8 table claim about a
+   BF16 checkpoint. The field is write-only across the repo, so widening the enum
+   cannot move a measurement: done in `530b4cc`. Historical receipts still carry
+   the wrong label and cannot be corrected without breaking provenance.
+2. No RedHatAI `runtime.json` exists anywhere in the archive, and the four-way
+   and C16-repeat directories hold none for any build, so the PLE mode of the very
+   blocks analysed here was never captured. That is not a formality: three RTX
+   legs *did* run the mapping, so the mode genuinely varies on this platform.
+   Fixed since, and the mechanism was not an env read: the mode is not an
+   environment variable on the current recipe at all. `start.sh:49-56` passes
+   `--engram-config '{"cpu_offload": true, "checkpoint_mapped": true|false}'`, so
+   the authoritative record is the container's argv. That is also why
+   `runtime.json` stopped carrying it: `0066e6a` deleted the
+   `VLLM_PLE_CPU_OFFLOAD` allowlist entry and the
+   `or item.startswith("VLLM_PLE_MMAP")` clause without replacing them with an
+   argv read, and nothing in the launcher sets those variables any more.
+   `scripts/server_state.py` now reads argv in one place; the profilers embed a
+   `server` block, whose `claims_disagree` flags a receipt that contradicts its
+   own endpoint; and `benchmark-suite.sh` writes `runtime.json` per leg.
+
 ## Appendix: one-liners for each measurement
 
 All run as `opencode`, no root. `CKPT` = any checkpoint blob under the HF `blobs/` dir.
