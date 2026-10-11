@@ -367,3 +367,70 @@ A 1024-row cold gather failed with `CUDA out of memory`. That box had only
 this is **not** evidence about UVM page-table limits; it is an artifact of
 co-tenancy. Re-measure on an idle GPU before drawing anything from it. Nothing
 in this section was measured on `gg`.
+
+---
+
+## 5. Prior art, checked against the sources (corrections to plan section 3)
+
+The plan's table is broadly right. These are the places where the primary
+sources say something more specific, or something different.
+
+| item | status as of this check | the part that matters here |
+| --- | --- | --- |
+| [vLLM #54129](https://github.com/vllm-project/vllm/pull/54129) | open, 28 Aug 2026 | CPU gather from shard mappings + H2D, piecewise CUDA graphs split around the PLE op, optional `VLLM_PLE_MMAP_PREWARM`. Numbers are **DGX Spark only** (25.1 tok/s warm C1, ~18 tok/s first cold request). No discrete-RTX benchmark. Do not relabel as sm_120. |
+| [vLLM #54070](https://github.com/vllm-project/vllm/pull/54070) | open **draft**, "Depends on #53899" | The RTX PRO 6000 matrix the plan quotes. Author caveat: boots were still partly cached. Strongest evidence in the whole survey that **cache state and the cgroup limit are part of the benchmark spec**, not incidental. |
+| [vLLM #53908](https://github.com/vllm-project/vllm/issues/53908) | open issue, no PR | "The goal is not to include the auxiliary GPU in TP or EP"; only the n-gram table on the second device. |
+| [vLLM #58439](https://github.com/vllm-project/vllm/pull/58439) + [#58835](https://github.com/vllm-project/vllm/pull/58835) | both open | This is what the repo vendors. #58835 is the `MADV_WILLNEED` + `MADV_POPULATE_READ` fill: serial touch 4.6-4.7 ms -> 0.36 ms. Independent commenter's port onto v0.30: 62.5 -> 93.1 tok/s on coding-agent sessions, cold 50K prefill 1,144 -> 1,896 tok/s. #58439 itself calls #54129 "the portable path ... which works on discrete GPUs". |
+| [SGLang #36567](https://github.com/sgl-project/sglang/pull/36567) | open **draft** | `SGLANG_QWEN4_PLE_NVME_PATH`; Rust persistent io_uring, page-aligned storage, bounded submit batches, GIL-free reads; pinned staging; overlap with the preceding decoder layer. TP1 + FP8 E4M3 only. Its own caveat: "An exact end-to-end rerun on this Rust implementation remains before the draft is marked ready for review", so the 14.39/24.77 tok/s figures are **predecessor-reader** qualification, not the submitted reader. |
+| [sglang-ssd-stream](https://github.com/garnermccloud/sglang-ssd-stream) + [checkpoint](https://huggingface.co/garnermccloud/Qwen3.8-Flash-Next-NVFP4-SSD-Stream) | third-party | 51,200,245,760-byte read-only sidecar holding 128 FP8 shards; **32 MiB registered page pool + two 16 MiB pinned staging**; dedupes the exact 4 KiB pages per step; converts on a side CUDA stream. RTX PRO 6000: RAM 148.5-156.2, SSD 164.7, but random-row-heavy requests **126-137**, with the explicit disclaimer "The 164.7 tok/s run is not a claim that SSD is faster than RAM." |
+| [llama.cpp #28136](https://github.com/ggml-org/llama.cpp/pull/28136) | open | Author: "In an ideal world, maybe this would even be handled by something more elegant like `io_uring`. But, this works." The Linux table the plan quotes is RX 9070 XT/Vulkan, 23,664-token prompt, **cold eviction verified with mincore**: mmap demand-fault 18.01 s (207,913 major faults) vs 1 worker 15.75 s vs 32 workers **2.39 s**; warm, the two are within noise (154.6 vs 154.0 ms). Windows regression is real but warm-cache-specific: "2-4% slower than the mmap path, not faster", ~27 GiB table staying warm in NTFS cache. |
+
+### Two things the survey adds that the plan does not have
+
+**a) An O_DIRECT alignment requirement coarser than 4 KiB is possible.**
+`open(2)` says the restrictions on buffer address, length and file offset "vary
+by filesystem", and misaligned operations "may either fail with EINVAL or fall
+back to buffered I/O" -- exactly the silent degradation measured in section 3.
+`statx(STATX_DIOALIGN)` reports the real per-filesystem requirement. A prototype
+should query it, not hardcode 4 KiB. A 160-byte FP8 row is not a valid direct-I/O
+unit under any of these rules; the read unit is always the encompassing page.
+
+**b) GPUDirect Storage is probably not available on this card.**
+NVIDIA's GDS release notes: "Data Center and Quadro (desktop) cards with compute
+capability > 6 listed here are supported in GDS mode. All other cards are
+supported only in compatibility mode."
+([release notes](https://docs.nvidia.com/gpudirect-storage/release-notes/index.html))
+Compatibility mode is a bounce through a pinned host buffer, i.e. what the
+streaming design already does by hand. So "use cuFile" is not a shortcut here;
+it must be verified as native GDS or not claimed at all.
+
+### Academic context, and where it is being over-read
+
+* **Engram** ([arXiv 2601.07372](https://arxiv.org/html/2601.07372v1)) is the
+  relevant model family. Collision handling: "we employ K distinct hash heads for
+  each N-gram order n". Its offload claim -- "offloading a 100B-parameter table
+  entirely to host memory incurs negligible throughput overhead (< 3%)", peak
+  2.8% -- is **host DRAM over PCIe, not NVMe**. It should not be cited as
+  evidence that NVMe works.
+* **CXL pooling of Engram memory**
+  ([arXiv 2603.10087](https://arxiv.org/html/2603.10087)) independently confirms
+  the access shape this plan assumed: ~5 KB per token per layer as "8 hash-mapped
+  320 bytes data segments, distributed in discrete, sparse addresses". That is
+  the origin of the 12.8-rows-per-page amplification. It is CXL, not disk.
+* **LongCat-Flash-Lite** ([arXiv 2601.21204](https://arxiv.org/html/2601.21204)):
+  sub-table decomposition with different vocabulary sizes reduces collisions;
+  "hash collisions force a single embedding vector to superimpose the semantics
+  of multiple distinct n-grams".
+* **SCONE** ([NeurIPS 2025](https://proceedings.neurips.cc/paper_files/paper/2025/hash/2e067924aeeb02ae9919803fd08d8b4b-Abstract-Conference.html))
+  stores precomputed n-gram embeddings in "off-accelerator memory" -- which is
+  not a measured NVMe result.
+* **Row packing vs collisions.** Nothing in the survey establishes a layout that
+  makes the 16 hashed rows of one token land in one physical page. Collision
+  mitigation improves representation, not locality. Dedup only saves requests
+  when addresses genuinely share a page, so the amplification figure stands as
+  designed, not as measured-then-removed.
+
+The plan's section 8 question 5 -- "SSD Stream used only 10 GB RAM resident,
+plausible?" -- is answered by its own repo: a 32 MiB page pool plus two 16 MiB
+staging buffers replaces a 47.68 GiB table. ~10 GiB of residue is ordinary
+engine and CUDA context, so yes, plausible.
