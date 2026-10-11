@@ -4,13 +4,17 @@ Scope: running `build.sh` / `download.sh` / `start.sh` through podman's docker
 shim as an unprivileged user. Reference host: `gg`, Fedora 44 Workstation,
 kernel 7.2.9, podman 5.8.7 / crun 1.28, SELinux enforcing, cgroup v2, btrfs
 `/home`, RPM Fusion NVIDIA driver 615.71.09
-(`xorg-x11-drv-nvidia-cuda-libs`), RTX PRO 6000 Blackwell.
+(`akmod-nvidia`, `xorg-x11-drv-nvidia-cuda`), NVIDIA `cuda-toolkit-13.4.2`,
+RTX PRO 6000 Blackwell.
 
 ## What needs root
 
 | Item | Root? |
 | --- | --- |
 | `./build.sh` image build | no |
+| NVIDIA driver from RPM Fusion (`akmod-nvidia`) | yes, plus a reboot |
+| Secure Boot kmod signing, if Secure Boot is on | yes, before the driver |
+| CUDA repo + `cuda-toolkit` (optional, see below) | yes |
 | `dnf copr enable @ai-ml/nvidia-container-toolkit` + install | yes |
 | SELinux boolean for `/dev/nvidia*` | yes, but the toolkit package does it |
 | Generate the CDI spec | no |
@@ -63,10 +67,116 @@ CPU-only test suite.
 
 ### Install (root, once)
 
-Fedora 44 and RPM Fusion do not package `nvidia-container-toolkit`;
+Three installs, in this order: the driver from RPM Fusion, then the CUDA
+repository with NVIDIA's driver packages excluded, then the container toolkit.
+The order is not ceremonial -- the CUDA repository also ships a complete NVIDIA
+driver userspace, and step 2 exists mainly to stop that from landing on top of
+the step 1 driver.
+
+Follow the upstream pages rather than this summary; both are living documents
+and this section is a snapshot of them as of 2026-10-10:
+
+- driver: <https://rpmfusion.org/Howto/NVIDIA>, section *Current
+  GeForce/Quadro/Tesla* (page last edited 2026-10-05)
+- CUDA: <https://rpmfusion.org/Howto/CUDA>, section *CUDA Toolkit*, the *Fedora
+  42 and later with DNF-5* variant (page last edited 2025-10-01)
+
+**Prerequisites.** RPM Fusion nonfree must already be enabled, per their
+Configuration page; `dnf repolist` should list `rpmfusion-nonfree-nvidia-driver`.
+And if Secure Boot is on -- it is on `gg`, `mokutil --sb-state` reports
+`SecureBoot enabled` -- the howto requires the kmod signing key to be enrolled
+**before** the driver is installed. The failure mode is the module refusing to
+load, which presents as absent hardware rather than a signature error.
+
+**1. Driver, from RPM Fusion.** As root, following the NVIDIA howto:
+
+```sh
+dnf update -y                             # and reboot if not on the latest kernel
+dnf install akmod-nvidia
+dnf install xorg-x11-drv-nvidia-cuda      # CUDA / NVENC / NVDEC userspace
+dnf mark user akmod-nvidia                # DNF5, Fedora 41+: stops autoremove removing it
+reboot                                    # the howto: a full reboot, on the newest kernel
+```
+
+Rebooting is not optional, and neither is the wait afterwards: `akmods` builds
+the kmod for the running kernel, which the howto says can take five minutes.
+Check it finished before going further:
+
+```
+$ modinfo -F version nvidia
+615.71.09
+$ grep "NVRM version" /proc/driver/nvidia/version
+NVRM version: NVIDIA UNIX Open Kernel Module for x86_64  615.71.09  Release Build  ...
+```
+
+`modinfo: ERROR: Module nvidia not found` means the build is still running or the
+kmod is not loaded. "Open Kernel Module" is the expected reading, not a
+misconfiguration: Blackwell needs the open module and RPM Fusion builds that by
+default. Both outputs above are from `gg`.
+
+**2. CUDA toolkit, from NVIDIA's repo, with its driver excluded.** As root:
+
+```sh
+dnf config-manager addrepo --from-repofile=https://developer.download.nvidia.com/compute/cuda/repos/fedora44/$(uname -m)/cuda-fedora44.repo
+dnf clean all
+dnf config-manager setopt 'cuda-fedora44-x86_64.exclude=nvidia-driver*,cuda-drivers*,nvidia-modprobe,nvidia-persistenced,nvidia-settings,nvidia-libXNVCtrl*,nvidia-xconfig,nvidia-open,nvidia-imex,nvidia-kmod-common,libnvidia-fbc,kmod-nvidia-*-dkms,nvidia-fs*,nvidia-gds*,xorg-x11-nvidia*'
+dnf install -y cuda-toolkit xorg-x11-drv-nvidia-cuda
+```
+
+The repository file name follows the release: the howto shows `fedora42`, `gg`
+uses `fedora44`. Verify both halves of the result:
+
+```
+$ rpm -q cuda-toolkit
+cuda-toolkit-13.4.2-1.x86_64
+$ dnf repoquery --repo cuda-fedora44-x86_64 nvidia-driver-libs
+$                                  # empty: the exclusion is in effect
+```
+
+*The howto's own exclude list is not sufficient* -- tested, not inferred. It
+reads `exclude=nvidia-driver,nvidia-modprobe,...` with no wildcards, and an exact
+name does not match `nvidia-driver-libs`. Checked against the repository with
+`gg`'s override file bypassed, by pointing a throwaway repo alias at the same
+baseurl:
+
+```
+$ BASE=https://developer.download.nvidia.com/compute/cuda/repos/fedora44/x86_64
+$ dnf repoquery --repofrompath=cudatest,$BASE --repo cudatest --nogpgcheck \
+    --setopt='cudatest.exclude=nvidia-driver,cuda-drivers,nvidia-modprobe' nvidia-driver-libs
+nvidia-driver-libs-3:610.43.02-1.fc44.i686
+nvidia-driver-libs-3:610.43.02-1.fc44.x86_64      # howto's exact names: still admitted
+$ dnf repoquery --repofrompath=cudatest,$BASE --repo cudatest --nogpgcheck \
+    --setopt='cudatest.exclude=nvidia-driver*' nvidia-driver-libs
+                                                  # globbed: excluded
+```
+
+`nvidia-driver-libs` and `nvidia-driver-cuda-libs` are precisely the packages
+that would land on top of the RPM Fusion userspace, and the repository offers
+nine distinct `nvidia-driver*` names in its metadata. It also carries driver
+series older than the one in use here -- 610.43.02 against RPM Fusion's 615.71.09
+-- so admitting it is a downgrade as well as a mismatch. Use the globs above,
+which are `gg`'s live configuration.
+
+Also note where DNF5 puts it, because it is a false-negative when auditing a
+host: `config-manager setopt` writes
+`/etc/dnf/repos.override.d/99-config_manager.repo`, not
+`/etc/yum.repos.d/cuda-fedora44.repo`. Grepping the `.repo` file for `exclude`
+finds nothing on a correctly configured machine.
+
+The host toolkit is **optional for this recipe** -- the image brings its own
+CUDA, and the driver is the only hard requirement. Install it if you compile
+CUDA code on the host. If you do, `nvcc` is not on `PATH` by default; it lives at
+`/usr/local/cuda/bin/nvcc`, so `rpm -q cuda-toolkit` is the check for
+installation, not `command -v nvcc` (`gg` has the toolkit installed and reports
+no `nvcc` on `PATH`). The howto's *GCC version* section covers the case where
+the repository's toolkit is older than Fedora's compiler.
+
+**3. Container toolkit.** Fedora 44 and RPM Fusion do not package
+`nvidia-container-toolkit`;
 `dnf list available 'nvidia-container-toolkit*' 'libnvidia-container*'` returns
 nothing with `fedora`, `updates`, and `rpmfusion-nonfree-nvidia-driver`
-enabled. It ships only from NVIDIA's own repo or the `@ai-ml` COPR:
+enabled. It ships from NVIDIA's own repo or the `@ai-ml` COPR, and the COPR is
+what the RPM Fusion CUDA howto itself recommends under *Community repositories*:
 
 ```sh
 dnf copr enable @ai-ml/nvidia-container-toolkit
@@ -78,11 +188,12 @@ Verified: COPR `nvidia-container-toolkit-1.20.1-1.fc44`. At 1.20 the
 is no `nvidia-container-cli` binary and nothing needs it, because CDI discovery
 runs through NVML in-process.
 
-Keep the driver itself from RPM Fusion. That package is correctly scoped: it
-supplies `/usr/lib64/libcuda.so.1`, `libnvidia-ml.so.1`,
-`libnvidia-ptxjitcompiler.so.1` and the rest of the set the spec mounts. Only
-the toolkit comes from elsewhere; mixing an NVIDIA-repo driver userspace with
-the RPM Fusion kernel module is what breaks.
+Keep the driver itself from RPM Fusion -- step 1, not step 2 and not this repo.
+That package is correctly scoped: it supplies `/usr/lib64/libcuda.so.1`,
+`libnvidia-ml.so.1`, `libnvidia-ptxjitcompiler.so.1` and the rest of the set the
+CDI spec mounts. Only the toolkit comes from elsewhere; mixing an NVIDIA-repo
+driver userspace with the RPM Fusion kernel module is what breaks, which is why
+step 2 excludes it rather than merely preferring not to install it.
 
 ### SELinux (root, and already automatic)
 
@@ -379,14 +490,41 @@ Two consequences worth knowing when sizing or monitoring:
 
 ## Checklist for a fresh Fedora 44 rootless podman host
 
-As root, once:
+As root, once, in this order -- see [Install (root, once)](#install-root-once)
+for why each step is where it is, and for the verification output that belongs
+with it:
 
 ```sh
-dnf install -y @rpmfusion-nonfree-nvidia-driver xorg-x11-drv-nvidia-cuda-libs   # or the distro's equivalent
+# 0. prerequisite: RPM Fusion nonfree enabled, and Secure Boot kmod signing
+#    enrolled if Secure Boot is on. Then be on the latest kernel:
+dnf update -y
+reboot
+
+# 1. driver, from RPM Fusion -- akmods builds the kmod for the running kernel
+dnf install -y akmod-nvidia xorg-x11-drv-nvidia-cuda
+dnf mark user akmod-nvidia
+reboot
+#    verify before continuing (build can take minutes):
+#      modinfo -F version nvidia            -> e.g. 615.71.09
+#      grep "NVRM version" /proc/driver/nvidia/version   -> "Open Kernel Module"
+
+# 2. CUDA toolkit -- optional; only needed to compile CUDA on the host. The
+#    exclude is what keeps NVIDIA's driver off the RPM Fusion kernel module.
+dnf config-manager addrepo --from-repofile=https://developer.download.nvidia.com/compute/cuda/repos/fedora44/$(uname -m)/cuda-fedora44.repo
+dnf clean all
+dnf config-manager setopt 'cuda-fedora44-x86_64.exclude=nvidia-driver*,cuda-drivers*,nvidia-modprobe,nvidia-persistenced,nvidia-settings,nvidia-libXNVCtrl*,nvidia-xconfig,nvidia-open,nvidia-imex,nvidia-kmod-common,libnvidia-fbc,kmod-nvidia-*-dkms,nvidia-fs*,nvidia-gds*,xorg-x11-nvidia*'
+dnf install -y cuda-toolkit xorg-x11-drv-nvidia-cuda
+
+# 3. container toolkit, last, and from the COPR the RPM Fusion CUDA howto names
 dnf copr enable @ai-ml/nvidia-container-toolkit
-dnf install -y nvidia-container-toolkit nvidia-container-toolkit-selinux        # also sets the SELinux boolean
-systemctl enable --now nvidia-persistenced                                      # optional, removes first-request latency
+dnf install -y nvidia-container-toolkit nvidia-container-toolkit-selinux   # also sets the SELinux boolean
+systemctl enable --now nvidia-persistenced                                 # optional, removes first-request latency
 ```
+
+Steps 0 and 1 are required. Step 2 is not: the image carries its own CUDA, so the
+host toolkit matters only if something compiles against it here. The driver,
+however, must be RPM Fusion's whichever way you install it -- that is what step 2
+excludes and what the note after step 3 assumes.
 
 As the deploying user:
 

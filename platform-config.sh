@@ -77,6 +77,8 @@ qwen38_ensure_cdi() {
     echo "installed. Neither Fedora nor RPM Fusion packages them; on Fedora 44 use the COPR:" >&2
     echo "  dnf copr enable @ai-ml/nvidia-container-toolkit" >&2
     echo "  dnf install nvidia-container-toolkit nvidia-container-toolkit-selinux" >&2
+    echo "That is the last of three host steps; the RPM Fusion driver and the CUDA repo" >&2
+    echo "come first. See docs/podman-rootless-fedora.md, 'Install (root, once)'." >&2
     return 1
   fi
   driver="$(nvidia-smi --query-gpu=driver_version --format=csv,noheader 2>/dev/null | head -n1 || true)"
