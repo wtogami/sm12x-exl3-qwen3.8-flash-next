@@ -15,8 +15,9 @@ measurement on this hardware, not a citation.
 **This is the load-bearing finding.** The plan's section 5 records a ceiling it
 could not explain: "64 GiB single pinned allocation succeeds, 70 GiB fails",
 with cgroups, `RLIMIT_MEMLOCK` and `CommitLimit` all eliminated and the
-mechanism left "unidentified". `platform-config.sh:150-229` then encodes an
-empirical 55%-of-installed-RAM refusal bracket derived from that bracketing.
+mechanism left "unidentified". `platform-config.sh` then encoded an empirical
+55%-of-installed-RAM refusal bracket derived from that bracketing; superseded on
+prod by `memcheck: gate on the pinned size PyTorch actually asks for`, below.
 
 The mechanism is in `ATen/core/CachingHostAllocator.h`:
 
@@ -70,6 +71,14 @@ which is larger than the machine. The 55% bracket in `qwen38_ple_memcheck()` is
 a coincidence of that rounding boundary, and it will mis-refuse on any host
 whose RAM is not near a power of two.
 
+The failure found in practice runs the other way, which is worse: the bracket
+**permits configs that cannot start**. A 65 GiB table is 52.7% of a 125.68 GiB
+host, inside the bracket, but 65 GiB is 1 GiB past a power of two, so it pins
+128 GiB and the request is 130 GiB against 125.68 installed. A gate that refuses
+a runnable config is annoying; one that green-lights an unrunnable config has
+the gate's whole purpose backwards. Both the rounding model and this case are
+now tested in `scripts/test-ple-memcheck.py`.
+
 ### The workaround is verified and needs no engine change
 
 `cudaHostAlloc` bypasses the caching host allocator and does not round:
@@ -110,7 +119,11 @@ and it means:
   47.7.
 * The `qwen38_ple_memcheck()` 55% bracket should be replaced by
   `next_pow2(table) + next_pow2(embed)` versus installed RAM, which is the
-  quantity the allocator actually requests.
+  quantity the allocator actually requests. **Done on prod**, refusing where
+  demand lands within `max(8 GiB, 5% of RAM)` of installed and warning above 70%,
+  the latter chosen because 130/183 GiB = 71.0% is the highest share with a
+  recorded successful pin. Every verdict the pre-existing suite asserted still
+  holds, so the change was not fitted to its own tests.
 
 Caveat: unverified on `gg`, which is `exl3-ple8`-serving right now and cannot be
 disturbed. The prediction is that a `cudaHostAlloc` of 47.684 GiB succeeds there
