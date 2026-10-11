@@ -12,6 +12,16 @@ NGRAM_ROWS, PLE_DIM, VOCAB, HIDDEN = 20_000_000, 2560, 248_320, 2560
 TABLE_FP8_GIB = NGRAM_ROWS * PLE_DIM * 1 / 2**30        # 47.68
 TABLE_BF16_GIB = NGRAM_ROWS * PLE_DIM * 2 / 2**30       # 95.40
 EMBED_GIB = VOCAB * HIDDEN * 2 / 2**30                  # 1.18
+# What torch.empty(pin_memory=True) really asks the kernel for: every pinned
+# allocation is rounded up to a power of two, unconditionally.
+def pinned(gib: float) -> float:
+    import math
+    return 2.0 ** math.ceil(math.log2(gib))
+BF16_PIN_GIB = pinned(TABLE_BF16_GIB)                   # 128
+FP8_PIN_GIB = pinned(TABLE_FP8_GIB)                     # 64
+EMBED_PIN_GIB = pinned(EMBED_GIB)                       # 2
+DEMAND_BF16_GIB = BF16_PIN_GIB + EMBED_PIN_GIB          # 130
+DEMAND_FP8_GIB = FP8_PIN_GIB + EMBED_PIN_GIB            # 66
 KIB = 1024 * 1024  # meminfo is in KiB; this value is 1 GiB in KiB
 
 
@@ -40,17 +50,36 @@ with tempfile.TemporaryDirectory() as folder:
     assert refused.returncode != 0, 'BF16 on a 125.68 GiB host must refuse'
     assert '%.1f' % TABLE_BF16_GIB in refused.stderr, refused.stderr
     assert 'exl3-ple8' in refused.stderr and 'QWEN38_SKIP_MEMCHECK' in refused.stderr
-    # The 183 GiB qualification host did serve it (0.521 of RAM): must not refuse.
+    # It must refuse for the right reason: 95.4 GiB of checkpoint is 128 GiB of
+    # pin, so the host is short by 130 against 125.68, not 95.4 against 69.
+    assert '%.1f GiB' % BF16_PIN_GIB in refused.stderr, refused.stderr
+    assert '%.1f GiB' % DEMAND_BF16_GIB in refused.stderr, refused.stderr
+    # The 183 GiB qualification host did serve it, at 130/183 = 71.0% of RAM
+    # pinned: must not refuse, but must warn, since that is the highest share
+    # with a recorded successful pin and anything above it is untested.
     allowed = check(cfg, 2, 183.0, 180.0)
     assert allowed.returncode == 0, 'BF16 on the qualification host must be allowed'
-    assert 'WARNING' in allowed.stderr, '0.521 of RAM sits in the warn band'
+    assert 'WARNING' in allowed.stderr, '71.0% of RAM pinned sits in the warn band'
     # Same profile on a generously sized host: allowed and quiet.
     quiet = check(cfg, 2, 995.6, 900.0)
     assert quiet.returncode == 0 and 'WARNING' not in quiet.stderr
     # FP8 halves the table, which is exactly why it fits where BF16 does not.
     fp8 = check(cfg, 1, 125.68, 121.0)
     assert fp8.returncode == 0 and '%.1f' % TABLE_FP8_GIB in fp8.stderr
-    assert 'WARNING' not in fp8.stderr, 'FP8 at 0.379 of RAM should not warn'
+    assert 'WARNING' not in fp8.stderr, 'FP8 pinning 66 of 125.68 GiB should not warn'
+    assert '%.1f GiB pins %.1f GiB' % (TABLE_FP8_GIB, FP8_PIN_GIB) in fp8.stderr, fp8.stderr
+
+    # Regression: the one case the old 55%-of-installed-RAM gate got wrong. A
+    # table of exactly 65 GiB is 52.7% of a 125.68 GiB host, so the old bracket
+    # passed it, and it cannot possibly start -- 65 GiB is one GiB past a power
+    # of two, so the pin rounds to 128 GiB and the demand is 130 GiB.
+    just_over = config(Path(folder) / 'just_over.json',
+                       ngram_vocab_size_base=int(65 * 2**30 / PLE_DIM / 1))
+    rounded = check(just_over, 1, 125.68, 121.0)
+    assert rounded.returncode != 0, (
+        'a 65 GiB table pins 128 GiB and must be refused on 125.68 GiB; the old '
+        'derived-vs-55% rule passed this: %s' % rounded.stderr)
+    assert '128.0 GiB' in rounded.stderr, rounded.stderr
     # The false positive found on the real host: the FP8 profile is serving on
     # gg right now, which is exactly why MemAvailable reads 48.2 GiB. A snapshot
     # of used memory must warn, never refuse a profile installed RAM allows.

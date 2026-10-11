@@ -42,9 +42,11 @@ for the defaults; C16 throughput tradeoffs are recorded below.
 | `nvfp4-redhatai` | [RedHatAI NVFP4](https://huggingface.co/RedHatAI/Qwen3.8-Flash-Next-NVFP4) | BF16, about 95 GiB | 3 / 2 |
 
 On RTX the PLE table is page-locked in host RAM, so its size is a host memory
-requirement, not a GPU one: a single pinned allocation has not been observed to
-succeed above roughly 55% of installed RAM. A 128 GiB host therefore serves the
-FP8 profiles but not the BF16 ones, failing as `CUDA error: out of memory` about
+requirement, not a GPU one, and PyTorch rounds every pinned allocation up to a
+power of two that cannot be turned off: the BF16 table is 95.4 GiB of checkpoint but
+128 GiB of pin, and with the token embedding the host must commit 130 GiB. The FP8
+table is 47.7 GiB and pins 64, so it needs 66 GiB. A 128 GiB host therefore serves
+the FP8 profiles but not the BF16 ones, failing as `CUDA error: out of memory` about
 40 s into engine start. `start.sh` sizes this from the checkpoint and refuses
 before creating the container; `QWEN38_SKIP_MEMCHECK=1` overrides. See
 [host pinned memory](docs/podman-rootless-fedora.md#host-pinned-memory-for-the-ple-table).

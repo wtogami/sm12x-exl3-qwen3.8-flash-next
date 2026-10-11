@@ -147,6 +147,14 @@ qwen38_gib() {
   printf '%d.%d' $(( tenths / 10 )) $(( tenths % 10 ))
 }
 
+# Round up to the next power of two, which is what the pinned allocator does to
+# every request. KiB inputs stay in 64-bit range well past any host we target.
+qwen38_next_pow2() {
+  local n="$1" p=1
+  while (( p < n )); do p=$(( p << 1 )); done
+  printf '%d' "$p"
+}
+
 # Preflight the pinned host memory the PLE table will need. With PLE_MMAP=0 the
 # worker page-locks the whole n-gram table (torch.empty(pin_memory=True)) and
 # reads it over UVA, so the binding constraint is host RAM rather than VRAM, and
@@ -154,27 +162,39 @@ qwen38_gib() {
 # error: out of memory" -- which reads like a GPU fault and sends you hunting in
 # the wrong place. Better to refuse before the container exists.
 #
-# The ceiling is a fraction of installed RAM, not of MemAvailable. On a 125.68
-# GiB RTX PRO 6000 host a single pinned allocation of 64 GiB (0.509 of MemTotal)
-# succeeds and 70 GiB (0.557) fails with 121 GiB still reported available. It is
-# not cgroups (memory.max = max in-container and in the user slice), not
-# RLIMIT_MEMLOCK (Mlocked 48 kB, and 64 GiB pins fine at an 8 MiB soft limit),
-# and not CommitLimit (live Committed_AS reaches 80.15 GiB against a 70.84 GiB
-# limit while healthy). The mechanism is unconfirmed, so 55% is an empirical
-# bracket rather than a derived constant -- but it separates both known
-# outcomes: the 183 GiB qualification host ran the BF16 table at 0.521 of RAM,
-# and gg cannot at 0.759.
+# Demand is the rounded size, not the checkpoint size. CachingHostAllocator.h
+# rounds every pinned request with PowerOf2Ceil(), gated only on
+# pinned_max_round_threshold() and pinned_max_cached_size(); both default to
+# std::numeric_limits<size_t>::max() (AllocatorConfig.h:361,363) and neither has
+# a parser, so libc10_cuda.so exposes only parsePinned{FreeCatchAll,
+# NumRegisterThreads,ReserveSegmentSize,UseCudaHostRegister} and no
+# PYTORCH_CUDA_ALLOC_CONF key can turn the rounding off. The BF16 table is 95.4
+# GiB of checkpoint and 128 GiB of pin; the token embedding is 1.2 GiB and 2 GiB.
+# The live exl3 worker on a 995 GiB host maps exactly 128.000 + 2.000 GiB of
+# /dev/zero (deleted), which is the model with no free parameters.
+#
+# The old gate compared the checkpoint figure against 55% of installed RAM. That
+# bracket was this same rounding seen from the wrong side: a 64 GiB pin succeeded
+# and a 70 GiB one "failed" on a 125.68 GiB host not because of any 55% law but
+# because 70 GiB rounds to 128 GiB, which does not fit. Rounding is also why the
+# derived figure under-stated the live FP8 host (48.9 GiB derived against 66.18
+# GiB of Shmem -- 64 GiB plus a 2 GiB embedding). Comparing rounded demand with
+# installed RAM removes both the bogus constant and the 1.35x fudge.
+#
+# Where to put the line is a judgement, stated as one. Recorded outcomes are 130
+# GiB pinned on 183 GiB (71.0% of RAM, the qualification host, served fine), 66
+# GiB on 125.68 GiB (52.5%, serving now), and 130 GiB on 125.68 GiB (103.4%,
+# impossible). So the boundary lies between 71% and 103% and has never been
+# probed. Refuse only what arithmetic condemns -- demand landing within
+# max(8 GiB, 5% of RAM) of installed -- and warn above 70%, just under the
+# highest share with a recorded success.
 #
 # Demand is read from the checkpoint so a geometry change needs no edit here.
-# Derived demand under-states what the host actually commits: the live FP8 engine
-# drove system Shmem to 66.18 GiB against 48.87 GiB derived (ratio 0.738),
-# because driver-side pinned pages are counted in Shmem before any process maps
-# them. RssShmem and RSS both under-report a pinned footprint for the same
-# reason, which is why an allocation near the bracket warns instead of passing.
 qwen38_ple_memcheck() {
   local config="$1" bytes="$2" memtotal_kib="$3" memavail_kib="$4"
-  local dims ngram_rows ple_dim vocab hidden table_kib embed_kib total_kib limit_kib warn_kib
-  local table_gib total_gib mem_gib want_gib pct
+  local dims ngram_rows ple_dim vocab hidden table_kib embed_kib total_kib
+  local table_pin_kib embed_pin_kib demand_kib limit_kib warn_kib reserve_kib
+  local table_gib total_gib mem_gib demand_gib table_pin_gib embed_pin_gib want_gib pct
   if [[ ! -r "$config" ]] || ! command -v python3 >/dev/null 2>&1; then
     echo "WARNING: cannot read $config, or no python3 to parse it; skipping the PLE memory preflight" >&2
     return 0
@@ -191,18 +211,29 @@ print(int(text["ngram_vocab_size_base"]), int(text["ple_embed_dim"]),
   # The token embedding table is pinned in host RAM in both PLE modes.
   embed_kib=$(( vocab * hidden * 2 / 1024 ))
   total_kib=$(( table_kib + embed_kib ))
-  limit_kib=$(( memtotal_kib * 55 / 100 ))
-  warn_kib=$(( memtotal_kib * 45 / 100 ))
+  table_pin_kib="$(qwen38_next_pow2 "$table_kib")"
+  embed_pin_kib="$(qwen38_next_pow2 "$embed_kib")"
+  demand_kib=$(( table_pin_kib + embed_pin_kib ))
+  reserve_kib=$(( memtotal_kib * 5 / 100 ))
+  (( reserve_kib < 8 * 1048576 )) && reserve_kib=$(( 8 * 1048576 ))
+  limit_kib=$(( memtotal_kib - reserve_kib ))
+  (( limit_kib < 0 )) && limit_kib=0
+  warn_kib=$(( memtotal_kib * 70 / 100 ))
   table_gib="$(qwen38_gib "$table_kib")"
   total_gib="$(qwen38_gib "$total_kib")"
   mem_gib="$(qwen38_gib "$memtotal_kib")"
-  pct=$(( ( table_kib * 100 + memtotal_kib / 2 ) / memtotal_kib ))
-  if (( table_kib > limit_kib )); then
-    want_gib=$(( table_kib * 100 / 55 / 1048576 ))
+  demand_gib="$(qwen38_gib "$demand_kib")"
+  table_pin_gib="$(qwen38_gib "$table_pin_kib")"
+  embed_pin_gib="$(qwen38_gib "$embed_pin_kib")"
+  pct=$(( ( demand_kib * 100 + memtotal_kib / 2 ) / memtotal_kib ))
+  if (( demand_kib > limit_kib )); then
+    want_gib="$(qwen38_gib "$(( demand_kib + reserve_kib ))")"
     {
-      echo "Refusing to start: the PLE table alone needs ${table_gib} GiB of pinned host memory,"
-      echo "which is ${pct}% of the ${mem_gib} GiB installed, and a single pinned allocation above"
-      echo "roughly 55% of installed RAM has not been observed to succeed on this hardware class."
+      echo "Refusing to start: the PLE table is ${table_gib} GiB in the checkpoint, but PyTorch"
+      echo "rounds every pinned allocation up to a power of two, so it pins ${table_pin_gib} GiB."
+      echo "With the token embedding pinned at ${embed_pin_gib} GiB the host has to commit"
+      echo "${demand_gib} GiB of pinned host memory (${pct}% of the ${mem_gib} GiB installed), and"
+      echo "that leaves the kernel and the page cache too little to work with."
       echo "Choose one of:"
       echo "  QUANT=exl3-ple8   FP8 PLE table, half the pinned footprint"
       echo "  PLE_MMAP=1        map the table from the checkpoint; needs host-page-table dereference (DGX Spark)"
@@ -211,19 +242,22 @@ print(int(text["ngram_vocab_size_base"]), int(text["ple_embed_dim"]),
     } >&2
     return 1
   fi
-  if (( total_kib > memavail_kib )); then
+  if (( demand_kib > memavail_kib )); then
     # Warn, do not refuse. MemAvailable is a snapshot, and a working host can be
     # momentarily below it -- another engine holding its pinned table, or caches
     # not yet reclaimed after a restart. Refusing here blocked a profile that was
     # serving at that moment, so the hard gate stays with installed RAM.
-    echo "WARNING: PLE and embedding tables need ${total_gib} GiB but the host reports only $(
+    echo "WARNING: this profile pins ${demand_gib} GiB but the host reports only $(
       qwen38_gib "$memavail_kib") GiB available. Free memory or drop another" >&2
     echo "  serving container before starting, or this will fail when the table is pinned." >&2
   fi
-  if (( table_kib > warn_kib )); then
-    echo "WARNING: PLE table is ${table_gib} GiB, ${pct}% of installed RAM; measured hosts have" >&2
-    echo "  committed about 1.35x the derived figure, and the failure bracket starts near 55%." >&2
+  if (( demand_kib > warn_kib )); then
+    echo "WARNING: this profile pins ${demand_gib} GiB, ${pct}% of the ${mem_gib} GiB installed." >&2
+    echo "  The highest share with a recorded successful pin is 71.0% (130 GiB on a 183 GiB" >&2
+    echo "  host); above that the outcome is untested, so expect it to fail if anything else" >&2
+    echo "  on this host is holding pinned memory." >&2
   fi
-  echo "PLE pinned host memory: table ${table_gib} GiB, with token embeddings ${total_gib} GiB," \
-     "on ${mem_gib} GiB installed (${pct}%)." >&2
+  echo "PLE pinned host memory: table ${table_gib} GiB pins ${table_pin_gib} GiB; with token" \
+     "embeddings ${demand_gib} GiB pinned against ${total_gib} GiB of checkpoint, on" \
+     "${mem_gib} GiB installed (${pct}%)." >&2
 }

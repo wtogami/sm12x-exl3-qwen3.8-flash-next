@@ -459,50 +459,71 @@ which reads like a GPU fault and sends you looking in the wrong place. Table
 size is `ngram_vocab_size_base x ple_embed_dim x bytes-per-element`, taken from
 the checkpoint headers rather than estimated:
 
-| profile | PLE dtype | pinned host table |
-| --- | --- | --- |
-| `exl3`, `nvfp4-redhatai` | BF16 | 102.40 GB = **95.40 GiB** |
-| `exl3-ple8`, `nvfp4` | FP8 E4M3 + one global scale | 51.20 GB = **47.68 GiB** |
+| profile | PLE dtype | table in checkpoint | **actually pinned** |
+| --- | --- | --- | --- |
+| `exl3`, `nvfp4-redhatai` | BF16 | 102.40 GB = 95.40 GiB | **128 GiB** |
+| `exl3-ple8`, `nvfp4` | FP8 E4M3 + one global scale | 51.20 GB = 47.68 GiB | **64 GiB** |
 
-Add 1.18 GiB for the token embedding table, which is pinned in host RAM in both
-PLE modes.
+The last column is the one that has to fit in RAM. The token embedding table adds
+1.18 GiB of checkpoint and 2 GiB of pin, and it is pinned in host RAM in both PLE
+modes, so the whole request is 130 GiB for a BF16 profile and 66 GiB for FP8.
 
-`start.sh` now refuses before creating the container when the table would exceed
-55% of installed RAM. It **warns** rather than refuses when table plus embeddings
-exceed `MemAvailable`: that figure is a snapshot, and a host can be momentarily
-under it while still serving fine -- refusing there blocked the FP8 profile on a
-host where it was running. It reads the geometry from the checkpoint, so it
-follows a checkpoint change with no edit here. Skip it with `QWEN38_SKIP_MEMCHECK=1`; it is skipped automatically
-for `PLE_MMAP=1` (no table-sized pinned allocation) and for a caller-supplied
+**PyTorch rounds every pinned allocation up to a power of two, and you cannot turn
+it off.** `CachingHostAllocator.h` applies `PowerOf2Ceil()` to each request, gated
+only on `pinned_max_round_threshold()` and `pinned_max_cached_size()`; both default
+to `std::numeric_limits<size_t>::max()` (`AllocatorConfig.h:361,363`) and neither
+has a config parser -- `libc10_cuda.so` defines exactly four,
+`parsePinned{FreeCatchAll,NumRegisterThreads,ReserveSegmentSize,UseCudaHostRegister}`
+-- so no `PYTORCH_CUDA_ALLOC_CONF` key reaches the rounding. A 95.4 GiB table
+therefore costs 128 GiB, a 1.34x penalty, and 47.68 GiB costs 64 GiB, 1.34x.
+Confirmed on a running engine rather than inferred: the `exl3` worker on a 995 GiB
+host holds exactly two mappings above 1 GiB of anonymous `/dev/zero (deleted)`,
+128.000 GiB and 2.000 GiB, totalling 130.000 GiB.
+
+`start.sh` refuses before creating the container when that rounded demand lands
+within `max(8 GiB, 5% of RAM)` of installed memory. It **warns** above 70% of
+installed RAM, and separately when demand exceeds `MemAvailable`, which is a
+snapshot -- a host can be momentarily under it while still serving fine, and
+refusing there once blocked the FP8 profile on a host where it was running. It
+reads the geometry from the checkpoint, so a checkpoint change needs no edit here.
+Skip it with `QWEN38_SKIP_MEMCHECK=1`; it is skipped automatically for
+`PLE_MMAP=1` (no table-sized pinned allocation) and for a caller-supplied
 `--engram-config` (placement unknown).
 
-**The 55% figure is an empirical bracket, not a derived constant, and the
-mechanism behind it is unidentified.** Measured on a 125.68 GiB RTX PRO 6000
-Blackwell host:
+**This replaces a 55%-of-RAM bracket that was the same rounding seen from the wrong
+side.** The evidence behind it was that on a 125.68 GiB host "64 GiB pins fine and
+70 GiB fails with 121 GiB still available": 64 GiB is already a power of two and
+stays 64, while 70 GiB rounds to 128 GiB, which does not fit in 125.68 GiB. There
+was never a 55% law, and comparing rounded demand with installed RAM explains both
+outcomes plus the one that previously looked like under-reporting -- the live FP8
+engine's 66.18 GiB of system `Shmem` against 48.87 GiB derived is exactly 64 + 2.
+The old gate's advice, that BF16 needs "about 173 GiB", is likewise replaced by
+138 GiB, which is the rounded demand plus the reserve.
 
-- a single pinned allocation of 64 GiB succeeds; 70 GiB fails (0.509 and 0.557 of
-  MemTotal) with 121 GiB still reported available
-- ruled out: cgroups (`memory.max = max` in-container and in the user slice),
-  `RLIMIT_MEMLOCK` (`Mlocked: 48 kB`; 64 GiB pins at an 8 MiB soft limit), and
-  commit accounting (live `Committed_AS` reaches 80.15 GiB against a 70.84 GiB
-  `CommitLimit` while healthy)
+Three alternatives remain ruled out, so do not chase them: cgroups
+(`memory.max = max` both in-container and in the user slice), `RLIMIT_MEMLOCK`
+(`Mlocked: 48 kB`, and 64 GiB pins at an 8 MiB soft limit), and commit accounting
+(live `Committed_AS` 80.15 GiB against a 70.84 GiB `CommitLimit` while healthy).
 
-55% separates both known outcomes: the 183 GiB qualification host served the
-BF16 table at 0.521 of RAM, and `gg` at 0.759 cannot. The check independently
-predicts that the BF16 profile needs "about 173 GiB" of RAM, and the host that
-actually served it had 183 GiB.
+Where the real boundary sits is still not probed, and is stated as judgement rather
+than measurement. Recorded outcomes are 130 GiB pinned on 183 GiB (71.0% of RAM, the
+qualification host, served fine), 66 GiB on 125.68 GiB (52.5%, serving now), and
+130 GiB on 125.68 GiB (103.4%, impossible). Anything between 71% and 103% is
+untested, which is why the warn tier sits at 70% and the refuse tier only where
+arithmetic condemns the attempt.
 
 Two consequences worth knowing when sizing or monitoring:
 
-- **Derived demand under-states the host.** The live `exl3-ple8` engine drove
-  system `Shmem` to 66.18 GiB against 48.87 GiB derived, a ratio of 0.738. Warn
-  tier starts at 45% of RAM for that reason.
-- **`RssShmem` and RSS both under-report pinned memory.** In that same state the
-  worker mapped 41.56 GiB of the 66.18 GiB, because driver-side pinned pages are
-  counted in `Shmem` before any process maps them. About 24.6 GiB was not
-  attributable to any readable process, and the remaining processes are
-  root-owned, so closing that gap needs root. Size and monitor hosts from system
-  `Shmem`, not from process RSS.
+- **`RssShmem` and RSS both under-report pinned memory.** On the FP8 host the worker
+  mapped 41.56 GiB of the 66.18 GiB, because driver-side pinned pages are counted in
+  `Shmem` before any process maps them. About 24.6 GiB was not attributable to any
+  readable process, and the remaining processes are root-owned, so closing that gap
+  needs root. Size and monitor hosts from system `Shmem`, not from process RSS.
+- **Reading a mapping's size is enough to audit the gate.** Sum the anonymous
+  `/dev/zero (deleted)` mappings above 1 GiB in the worker's `/proc/<pid>/maps`
+  *on the host* -- container PIDs are in a different namespace. Each should be a
+  power of two; if the total matches `next_pow2(table) + next_pow2(embedding)` the
+  preflight's arithmetic is right for that checkpoint.
 
 ## Checked and *not* a problem
 
