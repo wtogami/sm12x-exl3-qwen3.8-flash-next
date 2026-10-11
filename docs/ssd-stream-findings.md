@@ -494,3 +494,78 @@ gather leaves the GPU.
    the container at the requested value), so the plan's requirement to cap the
    container is satisfiable rootless. Writing `memory.reclaim` or `memory.high`
    is not (not writable by `opencode`, host or in-container).
+
+---
+
+## Appendix: one-liners for each measurement
+
+All run as `opencode`, no root. `CKPT` = any checkpoint blob under the HF `blobs/` dir.
+
+```bash
+# 0. confirm the trap: is your scratch on tmpfs? (burst: yes, 498 GiB)
+stat -f -c '%T %n' /tmp /tmp/opencode /home/opencode
+findmnt -no OPTIONS -T /home/opencode          # expect compress=zstd:1 on both hosts
+
+# 1. is the table actually compressed on disk?  (encoded extents == yes)
+filefrag -v "$CKPT" | awk 'NR>3{for(i=1;i<=NF;i++) if($i ~ /encoded/) c++} END{print c+0}'
+python3 -c "
+import json,struct,zlib,os
+f=open(os.path.realpath('$CKPT'),'rb'); n=struct.unpack('<Q',f.read(8))[0]
+h=json.loads(f.read(n)); k=max((k for k in h if 'ngram_embedding' in k),
+    key=lambda k:h[k]['data_offsets'][1]-h[k]['data_offsets'][0])
+s,e=h[k]['data_offsets']; f.seek(8+n+s); d=f.read(1<<20)
+print(k, h[k]['shape'], h[k]['dtype'], 'zlib', round(len(zlib.compress(d,1))/len(d),4))"
+
+# 2. per-file compression control:  +C works, -c does NOT (verified)
+: > x.bin && chattr +C x.bin && <write x.bin> && filefrag -v x.bin | grep -c encoded   # 0
+: > y.bin && chattr -c y.bin && <write y.bin> && filefrag -v y.bin | grep -c encoded   # nonzero
+
+# 3. page-cache: evict, verify, and the mapped-page failure mode
+vmtouch -e file && fincore file                       # works, unprivileged
+python3 -c "import os,ctypes,subprocess
+libc=ctypes.CDLL(None); libc.mmap.restype=ctypes.c_void_p
+libc.mmap.argtypes=[ctypes.c_void_p]*2+[ctypes.c_int]*2+[ctypes.c_int,ctypes.c_long]
+libc.mincore.argtypes=[ctypes.c_void_p,ctypes.c_size_t,ctypes.POINTER(ctypes.c_ubyte)]
+libc.pread.argtypes=[ctypes.c_int,ctypes.c_void_p,ctypes.c_size_t,ctypes.c_long]
+libc.pread.restype=ctypes.c_ssize_t
+F='file'; N=os.path.getsize(F); PG=4096
+fd=os.open(F,os.O_RDONLY); a=libc.mmap(None,N,1,1,fd,0); b=(ctypes.c_ubyte*N).from_address(a)
+for i in range(0,N,PG): b[i]                          # fault every page
+v=(ctypes.c_ubyte*(N//PG))(); libc.mincore(ctypes.c_void_p(a),ctypes.c_size_t(N),v)
+print('resident',sum(v),'/',N//PG)
+libc.posix_fadvise(fd,0,0,4); libc.mincore(ctypes.c_void_p(a),ctypes.c_size_t(N),v)
+print('after fadvise',sum(v),'/',N//PG,' <- unchanged: mapped pages are skipped, rc was 0')
+libc.madvise(ctypes.c_void_p(a),ctypes.c_size_t(N),4)  # MADV_DONTNEED
+libc.posix_fadvise(fd,0,0,4); libc.mincore(ctypes.c_void_p(a),ctypes.c_size_t(N),v)
+print('after madvise+fadvise',sum(v),'/',N//PG,' <- now cold, still no root')"
+
+# 4. O_DIRECT amplification, aligned vs misaligned
+python3 -c "see section 3; use a page-aligned buffer from an anonymous mmap,
+then the same buffer +512 to watch it silently become buffered I/O"
+fio --name=t --filename=f --rw=randread --bs=4k --iodepth=1 --numjobs=1 \
+    --direct=1 --ioengine=psync --runtime=8 --time_based --group_reporting
+
+# 5. pinned-allocation rounding (the section 1 finding)
+python3 -c "
+import re,torch
+def shm():
+    s=0
+    for l in open('/proc/self/smaps'):
+        m=re.match(r'^([0-9a-f]+)-([0-9a-f]+) \S{4}\s+\S+\s+\S+\s+\S*\s*(.*)$',l)
+        if m and ('deleted' in m.group(2) or m.group(2).startswith('/dev/shm')):
+            s+=int(m.group(2).split('-')[0],16)-int(m.group(1),16) if False else int(m.group(1),16)*0
+    return s
+# simpler: sum mapping sizes whose name contains 'deleted'
+def sm():
+    t=0
+    for l in open('/proc/self/smaps'):
+        m=re.match(r'^([0-9a-f]+)-([0-9a-f]+) \S{4}\s+\S+\s+\S+\s+\S*\s*(.*)$',l)
+        if m and 'deleted' in m.group(3): t+=int(m.group(2),16)-int(m.group(1),16)
+    return t
+G=2**30; b=sm()
+t=torch.empty(int(5*G/2), dtype=torch.bfloat16, device='cpu', pin_memory=True)
+print('requested 5.000 GiB -> mapped %.3f GiB' % ((sm()-b)/G))   # 8.000
+import ctypes
+p=ctypes.c_void_p(); rc=ctypes.CDLL('libcudart.so').cudaHostAlloc(ctypes.byref(p),ctypes.c_size_t(int(5*G)),1)
+print('cudaHostAlloc 5.000 GiB -> mapped %.3f GiB' % ((sm()-b)/G))"
+```
