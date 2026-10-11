@@ -434,3 +434,63 @@ The plan's section 8 question 5 -- "SSD Stream used only 10 GB RAM resident,
 plausible?" -- is answered by its own repo: a 32 MiB page pool plus two 16 MiB
 staging buffers replaces a 47.68 GiB table. ~10 GiB of residue is ordinary
 engine and CUDA context, so yes, plausible.
+
+---
+
+## 6. What this does to the plan's staging
+
+### P2's headline motivation is now mostly a 30-line allocation fix
+
+Plan section 1 frames the problem as "95.40 GiB BF16 / 47.68 GiB FP8 of pinned
+host RAM", and section 2 lists P2's remaining value as enabling BF16 on hosts
+under ~100 GiB and reclaiming ~48 GiB on hosts that run ple8. Both were measured
+against an allocator that asks for 128 GiB and 64 GiB respectively. Before
+designing an NVMe engine, measure the two cheap replacements:
+
+1. `cudaHostAlloc` at the exact size (verified exact at 5, 47.684 and 95.367 GiB), or
+2. pow2 tiling inside torch (verified: FP8 table 64.008 -> 48.000 GiB).
+
+Both remove ~32.6 GiB per table with no I/O path, no CUDA graph surgery, no
+splitting custom op, and no new toolchain.
+
+### The order of investigations should change
+
+| plan stage | status after this pass |
+| --- | --- |
+| Stage A: fio at qd1/8/32 | done in section 3; needs re-running on gg, and on a non-compressed dataset |
+| Stage B: CPU parallel `pread` prototype | **still the right bet**, but one cheaper test comes first (below) |
+| Stage C: io_uring | still correctly deferred; llama.cpp's own author calls io_uring "the elegant version, not the necessary one" |
+| new step 0 | fix the pinned allocation size, then re-ask whether P2 is still wanted |
+
+### The cheap test that should precede Stage B
+
+The whole Stage B design exists to hide per-access latency behind the preceding
+decoder layer. That hiding can be demonstrated without writing any engine code:
+issue the ~38k 4 KiB reads/second that a 16-sequence decode step needs, from N
+parallel `pread` workers into an aligned pinned buffer, on a `chattr +C` copy of
+the table, and compare elapsed time against the ~3.6 s of compute the plan says
+a 2048-token chunk affords. If N workers cannot beat that with the table
+completely cold, nothing downstream rescues the design; if they beat it by 5x,
+the remaining risk is entirely in CUDA graph splitting and dequant placement.
+
+Stage B's remaining hard parts, unchanged and still unmeasured, are exactly the
+plan's section 8 question 4: interaction with MTP=3 speculative tokens and a
+`max_num_seqs=16` full CUDA graph capture, and where dequant happens once the
+gather leaves the GPU.
+
+### Benchmark protocol changes forced by sections 2 and 3
+
+1. Scratch files live on the btrfs dataset, never under `/tmp` (498 GiB tmpfs on
+   `burst`; tmpfs is shmem and cannot be evicted at all).
+2. `--direct=1` is not a valid control on compressed extents. Either `chattr +C`
+   the test file and rewrite it, or query `statx(STATX_DIOALIGN)` and verify.
+3. `O_DIRECT` buffers must be page-aligned, and alignment must be *asserted*,
+   because a 512-byte miss is silent and returns full length.
+4. Prove cold state with `mincore`/`fincore`, or construct coldness by reading
+   never-touched offsets. Do not infer it from throughput.
+5. Never call `fadvise(DONTNEED)` against a file the engine has mapped and
+   believe the rc=0; it skips mapped pages, and so does root's `drop_caches`.
+6. On `burst`, `podman --memory=Ng` does enforce (`memory.max` observed inside
+   the container at the requested value), so the plan's requirement to cap the
+   container is satisfiable rootless. Writing `memory.reclaim` or `memory.high`
+   is not (not writable by `opencode`, host or in-container).
