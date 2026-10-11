@@ -277,6 +277,22 @@ prototype using `preadv` into a pinned staging slab must assert alignment or it
 will quietly benchmark the page cache. Note this is the opposite of an error:
 silent degradation, no return code.
 
+### Turning it off per-file, without root
+
+| method | works? | measured |
+| --- | --- | --- |
+| `chattr +C` on the **file**, before writing | yes | ratio 1.0000, `encoded=0` |
+| `chattr +C` on a **directory** | yes, inherited by new files | 128 MiB of compressible data inside: `encoded=0`; same data outside: `encoded=1024` |
+| `chattr -c` on the file | **no** | still compresses: ratio 0.375, `encoded=4096` |
+| `btrfs property set -ts <file> compression ""` | **no** | `ERROR: object is not compatible with property: compression` -- the property is subvolume-scoped |
+| `btrfs property set` on a subvolume | needs root, and `opencode` cannot create subvolumes here | `Operation not supported` |
+
+So the unprivileged deployment shape is a dedicated directory with `chattr +C`
+holding the table files, and they must be **rewritten** -- `+C` and `-c` only
+affect future writes, never existing extents. Note `+C` also sets nodatacow,
+which removes COW as a variable too; for a read-once streaming table that is the
+desirable direction, but it is a second change, not just a compression change.
+
 ### What this changes in the staged plan
 
 * Stage A must point at a non-compressed dataset, or at files carrying
