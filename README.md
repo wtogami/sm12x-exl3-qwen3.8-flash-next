@@ -175,6 +175,24 @@ QUANT=exl3-ple8 bash start.sh
 # GPU=1 selects another GPU on a multi-GPU RTX host.
 ```
 
+Stopping and restarting is a two-step, and `QUANT` selects the container name in
+`stop.sh` exactly as it does in `start.sh` (`qwen38-$QUANT`): stopping the wrong
+profile reports the names that do exist rather than calling `stop` on nothing.
+An idle engine takes about 14 s to shut down, just over the 10 s runtime default,
+so both scripts pass a 90 s grace period (`STOP_TIMEOUT`) -- without it every stop
+is escalated to `SIGKILL`. `start.sh` automatically removes a *stopped* container
+left behind by a previous run, because that is the normal `stop.sh` then
+`start.sh` sequence and the engine otherwise rejects the name. It refuses to do
+this to a *running* one; `REPLACE=1` makes the handoff explicit. That is
+deliberately not `--replace`, which would cut off in-flight requests silently and
+would stop the container using the default 10 s grace.
+
+```bash
+bash stop.sh                                # stops qwen38-exl3
+QUANT=exl3-ple8 bash stop.sh                # stops qwen38-exl3-ple8
+QUANT=exl3-ple8 REPLACE=1 bash start.sh     # stop-and-replace in one step
+```
+
 The OpenAI-compatible endpoint is `http://127.0.0.1:8001/v1`, with served
 aliases `qwen38-exl3`, `qwen38-exl3-ple8`, `qwen38-nvfp4` and
 `qwen38-nvfp4-redhatai`. Tool calls use

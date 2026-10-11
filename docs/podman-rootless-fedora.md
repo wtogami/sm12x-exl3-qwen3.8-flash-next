@@ -587,7 +587,13 @@ As the deploying user:
 ./build.sh      # also generates ~/.config/cdi/nvidia.yaml and its containers.conf.d drop-in
 ./download.sh   # QUANT=exl3|exl3-ple8|nvfp4|nvfp4-redhatai
 ./start.sh
+./stop.sh       # same QUANT as start.sh; see README for the grace period
 ```
+
+Both `start.sh` and `stop.sh` take the container name from `QUANT`. A stopped
+container left behind is removed automatically by the next `start.sh`; a running
+one is refused unless `REPLACE=1`, and neither silently `SIGKILL`s the engine --
+the runtime's 10 s default is shorter than this workload needs to shut down.
 
 Verify the GPU reached the container before blaming the image:
 

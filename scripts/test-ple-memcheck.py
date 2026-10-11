@@ -108,7 +108,12 @@ with tempfile.TemporaryDirectory() as folder:
     bin_dir = Path(folder) / 'bin'
     bin_dir.mkdir()
     fake = bin_dir / 'docker'
-    fake.write_text('#!/bin/sh\nprintf "%s\\n" "$@"\n')
+    # inspect must fail the way a real engine fails when no container of that
+    # name exists; echoing argv would report a phantom predecessor and start.sh
+    # would refuse its own run.
+    fake.write_text('#!/bin/sh\nif [ "$1" = "inspect" ]; then exit 1; fi\n'
+                    'if [ "$1" = "stop" ] || [ "$1" = "rm" ]; then exit 0; fi\n'
+                    'printf "%s\\n" "$@"\n')
     fake.chmod(0o755)
     cache = Path(folder) / 'hf'
     revision = '73a050c27b8c488c65acd6d1c74e45ff02be5fab'

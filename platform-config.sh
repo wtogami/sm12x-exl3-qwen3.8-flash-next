@@ -33,6 +33,13 @@ case "$(uname -m)" in
   *) echo "Unsupported architecture: $(uname -m)" >&2; exit 2 ;;
 esac
 
+# How long to let the engine shut down before the runtime escalates to SIGKILL.
+# The runtime default is 10s and an idle engine here measures 13.9s to stop
+# cleanly, so the default always escalates; see stop.sh for the full reasoning.
+# STOP_TIMEOUT is the operator-facing name and wins, so one variable covers
+# stop.sh and the REPLACE=1 handoff in start.sh alike.
+QWEN38_STOP_TIMEOUT="${STOP_TIMEOUT:-${QWEN38_STOP_TIMEOUT:-90}}"
+
 # Docker wants --gpus; podman's docker shim rejects its device= syntax and
 # resolves GPUs through CDI instead.
 qwen38_is_podman() { docker --version 2>/dev/null | grep -qi podman; }

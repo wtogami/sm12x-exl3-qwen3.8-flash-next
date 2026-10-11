@@ -61,7 +61,13 @@ def sandbox(tmp: Path, shim: str, driver: str | None, hermetic: bool = True) -> 
     bin_dir = tmp / 'bin'
     bin_dir.mkdir(parents=True, exist_ok=True)
     version = 'podman version 5.8.7' if shim == 'podman' else 'Docker version 27.5.1'
-    scripts = {'docker': f'if [ "$1" = "--version" ]; then printf "{version}\\n"; exit 0; fi\nprintf "%s\\n" "$@"',
+    scripts = {'docker': f'if [ "$1" = "--version" ]; then printf "{version}\\n"; exit 0; fi\n'
+                         'if [ "$1" = "inspect" ]; then\n'
+                         '  if [ -n "${FAKE_STATE:-}" ]; then printf "%s\\n" "$FAKE_STATE"; exit 0; fi\n'
+                         '  printf "Error: no such container\\n" >&2; exit 1\n'
+                         'fi\n'
+                         'if [ "$1" = "stop" ] || [ "$1" = "rm" ]; then exit 0; fi\n'
+                         'printf "%s\\n" "$@"',
                'uname': 'printf "%s\\n" "$TEST_ARCH"'}
     if driver:
         scripts['nvidia-smi'] = f'printf "{driver}\\n"'

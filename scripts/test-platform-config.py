@@ -11,7 +11,11 @@ with tempfile.TemporaryDirectory() as folder:
     tmp = Path(folder)
     fake = tmp / 'bin'
     fake.mkdir()
-    for name, body in {'docker': 'printf "%s\\n" "$@"',
+    # inspect must fail like a real engine when the name is unknown: echoing it
+    # would hand start.sh a phantom container state and it would refuse to run.
+    for name, body in {'docker': 'if [ "$1" = "inspect" ]; then exit 1; fi\n'
+                                 'if [ "$1" = "stop" ] || [ "$1" = "rm" ]; then exit 0; fi\n'
+                                 'printf "%s\\n" "$@"',
                        'uname': 'printf "%s\\n" "$TEST_ARCH"'}.items():
         path = fake / name
         path.write_text('#!/bin/sh\n' + body + '\n')

@@ -73,6 +73,41 @@ if [[ "$PLE_MMAP" == 0 && "$CUSTOM_ENGRAM" == 0 && "${QWEN38_SKIP_MEMCHECK:-0}" 
   done < /proc/meminfo
   qwen38_ple_memcheck "$CONFIG_PATH" "${PLE_BYTES_PER_ELEMENT:-2}" "$mem_total_kib" "$mem_avail_kib"
 fi
+# A container left over from a previous run still owns the name, and both engines
+# then reject the run with "name is already in use". Removing a dead one is done
+# automatically: it is serving nothing, and otherwise the documented stop.sh then
+# start.sh sequence is a dead end that only works once you already know about
+# docker rm -- which is how people end up deleting containers by accident.
+#
+# A live predecessor is refused rather than replaced. That is a deliberate answer
+# to --replace, not an omission of it. Replacing cuts a serving engine over
+# mid-request with no warning, and --replace performs its own stop using the
+# runtime's default grace period, the same 10s this workload gets SIGKILLed
+# under, so the "convenient" path is also the rude one. REPLACE=1 does the handoff
+# explicitly and with the grace period stop.sh uses.
+container_name="${CONTAINER_NAME:-qwen38-${QUANT:-exl3}}"
+if state="$(docker inspect --format '{{.State.Status}}' "$container_name" 2>/dev/null)"; then
+  case "$state" in
+    created|exited|dead)
+      echo "Removing $state container $container_name from a previous run" >&2
+      docker rm "$container_name" >/dev/null ;;
+    *)
+      if [[ "${REPLACE:-0}" == 1 ]]; then
+        echo "Stopping $state container $container_name to replace it (REPLACE=1)" >&2
+        docker stop --time "$QWEN38_STOP_TIMEOUT" "$container_name" >/dev/null
+        docker rm "$container_name" >/dev/null
+      else
+        {
+          echo "$container_name is already $state. Run ./stop.sh first, or set"
+          echo "REPLACE=1 to stop and replace it in one step. Not done automatically:"
+          echo "a running container is serving requests and a replacement cuts them"
+          echo "off mid-flight, with the default 10s grace period it would not even"
+          echo "shut down cleanly."
+        } >&2
+        exit 1
+      fi ;;
+  esac
+fi
 [[ "${ENFORCE_EAGER:-0}" == 1 ]] && EXTRA_ARGS+=(--enforce-eager)
 if [[ "${MTP_TOKENS:-3}" != 0 ]]; then
   EXTRA_ARGS+=(--speculative-config "{\"method\":\"mtp\",\"num_speculative_tokens\":${MTP_TOKENS:-3}}")
@@ -107,7 +142,7 @@ fi
 # mounts keep their host cache_home_t label, which container_t cannot access.
 # :z rather than :Z because these caches are shared with download.sh, and :Z
 # would isolate each run behind its own MCS category.
-docker run -d --name "${CONTAINER_NAME:-qwen38-${QUANT:-exl3}}" \
+docker run -d --name "$container_name" \
   "${GPU_ARGS[@]}" \
   --ipc=host --network=host \
   -e OMP_NUM_THREADS="${CPU_THREADS:-8}" \
