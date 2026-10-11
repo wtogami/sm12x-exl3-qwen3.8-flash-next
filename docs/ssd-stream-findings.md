@@ -203,3 +203,103 @@ actually is.
 
 So: no sudo grant is warranted. It would not unblock the mapped case, and the
 unmapped case needs nothing.
+
+---
+
+## 3. Stage A's control is invalid on this filesystem: btrfs compression
+
+Plan section 4 says `fio --direct=1` "bypasses the page cache by construction,
+which removes the whole class of error made during this session". On `burst`
+and `gg` that is false for the checkpoint files specifically.
+
+Both hosts mount the checkpoint dataset as btrfs with `compress=zstd:1`:
+
+```
+burst  /dev/nvme0n1p3  rw,relatime,seclabel,compress=zstd:1,ssd,discard=async,...
+gg     /dev/nvme0n1p3  rw,relatime,seclabel,compress=zstd:1,ssd,discard=async,...
+```
+
+The real PLE n-gram tensors do compress. Measured zlib ratio on
+`...ngram_embedding.shard_0.weight`, dtype BF16, shape `[2500012, 160]`:
+**0.7844**. `filefrag` on the live blob reports 2238 of 2265 extents flagged
+`encoded`, i.e. stored compressed.
+
+### Compressed extents make O_DIRECT fall back to buffered I/O
+
+`fs/btrfs/direct-io.c`, in `btrfs_dio_iomap_begin()`:
+
+```c
+/*
+ * Ok for INLINE and COMPRESSED extents we need to fallback on buffered
+ * io. ... For COMPRESSED we _have_ to read the entire extent in so we can
+ * decompress it, so there will be buffering required no matter what we
+ * do, so go ahead and fallback to buffered.
+ *
+ * We return -ENOTBLK because that's what makes DIO go ahead and go back
+ * to buffered IO.
+ */
+if (btrfs_extent_map_is_compressed(em) || em->disk_bytenr == EXTENT_MAP_INLINE) {
+```
+
+Compressed extents are 32 blocks = 128 KiB (`filefrag` on the shard), so one
+4 KiB demand read pulls the whole extent.
+
+### Measured, on identical bytes differing only in compression
+
+512 MiB sliced out of the real BF16 n-gram tensor, written twice to the same
+dataset: once normally (`encoded` extents), once after `chattr +C`:
+
+| | `--direct=1`, qd1, 4 KiB random, cold |
+| --- | --- |
+| compressed (`encoded` extents) | page cache 0 -> **2112 pages**; device read **26.0x** the logical bytes |
+| `chattr +C` (no compression) | page cache 0 -> 4 pages; device read **1.00x** |
+
+The `--direct=1` run on the compressed copy also reported *higher* throughput
+than the direct run on the uncompressed copy, because it was partly serving
+from the cache it had just polluted. That is the same failure signature the
+plan recorded as "67k and 83k IOPS at queue depth 1, with 32 workers slower
+than 1 worker".
+
+### Alignment is a second, independent trap
+
+With a page-aligned buffer, `O_DIRECT` on btrfs is genuinely direct (4 pages
+resident, 1.0x amplification). Move the same buffer 512 bytes and the call
+still returns full length with no error, while resident pages go 0 -> 320:
+
+```
+ALIGNED    : 32/32 ok  pages 0 ->   4   genuinely direct
+MISALIGNED : 32/32 ok  pages 0 -> 320   silently buffered
+```
+
+`check_direct_IO()` in btrfs compares buffer alignment against
+`fs_info->sectorsize`, so 4 KiB is the requirement on this filesystem, and a
+prototype using `preadv` into a pinned staging slab must assert alignment or it
+will quietly benchmark the page cache. Note this is the opposite of an error:
+silent degradation, no return code.
+
+### What this changes in the staged plan
+
+* Stage A must point at a non-compressed dataset, or at files carrying
+  `chattr +C`, or it measures zstd throughput and cache, not the device.
+* Stage B's design input changes: if the streamed table stays on a compressed
+  btrfs dataset, the row->page amplification in plan section 3 (12.8x BF16,
+  25.6x FP8) is really ~26x on the wire, per read, plus a decompress. Turning
+  compression off for the table is a bigger single win than anything in the
+  I/O path so far.
+* Whatever filesystem the streaming prototype reads from should be the one the
+  shipping image reads from; results from a clean XFS scratch device do not
+  transfer to this `compress=zstd:1` btrfs dataset without a matching arm.
+
+### Honest device numbers, uncompressed, cold, `burst` (HP SSD FX900 Pro 4TB)
+
+```
+qd1    19.3k IOPS    clat  46.1 us
+qd8   148.0k IOPS    clat  49.0 us
+qd32  164.0k IOPS    clat 189.8 us
+qd128 164.0k IOPS    clat 776.3 us      (saturated at ~164k)
+```
+
+The plan's arithmetic target of ~38k page-reads/s at `max_num_seqs=16` needs
+qd>=4 and is comfortably under the qd8 knee, so the plan's conclusion holds for
+the right reason: bandwidth and IOPS are not the constraint. Serialization,
+cache state and read amplification are.
