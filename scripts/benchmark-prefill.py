@@ -13,6 +13,16 @@ import uuid
 from pathlib import Path
 from urllib.parse import urlparse
 
+try:
+    from server_state import receipt_block
+except ImportError:
+    # The helper sits beside this script; keep the profiler runnable if it is not
+    # on sys.path, recording why the receipt has no launch facts.
+    def receipt_block(container, claims=None, disabled=False):
+        return {"captured": False, "reason": "server_state.py not importable"}
+
+
+
 
 def post_json(base_url: str, path: str, payload: dict, timeout: float = 3600) -> dict:
     server_url = base_url.rstrip("/").removesuffix("/v1")
@@ -141,6 +151,14 @@ def main() -> None:
     )
     parser.add_argument("--runs", type=int, default=3)
     parser.add_argument("--output", type=Path, required=True)
+    parser.add_argument(
+        "--server-container",
+        default=None,
+        help="running server container to record launch facts from; defaults to "
+             "--model, which is the name start.sh gives the container",
+    )
+    parser.add_argument("--no-server-state", action="store_true",
+                        help="skip the container inspection; the receipt records why")
     args = parser.parse_args()
 
     run_nonce = uuid.uuid4().hex
@@ -189,8 +207,15 @@ def main() -> None:
             }
         )
 
+    # Values this receipt asserts from the client side; the server copy of each
+    # is checked against them in the "server" block below.
+    claims = {
+            "served_model_name": args.model,
+            "kv_cache_dtype": "fp8",
+        }
+
     report = {
-        "schema": "qwen38-prefill-depth.v2",
+        "schema": "qwen38-prefill-depth.v3",
         "nonce": run_nonce,
         "method": (
             "C1 exact-length unique prompts; client request to first streamed token; "
@@ -201,6 +226,8 @@ def main() -> None:
         "kv_cache_dtype": "fp8",
         "runs_per_point": args.runs,
         "points": points,
+        "server": receipt_block(
+            args.server_container or args.model, claims, args.no_server_state),
     }
     args.output.parent.mkdir(parents=True, exist_ok=True)
     args.output.write_text(json.dumps(report, indent=2) + "\n")

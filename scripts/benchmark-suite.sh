@@ -15,6 +15,14 @@ fi
 PART="${PART:-all}"
 case "$PART" in all|core|prefill|context|retrieval|coding) ;; *) echo "Invalid PART=$PART" >&2; exit 2 ;; esac
 mkdir -p "$RESULT_DIR"
+# Record how the server was launched next to what it measured. The PLE table
+# path and the MTP draft length are decided at launch and are otherwise absent
+# from the receipts, which assert only the client's own claims.
+if [[ -z "${SKIP_RUNTIME_CAPTURE:-}" ]]; then
+  python3 "$SCRIPT_DIR/capture-runtime.py" "${SERVER_CONTAINER:-qwen38-$QUANT}" \
+    --output "$RESULT_DIR/runtime.json" \
+    || echo "warning: runtime capture failed; results are still written" >&2
+fi
 MODEL="qwen38-$QUANT"
 COMMON=(--base-url "$BASE_URL" --model "$MODEL")
 MTP_METRICS=()

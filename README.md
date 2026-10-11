@@ -364,6 +364,11 @@ TOOL_EVAL_DIR=/path/to/tool-eval-bench RESULT_DIR=benchmarks/my-mmap \
   MODEL=qwen38-exl3-ple8 bash scripts/tool-quality.sh
 ```
 
+Every suite leg also writes `runtime.json` into `RESULT_DIR`: the image, the
+checkpoint it was pointed at, and the launch facts a client receipt cannot know
+-- which PLE table path (`host-offload` or `checkpoint-mapped`), the server's own
+MTP draft length, and the batch budgets. `SKIP_RUNTIME_CAPTURE=1` omits it.
+
 Tool-eval-bench is pinned at `cf54b4bfe705f12f71e8866f10730572497c8105`.
 The complete reports preserve failed and partial cases. Vision and retrieval
 are targeted checks, not broad capability benchmarks. Exact orchid repetition

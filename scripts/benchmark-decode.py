@@ -14,6 +14,16 @@ from pathlib import Path
 from urllib.parse import urlparse
 import uuid
 
+try:
+    from server_state import receipt_block
+except ImportError:
+    # The helper sits beside this script; keep the profiler runnable if it is not
+    # on sys.path, recording why the receipt has no launch facts.
+    def receipt_block(container, claims=None, disabled=False):
+        return {"captured": False, "reason": "server_state.py not importable"}
+
+
+
 
 def request_once(
     base_url: str, model: str, concurrency: int, output_tokens: int, seed: int,
@@ -173,6 +183,14 @@ def main() -> None:
     parser.add_argument("--runs", type=int, default=3)
     parser.add_argument("--seed", type=int, default=20260828)
     parser.add_argument("--output", type=Path, required=True)
+    parser.add_argument(
+        "--server-container",
+        default=None,
+        help="running server container to record launch facts from; defaults to "
+             "--model, which is the name start.sh gives the container",
+    )
+    parser.add_argument("--no-server-state", action="store_true",
+                        help="skip the container inspection; the receipt records why")
     args = parser.parse_args()
     if min(args.concurrency) < 1 or args.output_tokens < 2:
         parser.error("concurrency must be positive and output tokens >= 2")
@@ -215,8 +233,16 @@ def main() -> None:
             }
         )
 
+    # Values this receipt asserts from the client side; the server copy of each
+    # is checked against them in the "server" block below.
+    claims = {
+            "served_model_name": args.model,
+            "mtp_tokens": args.mtp_tokens,
+            "kv_cache_dtype": "fp8",
+        }
+
     report = {
-        "schema": "qwen38-decode-concurrency.v3",
+        "schema": "qwen38-decode-concurrency.v4",
         "request_mode": args.request_mode,
         "method": (
             ("separate HTTP requests with unique prompt identifiers; " if args.request_mode == "clients"
@@ -233,6 +259,8 @@ def main() -> None:
         "warmup_runs_per_point": args.warmup_runs,
         "runs_per_point": args.runs,
         "points": points,
+        "server": receipt_block(
+            args.server_container or args.model, claims, args.no_server_state),
     }
     args.output.parent.mkdir(parents=True, exist_ok=True)
     args.output.write_text(json.dumps(report, indent=2) + "\n")
