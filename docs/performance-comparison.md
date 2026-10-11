@@ -22,10 +22,12 @@ NVFP4 builds and roughly tie for EXL3; decode energy drops ~40% at a
 
 | Quant | HF card (measured revision) | Size | Weight footprint |
 |---|---|---|---|
-| EXL3 K4.25 v1 | [wrldsuksgo2mars/Qwen3.8-Flash-Next-EXL3-K4.25-v1](https://huggingface.co/wrldsuksgo2mars/Qwen3.8-Flash-Next-EXL3-K4.25-v1) [`73a050c`](https://huggingface.co/wrldsuksgo2mars/Qwen3.8-Flash-Next-EXL3-K4.25-v1/tree/73a050c27b8c488c65acd6d1c74e45ff02be5fab) | 179.4 GB | mixed K4/K5 EXL3 experts + BF16 non-experts on GPU; ~102 GB (95 GiB) BF16 PLE table host-mmap — same table as RHA |
+| EXL3 K4.25 v1 | [wrldsuksgo2mars/Qwen3.8-Flash-Next-EXL3-K4.25-v1](https://huggingface.co/wrldsuksgo2mars/Qwen3.8-Flash-Next-EXL3-K4.25-v1) [`73a050c`](https://huggingface.co/wrldsuksgo2mars/Qwen3.8-Flash-Next-EXL3-K4.25-v1/tree/73a050c27b8c488c65acd6d1c74e45ff02be5fab) | 179.4 GB | mixed K4/K5 EXL3 experts + BF16 non-experts on GPU; ~102 GB (95 GiB) BF16 PLE table pinned in host RAM — byte-identical to RHA's table |
 | NVIDIA NVFP4 | [nvidia/Qwen3.8-Flash-Next-NVFP4](https://huggingface.co/nvidia/Qwen3.8-Flash-Next-NVFP4) [`fc694b5`](https://huggingface.co/nvidia/Qwen3.8-Flash-Next-NVFP4/tree/fc694b54fb0174e0913e6adf86691ef85a4ead47) | 132.7 GB | NVFP4 main experts on GPU; FP8 PLE 51.2 GB pinned host |
-| RedHatAI NVFP4 | [RedHatAI/Qwen3.8-Flash-Next-NVFP4](https://huggingface.co/RedHatAI/Qwen3.8-Flash-Next-NVFP4) [`c8f2fb1`](https://huggingface.co/RedHatAI/Qwen3.8-Flash-Next-NVFP4/tree/c8f2fb1b9869f686b214782036123b10ff96d14a) | 174 GB | NVFP4 experts + BF16 non-experts ~81 GB on GPU; 102.5 GB BF16 PLE host-offloaded |
-| exl3-ple8 (FP8-PLE variant) | [wrldsuksgo2mars/Qwen3.8-Flash-Next-EXL3-K4.25-PLE-FP8-v1](https://huggingface.co/wrldsuksgo2mars/Qwen3.8-Flash-Next-EXL3-K4.25-PLE-FP8-v1) [`888306b`](https://huggingface.co/wrldsuksgo2mars/Qwen3.8-Flash-Next-EXL3-K4.25-PLE-FP8-v1/tree/888306bd3996d6317758c07df50622829259ad17) | 128.3 GB | EXL3 K4.25 experts (same as row 1); **FP8 PLE** ~48 GiB host-mmap — differs from row 1 only in PLE table format |
+| RedHatAI NVFP4 | [RedHatAI/Qwen3.8-Flash-Next-NVFP4](https://huggingface.co/RedHatAI/Qwen3.8-Flash-Next-NVFP4) [`c8f2fb1`](https://huggingface.co/RedHatAI/Qwen3.8-Flash-Next-NVFP4/tree/c8f2fb1b9869f686b214782036123b10ff96d14a) | 174 GB | NVFP4 experts + BF16 non-experts ~81 GB on GPU; 102.5 GB BF16 PLE pinned in host RAM — the same bytes as row 1 |
+| exl3-ple8 (FP8-PLE variant) | [wrldsuksgo2mars/Qwen3.8-Flash-Next-EXL3-K4.25-PLE-FP8-v1](https://huggingface.co/wrldsuksgo2mars/Qwen3.8-Flash-Next-EXL3-K4.25-PLE-FP8-v1) [`888306b`](https://huggingface.co/wrldsuksgo2mars/Qwen3.8-Flash-Next-EXL3-K4.25-PLE-FP8-v1/tree/888306bd3996d6317758c07df50622829259ad17) | 128.3 GB | EXL3 K4.25 experts (same as row 1); **FP8 PLE** ~48 GiB pinned in host RAM — differs from row 1 only in PLE table format |
+
+**PLE serving mode is not an axis between these four rows.** On x86_64 `platform-config.sh:31` sets `DEFAULT_PLE_MMAP=0`, so all four builds take the host-offload path: the table is copied into pinned host RAM at load and decode reads it from there over PCIe. The three RTX finals that captured a `runtime.json` all show that path (`VLLM_PLE_CPU_OFFLOAD=1`, a `PleOffloadWorker` pid, "Token embedding offloaded to pinned host RAM"), `nvfp4-final` among them; RedHatAI has no runtime capture at all, so its mode rests on the platform default. Mapping the table in place from the checkpoint (`PLE_MMAP=1`) is the aarch64/GB10 default, and on RTX it was used only by the legs named for it — `exl3-ple8-mmap-final`, `resident-v031-mmap` and `rtx-structured-final`, all on the EXL3 checkpoint — each of which started without error, so the mapping is available on this platform, merely slow. So "pinned" here means host RAM, and nothing about a checkpoint's on-disk layout can move a decode number in this table.
 
 ## Power ladder (YaRN 512K, MTP3, C1; same day 2026-10-07)
 
@@ -140,6 +142,37 @@ already at its C16 level (595.6), while EXL3 scales from 586.5 to 874.2 —
 and adding clients past C8 does not lift it. The candidate paths are the
 two vLLM-side ones specific to this build: the LLM Compressor expert path
 and the BF16 PLE host path.
+
+**One of those two candidates is now closed, and it is the storage one.**
+EXL3 and RedHatAI ship *the same* PLE bytes: shard_0 is `[2500012, 160]
+BF16` in both, and the first and last 32 MiB of each hash identically
+(`85514f34…`, `178df174…`). Only the file layout differs — EXL3 spreads its
+128 shard tensors across 14 files, RedHatAI keeps the whole 95.37 GiB in one
+— which is why identical logical data shows up differently compressed. Both
+pin the same 95.37 GiB the same way, so the gather work per token is the
+same in both and cannot produce a build-specific ceiling. Neither is reading
+from disk: the live EXL3 worker on this host (same offload path, same
+checkpoint layout) recorded `read_bytes` of 36 KiB across its whole session
+against `RssShmem` of 130.28 GiB, and RedHatAI's PLE blob measures fully
+resident on 2026-10-11 (`fincore` 95.4 GiB of 95.4 GiB) on a host holding
+692 GiB of page cache — so nothing about either table is cold on this machine. The compression state also points the wrong way: EXL3's table is the
+*more* compressed of the two BF16 tables (80.47 GiB of 95.37 inside
+compressed extents, against RedHatAI's 69.11) and EXL3 is the one that
+scales to 874. What survives is the expert path — compressed-tensors against
+the trellis and FP4-GEMM paths — possibly interacting with the PLE gather,
+but not that path's format, size, layout or compression.
+
+**Two receipt defects, either of which could mislead a reader of these
+blocks.** The profilers hardcoded a `--profile` enum with no
+`nvfp4-redhatai` member, so the RedHatAI legs were stamped `quant_profile:
+"nvfp4"` — the NVIDIA profile, whose `PLE_BYTES_PER_ELEMENT` is 1. Read as a
+format claim that is precisely wrong; `model` is the authoritative field.
+The enum was widened in `530b4cc`, but these receipts predate it and cannot
+be edited without breaking provenance. Second, unlike the single-profile
+finals, `core-suite-20261007/` and `c16-repeat-20261007/` carry no
+`runtime.json`, so they never captured `VLLM_PLE_MMAP` or
+`VLLM_PLE_CPU_OFFLOAD`: the PLE mode of these specific blocks is inferred
+from the platform default rather than recorded.
 
 ## End-to-end eval legs (wall-clock, 16-way concurrent requests)
 
