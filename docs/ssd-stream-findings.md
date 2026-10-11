@@ -303,3 +303,67 @@ The plan's arithmetic target of ~38k page-reads/s at `max_num_seqs=16` needs
 qd>=4 and is comfortably under the qd8 knee, so the plan's conclusion holds for
 the right reason: bandwidth and IOPS are not the constraint. Serialization,
 cache state and read amplification are.
+
+---
+
+## 4. The mmap path is not *blocked* on discrete RTX; it is *slow* there
+
+Plan section 3 states the architectural constraint as: a discrete RTX PRO 6000
+reports `PAGEABLE_MEMORY_ACCESS_USES_HOST_PAGE_TABLES=0`, "so mmap PLE is
+disabled on RTX", and calls this "the architectural constraint that decides the
+design", concluding that the gather must move off the GPU.
+
+The attribute readings are confirmed on both hosts (driver 615.71.09):
+
+```
+NVIDIA RTX PRO 6000 Blackwell Workstation Edition
+    CU_DEVICE_ATTRIBUTE_PAGEABLE_MEMORY_ACCESS                        = 1
+    CU_DEVICE_ATTRIBUTE_PAGEABLE_MEMORY_ACCESS_USES_HOST_PAGE_TABLES  = 0
+    CU_DEVICE_ATTRIBUTE_CONCURRENT_MANAGED_ACCESS                     = 1
+    CU_DEVICE_ATTRIBUTE_SYSTEM_MEMORY_INTEG_UNIFIED_ADDRESSING        = 1
+```
+
+But the attribute being 0 does not make the dereference illegal; it makes it
+expensive. `require_pageable_access()` treats 0 as unsupported, which is a
+correctness-and-performance *policy*, not a hardware *barrier*. Measured here,
+using the same indirection the vendored `_gather_mapped_rows_kernel` uses (host
+virtual addresses held in a device int64 tensor, cast to a pointer in-kernel):
+
+* the kernel **does** read a read-only file-backed mapping on this card, and the
+  bytes are **identical to `pread`** on the same offsets (6/6 sampled pages);
+* so the plan's sentence "the CUDA driver rejects them at startup" describes the
+  repo's guard firing, not the driver refusing the access.
+
+### A cold-read measurement that needs no cache eviction at all
+
+Worth keeping as protocol: instead of faulting a page in and trying to evict it,
+read file offsets that have **never been touched**, one per trial, through a
+fresh mapping. Cold by construction, nothing to flush, no root, and it works
+while another engine is serving.
+
+| measurement | value |
+| --- | --- |
+| single never-faulted host page, GPU kernel read | p50 **55.3 us**, p90 72.6 us, max 85.8 us (n=40) |
+| same page afterwards (resident) | **11.6 us** per read |
+| gather of 256 rows x 320 B, one per page, mapping resident | 12.4 us per row |
+
+That last row is the one that decides the design. ~12 us per 320-byte row is
+~25 MB/s effective: a decode step needs 16 rows x 48 PLE-bearing layers, and
+each access is an uncoalesced PCIe round trip against pageable host memory.
+This is the same wall upstream reports in PR #58439 (cold 30K-token prefill:
+**88 s with GPU faults alone vs 1.6 s with 64 CPU threads faulting first**).
+
+So the plan's conclusion -- stream it on the CPU, do not let the GPU fault the
+table -- is **right**, but the stated reason is wrong, and the wrong reason
+matters: it implies an implementer must build a CPU gather because the GPU
+*cannot* touch the mapping. It can. The reason to build the CPU gather is
+per-access PCIe latency, which is a number you can measure before committing to
+the design.
+
+### Not established, and confounded
+
+A 1024-row cold gather failed with `CUDA out of memory`. That box had only
+0.77 GiB of free VRAM because the live `exl3` engine holds 92 of 97.9 GiB, so
+this is **not** evidence about UVM page-table limits; it is an artifact of
+co-tenancy. Re-measure on an idle GPU before drawing anything from it. Nothing
+in this section was measured on `gg`.
