@@ -252,6 +252,40 @@ Two facts that are easy to get wrong:
 `build.sh` and `start.sh` perform both steps on a podman host through
 `qwen38_ensure_cdi` in `platform-config.sh`.
 
+**That function is not a read-only probe, so it is a misleading thing to call
+while debugging.** It always writes the spec and always checks the drop-in, which
+means sourcing `platform-config.sh` and calling it to look at current state
+changes the host: on any machine that merely happens to have `nvidia-ctk`
+installed, it produces `~/.config/cdi/nvidia.yaml`, its `.nvidia.yaml.qwen38`
+marker, and registers the directory with podman. That is easy to do by accident on
+a workstation, and it succeeds quietly, which reads as evidence about the
+deployment you are actually investigating when it is evidence only about the local
+driver. To see what it would do without touching anything:
+
+```sh
+env -u XDG_CONFIG_HOME HOME=$(mktemp -d) bash -c \
+  'source ./platform-config.sh; qwen38_ensure_cdi'
+```
+
+`XDG_CONFIG_HOME` is honoured ahead of `HOME` and must be unset for the sandbox to
+hold.
+
+To read state instead of provoking it, the spec and marker are plain files under
+`~/.config/cdi/`. Do not use `nvidia-ctk cdi list` to ask what podman can resolve:
+it scans only its own default directories, `/etc/cdi` and `/var/run/cdi`, and says
+nothing about a spec registered through `cdi_spec_dirs`. On `gg`, where podman
+resolves the device without complaint, it reports:
+
+```
+$ nvidia-ctk cdi list
+INFO[0000] Found 0 CDI devices
+```
+
+`podman info` does not expose `cdi_spec_dirs` either. The only command that
+actually answers the question is the launch itself -- see the `--entrypoint
+nvidia-smi` check at the end of this document, which proves the GPU is visible
+rather than merely that the entity resolved.
+
 ### Regeneration policy: regenerate ours, validate theirs
 
 Regenerating unconditionally is the transparent answer to driver updates, and
