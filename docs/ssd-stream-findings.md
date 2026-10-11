@@ -115,3 +115,91 @@ and it means:
 Caveat: unverified on `gg`, which is `exl3-ple8`-serving right now and cannot be
 disturbed. The prediction is that a `cudaHostAlloc` of 47.684 GiB succeeds there
 where `pin_memory` of the same size is at the edge. Confirm on `burst` first.
+
+---
+
+## 2. Page-cache eviction: the plan's "unsolved without root" is solvable without root
+
+Plan section 6 says a `posix_fadvise(POSIX_FADV_DONTNEED)` attempt "did not
+evict", that this produced the fake 67k/83k IOPS numbers, and that fixing it
+needs root for `drop_caches`. Neither host gives sudo. That conclusion is wrong
+in both halves.
+
+### fadvise works unprivileged
+
+On a 2 GiB file on `burst`'s btrfs, as `opencode`, no root and no `fsync`:
+
+```
+after read:            RES = 304M
+after fadvise DONTNEED: RES = 0B        rc=0
+```
+
+`vmtouch -e` on a 512 MiB file evicted all 131072 pages in 0.000042 s.
+
+### Why it silently does nothing, which is what produced the fake numbers
+
+`fadvise(DONTNEED)` returns 0 whether or not it evicted anything. It calls
+`mapping_try_invalidate()`, and the predicate is `mapping_evict_folio()`
+(`mm/truncate.c`):
+
+```c
+if (folio_test_dirty(folio) || folio_test_writeback(folio))
+        return 0;
+/* The refcount will be elevated if any page in the folio is mapped */
+if (folio_ref_count(folio) >
+                folio_nr_pages(folio) + folio_has_private(folio) + 1)
+        return 0;
+```
+
+So it skips **dirty** pages and **mapped** pages. Both were reproduced:
+
+* dirty: write a file, do not `sync`, `fadvise` -> resident stays nonzero;
+  after `sync` -> 0. The plan's "freshly written 4 GiB file" is exactly this.
+* mapped: fault all 65536 pages of a 256 MiB file through a live `mmap`, then
+  `fadvise` from a second fd -> `mincore` still reports 65536/65536, `fincore`
+  still 256M, `rc=0`. After `munmap`, the same call drops it to 0.
+
+### And root would not have fixed that case
+
+`/proc/sys/vm/drop_caches` reaches the same predicate:
+`drop_pagecache_sb()` -> `invalidate_mapping_pages()` ->
+`mapping_try_invalidate()` -> `mapping_evict_folio()`
+(`fs/drop_caches.c:41`). Its own kernel-doc says it "removes pages that are
+clean, unmapped and unlocked". Granting sudo for `drop_caches` therefore buys
+nothing for a table a live engine has `mmap`'d, which is precisely the P2 case.
+`invalidate_inode_pages2_range()` does unmap first, but no syscall reaches it
+on an arbitrary file.
+
+### What does work unprivileged, including on a live mapping
+
+From inside the process that owns the mapping: `madvise(MADV_DONTNEED)` on the
+range, then `fadvise(DONTNEED)` on the fd. Measured on a fully-faulted 512 MiB
+mapping:
+
+```
+mapped+faulted              : mincore 131072/131072   fincore 502.9M
+after MADV_DONTNEED          : mincore 131072/131072   fincore 502.9M   (PTEs dropped, cache kept)
+then fadvise DONTNEED        : mincore        0/131072   fincore      0B
+```
+
+`process_madvise(2)` on another same-uid process returns EINVAL here
+(`errno=22`, kernel 7.2.8, `ptrace_scope=0`), so the in-process route is the
+usable one; the engine has to do it to itself.
+
+### Verification is also unprivileged
+
+`mincore(2)` on your own mapping, and `fincore`, both work as `opencode`. The
+plan's protocol requirement "never infer cache state from throughput alone;
+verify residency explicitly" is satisfiable today.
+
+### The likelier cause of the void numbers
+
+`/tmp` is a 498 GiB tmpfs on `burst`, including `/tmp/opencode`, which the
+environment guidance recommends for scratch. A "4 GiB test file" written there
+is shmem: fully resident, not page cache, and unfreeable by any amount of
+`fadvise`. Any I/O measurement against it measures RAM. Benchmark files must
+live on the btrfs dataset (`/home/...`), which is also where the checkpoint
+actually is.
+
+So: no sudo grant is warranted. It would not unblock the mapped case, and the
+unmapped case needs nothing.
