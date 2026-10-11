@@ -41,6 +41,14 @@ for the defaults; C16 throughput tradeoffs are recorded below.
 | `nvfp4` | [NVIDIA NVFP4](https://huggingface.co/nvidia/Qwen3.8-Flash-Next-NVFP4) | FP8 with shared scale, about 48 GiB | 2 / 2 |
 | `nvfp4-redhatai` | [RedHatAI NVFP4](https://huggingface.co/RedHatAI/Qwen3.8-Flash-Next-NVFP4) | BF16, about 95 GiB | 3 / 2 |
 
+On RTX the PLE table is page-locked in host RAM, so its size is a host memory
+requirement, not a GPU one: a single pinned allocation has not been observed to
+succeed above roughly 55% of installed RAM. A 128 GiB host therefore serves the
+FP8 profiles but not the BF16 ones, failing as `CUDA error: out of memory` about
+40 s into engine start. `start.sh` sizes this from the checkpoint and refuses
+before creating the container; `QWEN38_SKIP_MEMCHECK=1` overrides. See
+[host pinned memory](docs/podman-rootless-fedora.md#host-pinned-memory-for-the-ple-table).
+
 EXL3 requires independent K4/K5 allocation for each expert's gate, up and down
 projection. The pinned B12x fork supports this geometry and preserves all 5951
 experts with unequal projection tiers across target and MTP layers. The

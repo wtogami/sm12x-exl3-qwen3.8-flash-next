@@ -19,7 +19,8 @@ HF_CACHE="${HF_CACHE:-$HOME/.cache/huggingface}"
 RUNTIME_CACHE="${RUNTIME_CACHE:-$HOME/.cache/qwen38-rtx/${QUANT:-exl3}}"
 mkdir -p "$RUNTIME_CACHE"
 MODEL_PATH="/root/.cache/huggingface/hub/$MODEL_CACHE_NAME/snapshots/$MODEL_REVISION"
-if [[ ! -f "$HF_CACHE/hub/$MODEL_CACHE_NAME/snapshots/$MODEL_REVISION/config.json" ]]; then
+CONFIG_PATH="$HF_CACHE/hub/$MODEL_CACHE_NAME/snapshots/$MODEL_REVISION/config.json"
+if [[ ! -f "$CONFIG_PATH" ]]; then
   echo "Missing checkpoint. Run QUANT=${QUANT:-exl3} $RECIPE_DIR/download.sh" >&2
   exit 1
 fi
@@ -46,8 +47,9 @@ if [[ "$LONGCTX" == 1 ]]; then
       ;;
   esac
 fi
+CUSTOM_ENGRAM=0
 case " $* " in
-  *" --engram-config "*|*" --engram-config="*) ;;
+  *" --engram-config "*|*" --engram-config="*) CUSTOM_ENGRAM=1 ;;
   *)
     if [[ "$PLE_MMAP" == 1 ]]; then
       EXTRA_ARGS+=(--engram-config '{"cpu_offload": true, "checkpoint_mapped": true}')
@@ -56,14 +58,42 @@ case " $* " in
     fi
     ;;
 esac
+# Size the pinned host memory before the container exists. A checkpoint-mapped
+# table allocates nothing table-sized, and a caller-supplied --engram-config
+# means we cannot know the placement, so both cases skip the check.
+if [[ "$PLE_MMAP" == 0 && "$CUSTOM_ENGRAM" == 0 && "${QWEN38_SKIP_MEMCHECK:-0}" != 1 ]] \
+   && [[ -r /proc/meminfo ]]; then
+  mem_total_kib=0
+  mem_avail_kib=0
+  while read -r key value _; do
+    case "$key" in
+      MemTotal:) mem_total_kib=$value ;;
+      MemAvailable:) mem_avail_kib=$value ;;
+    esac
+  done < /proc/meminfo
+  qwen38_ple_memcheck "$CONFIG_PATH" "${PLE_BYTES_PER_ELEMENT:-2}" "$mem_total_kib" "$mem_avail_kib"
+fi
 [[ "${ENFORCE_EAGER:-0}" == 1 ]] && EXTRA_ARGS+=(--enforce-eager)
 if [[ "${MTP_TOKENS:-3}" != 0 ]]; then
   EXTRA_ARGS+=(--speculative-config "{\"method\":\"mtp\",\"num_speculative_tokens\":${MTP_TOKENS:-3}}")
 fi
-# The GPU half of the docker/podman split lives in platform-config.sh. Serving
-# is where the GPU is actually needed, and a pull.sh deployment never runs
-# build.sh, so the CDI spec is provisioned here as well. Unlike build.sh this
-# one is fatal: without it the container cannot start at all.
+# Docker wants --gpus; podman's docker shim rejects its device= syntax and
+# resolves GPUs through CDI instead (see platform-config.sh).
+#
+# Do not "unify" these two branches on --device nvidia.com/gpu=$N. The flags are
+# not equivalent: --gpus resolves through whichever mechanism the engine has, so
+# moby maps it onto CDI when a spec exists and falls back to the prestart hook
+# when none does, whereas --device requires a spec in a directory that engine
+# scans. This recipe generates its spec under $HOME, which rootful docker does
+# not read, so switching the docker branch to --device would add a root-time
+# /etc/cdi provisioning step and a new stale-spec failure mode, and would raise
+# the docker floor to 28.2.0 (CDI default-on) to no benefit. Divergence here is
+# deliberate. Docker paths in this repo are untested: no docker host was
+# available, so treat that branch as reasoned-about, not verified.
+#
+# Serving is where the GPU is actually needed, and a pull.sh deployment never
+# runs build.sh, so the CDI spec is provisioned here as well. Unlike build.sh
+# this one is fatal: without it the container cannot start at all.
 if qwen38_is_podman; then
   qwen38_ensure_cdi
   GPU_ARGS=(--device nvidia.com/gpu=all -e NVIDIA_VISIBLE_DEVICES="${GPU:-all}")

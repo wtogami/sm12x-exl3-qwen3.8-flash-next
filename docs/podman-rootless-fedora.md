@@ -247,10 +247,14 @@ Relabeling is recursive and persists on the host directory; `restorecon -R
 the image's `/root/.cache` paths resolve, and under rootless podman container uid
 0 is already the invoking user. Verified — its cache writes arrive as `rtx:rtx`.
 
-## Docker behaviour is unchanged
+## Docker behaviour
+
+**No docker host was available, so the docker branch of these scripts is
+reasoned about, not tested.** Everything below describes what the code does and
+what was read in upstream sources; none of it was executed against dockerd.
 
 Every podman-specific change is behind `qwen38_is_podman`, so a docker host
-executes the same command line it did before:
+receives the same command line it did before, except where noted:
 
 | | docker | rootless podman |
 | --- | --- | --- |
@@ -258,6 +262,17 @@ executes the same command line it did before:
 | CDI provisioning | not run | spec + `containers.conf.d` drop-in |
 | `download.sh` user namespace | none | `--userns=keep-id` |
 | `--user $(id -u):$(id -g)` | unchanged | unchanged |
+| cache mounts | **`:z` added** | **`:z` added** |
+
+The two branches are not interchangeable and should not be "unified" on
+`--device`. `--gpus` resolves through whichever mechanism the engine offers:
+moby maps it onto CDI when a spec is present and falls back to the prestart hook
+when none is. `--device` requires a spec in a directory that engine scans, and
+this recipe generates its spec under `$HOME`, which rootful docker does not read.
+Switching the docker branch would therefore add a root-time `/etc/cdi`
+provisioning step, add a stale-spec failure mode, and raise the docker floor to
+28.2.0 (released 2025-05-28, when CDI became default-on; the capability existed
+from 25.0 but behind `--experimental`) for no benefit.
 
 One change is deliberately unconditional: the `:z` mount option. It is a
 standard volume mode that docker also accepts, and it is a no-op wherever
@@ -270,13 +285,89 @@ additive: the token was never forwarded before, so gated checkpoints could not
 be fetched at all. It is passed by name (`-e HF_TOKEN`), so the secret does not
 appear in the image history or in the container's argv.
 
+### One caveat about the COPR build
+
+The `@ai-ml` COPR package set installed on the reference host contains no
+`nvidia-container-cli`: `rpm -q --whatprovides nvidia-container-cli` reports no
+provider, `dnf repoquery` for it and for `libnvidia-container*` returns nothing
+from any enabled repo, and no such file exists on disk. The prestart hook binary
+is still installed and still references that name.
+
+That is the observed state. What it implies for `docker --gpus`, which reaches
+GPU access through that hook on older engines, was **not tested** and should not
+be inferred from this document. Podman via CDI is unaffected, because CDI does
+not use that binary; that is the path used throughout this doc and every number
+in it.
+
+## Host pinned memory for the PLE table
+
+Single-GPU serving here is limited by host RAM, not VRAM. With `PLE_MMAP=0` the
+worker page-locks the entire n-gram table
+(`allocate_embedding_weight` calls `torch.empty(pin_memory=True)`) and reads it
+over UVA. Failure appears about 40 seconds into engine initialisation as:
+
+```
+torch.AcceleratorError: CUDA error: out of memory
+```
+
+which reads like a GPU fault and sends you looking in the wrong place. Table
+size is `ngram_vocab_size_base x ple_embed_dim x bytes-per-element`, taken from
+the checkpoint headers rather than estimated:
+
+| profile | PLE dtype | pinned host table |
+| --- | --- | --- |
+| `exl3`, `nvfp4-redhatai` | BF16 | 102.40 GB = **95.40 GiB** |
+| `exl3-ple8`, `nvfp4` | FP8 E4M3 + one global scale | 51.20 GB = **47.68 GiB** |
+
+Add 1.18 GiB for the token embedding table, which is pinned in host RAM in both
+PLE modes.
+
+`start.sh` now refuses before creating the container when the table would exceed
+55% of installed RAM. It **warns** rather than refuses when table plus embeddings
+exceed `MemAvailable`: that figure is a snapshot, and a host can be momentarily
+under it while still serving fine -- refusing there blocked the FP8 profile on a
+host where it was running. It reads the geometry from the checkpoint, so it
+follows a checkpoint change with no edit here. Skip it with `QWEN38_SKIP_MEMCHECK=1`; it is skipped automatically
+for `PLE_MMAP=1` (no table-sized pinned allocation) and for a caller-supplied
+`--engram-config` (placement unknown).
+
+**The 55% figure is an empirical bracket, not a derived constant, and the
+mechanism behind it is unidentified.** Measured on a 125.68 GiB RTX PRO 6000
+Blackwell host:
+
+- a single pinned allocation of 64 GiB succeeds; 70 GiB fails (0.509 and 0.557 of
+  MemTotal) with 121 GiB still reported available
+- ruled out: cgroups (`memory.max = max` in-container and in the user slice),
+  `RLIMIT_MEMLOCK` (`Mlocked: 48 kB`; 64 GiB pins at an 8 MiB soft limit), and
+  commit accounting (live `Committed_AS` reaches 80.15 GiB against a 70.84 GiB
+  `CommitLimit` while healthy)
+
+55% separates both known outcomes: the 183 GiB qualification host served the
+BF16 table at 0.521 of RAM, and `gg` at 0.759 cannot. The check independently
+predicts that the BF16 profile needs "about 173 GiB" of RAM, and the host that
+actually served it had 183 GiB.
+
+Two consequences worth knowing when sizing or monitoring:
+
+- **Derived demand under-states the host.** The live `exl3-ple8` engine drove
+  system `Shmem` to 66.18 GiB against 48.87 GiB derived, a ratio of 0.738. Warn
+  tier starts at 45% of RAM for that reason.
+- **`RssShmem` and RSS both under-report pinned memory.** In that same state the
+  worker mapped 41.56 GiB of the 66.18 GiB, because driver-side pinned pages are
+  counted in `Shmem` before any process maps them. About 24.6 GiB was not
+  attributable to any readable process, and the remaining processes are
+  root-owned, so closing that gap needs root. Size and monitor hosts from system
+  `Shmem`, not from process RSS.
+
 ## Checked and *not* a problem
 
 - **`RLIMIT_MEMLOCK` = 8 MiB**, inherited into the container, looks alarming
   because `patches/qwen_host_embedding.py` allocates `pin_memory=True` buffers.
   Driver 615 does not charge pinned host memory against it: 16 MiB, 256 MiB and
-  1 GiB pinned allocations all succeeded at the default limit. No `limits.d` or
-  `DefaultLimitMEMLOCK` change is warranted.
+  1 GiB pinned allocations all succeeded at the default limit, and a 64 GiB
+  single allocation succeeded later. No `limits.d` or `DefaultLimitMEMLOCK`
+  change is warranted. Pinned memory *is* a real constraint -- see "Host pinned
+  memory for the PLE table" -- but this rlimit is not the thing enforcing it.
 - **cgroup v2**, `user.max_user_namespaces` = 514446, and `--ipc=host` all work
   rootless as shipped; no `--shm-size` workaround needed.
 - **`# syntax=docker/dockerfile:1.7`** is ignored by `podman build`, and podman

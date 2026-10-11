@@ -137,3 +137,91 @@ qwen38_ensure_cdi() {
     echo "Registered $spec_dir as a cdi_spec_dirs entry in $dropin" >&2
   fi
 }
+
+# Whole-and-tenths GiB from a KiB count, rounded, using only shell arithmetic:
+# the preflight must not add a dependency the x86_64 path does not already have.
+qwen38_gib() {
+  local tenths=$(( ($1 * 10 + 524288) / 1048576 ))
+  printf '%d.%d' $(( tenths / 10 )) $(( tenths % 10 ))
+}
+
+# Preflight the pinned host memory the PLE table will need. With PLE_MMAP=0 the
+# worker page-locks the whole n-gram table (torch.empty(pin_memory=True)) and
+# reads it over UVA, so the binding constraint is host RAM rather than VRAM, and
+# it fails about 40 s into engine initialisation as "torch.AcceleratorError: CUDA
+# error: out of memory" -- which reads like a GPU fault and sends you hunting in
+# the wrong place. Better to refuse before the container exists.
+#
+# The ceiling is a fraction of installed RAM, not of MemAvailable. On a 125.68
+# GiB RTX PRO 6000 host a single pinned allocation of 64 GiB (0.509 of MemTotal)
+# succeeds and 70 GiB (0.557) fails with 121 GiB still reported available. It is
+# not cgroups (memory.max = max in-container and in the user slice), not
+# RLIMIT_MEMLOCK (Mlocked 48 kB, and 64 GiB pins fine at an 8 MiB soft limit),
+# and not CommitLimit (live Committed_AS reaches 80.15 GiB against a 70.84 GiB
+# limit while healthy). The mechanism is unconfirmed, so 55% is an empirical
+# bracket rather than a derived constant -- but it separates both known
+# outcomes: the 183 GiB qualification host ran the BF16 table at 0.521 of RAM,
+# and gg cannot at 0.759.
+#
+# Demand is read from the checkpoint so a geometry change needs no edit here.
+# Derived demand under-states what the host actually commits: the live FP8 engine
+# drove system Shmem to 66.18 GiB against 48.87 GiB derived (ratio 0.738),
+# because driver-side pinned pages are counted in Shmem before any process maps
+# them. RssShmem and RSS both under-report a pinned footprint for the same
+# reason, which is why an allocation near the bracket warns instead of passing.
+qwen38_ple_memcheck() {
+  local config="$1" bytes="$2" memtotal_kib="$3" memavail_kib="$4"
+  local dims ngram_rows ple_dim vocab hidden table_kib embed_kib total_kib limit_kib warn_kib
+  local table_gib total_gib mem_gib want_gib pct
+  if [[ ! -r "$config" ]] || ! command -v python3 >/dev/null 2>&1; then
+    echo "WARNING: cannot read $config, or no python3 to parse it; skipping the PLE memory preflight" >&2
+    return 0
+  fi
+  if ! dims="$(python3 -c 'import json, sys
+text = json.load(open(sys.argv[1]))["text_config"]
+print(int(text["ngram_vocab_size_base"]), int(text["ple_embed_dim"]),
+      int(text["vocab_size"]), int(text["hidden_size"]))' "$config" 2>/dev/null)"; then
+    echo "WARNING: $config carries no PLE geometry I can read; skipping the PLE memory preflight" >&2
+    return 0
+  fi
+  read -r ngram_rows ple_dim vocab hidden <<<"$dims"
+  table_kib=$(( ngram_rows * ple_dim * bytes / 1024 ))
+  # The token embedding table is pinned in host RAM in both PLE modes.
+  embed_kib=$(( vocab * hidden * 2 / 1024 ))
+  total_kib=$(( table_kib + embed_kib ))
+  limit_kib=$(( memtotal_kib * 55 / 100 ))
+  warn_kib=$(( memtotal_kib * 45 / 100 ))
+  table_gib="$(qwen38_gib "$table_kib")"
+  total_gib="$(qwen38_gib "$total_kib")"
+  mem_gib="$(qwen38_gib "$memtotal_kib")"
+  pct=$(( ( table_kib * 100 + memtotal_kib / 2 ) / memtotal_kib ))
+  if (( table_kib > limit_kib )); then
+    want_gib=$(( table_kib * 100 / 55 / 1048576 ))
+    {
+      echo "Refusing to start: the PLE table alone needs ${table_gib} GiB of pinned host memory,"
+      echo "which is ${pct}% of the ${mem_gib} GiB installed, and a single pinned allocation above"
+      echo "roughly 55% of installed RAM has not been observed to succeed on this hardware class."
+      echo "Choose one of:"
+      echo "  QUANT=exl3-ple8   FP8 PLE table, half the pinned footprint"
+      echo "  PLE_MMAP=1        map the table from the checkpoint; needs host-page-table dereference (DGX Spark)"
+      echo "  a host with at least about ${want_gib} GiB of RAM for this profile"
+      echo "Set QWEN38_SKIP_MEMCHECK=1 to start anyway."
+    } >&2
+    return 1
+  fi
+  if (( total_kib > memavail_kib )); then
+    # Warn, do not refuse. MemAvailable is a snapshot, and a working host can be
+    # momentarily below it -- another engine holding its pinned table, or caches
+    # not yet reclaimed after a restart. Refusing here blocked a profile that was
+    # serving at that moment, so the hard gate stays with installed RAM.
+    echo "WARNING: PLE and embedding tables need ${total_gib} GiB but the host reports only $(
+      qwen38_gib "$memavail_kib") GiB available. Free memory or drop another" >&2
+    echo "  serving container before starting, or this will fail when the table is pinned." >&2
+  fi
+  if (( table_kib > warn_kib )); then
+    echo "WARNING: PLE table is ${table_gib} GiB, ${pct}% of installed RAM; measured hosts have" >&2
+    echo "  committed about 1.35x the derived figure, and the failure bracket starts near 55%." >&2
+  fi
+  echo "PLE pinned host memory: table ${table_gib} GiB, with token embeddings ${total_gib} GiB," \
+     "on ${mem_gib} GiB installed (${pct}%)." >&2
+}
