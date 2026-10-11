@@ -546,26 +546,24 @@ fio --name=t --filename=f --rw=randread --bs=4k --iodepth=1 --numjobs=1 \
     --direct=1 --ioengine=psync --runtime=8 --time_based --group_reporting
 
 # 5. pinned-allocation rounding (the section 1 finding)
+#    verified output: 8.008 GiB for the pin, then exactly +5.000 for cudaHostAlloc
 python3 -c "
-import re,torch
-def shm():
-    s=0
-    for l in open('/proc/self/smaps'):
-        m=re.match(r'^([0-9a-f]+)-([0-9a-f]+) \S{4}\s+\S+\s+\S+\s+\S*\s*(.*)$',l)
-        if m and ('deleted' in m.group(2) or m.group(2).startswith('/dev/shm')):
-            s+=int(m.group(2).split('-')[0],16)-int(m.group(1),16) if False else int(m.group(1),16)*0
-    return s
-# simpler: sum mapping sizes whose name contains 'deleted'
+import re, torch, ctypes
 def sm():
     t=0
     for l in open('/proc/self/smaps'):
-        m=re.match(r'^([0-9a-f]+)-([0-9a-f]+) \S{4}\s+\S+\s+\S+\s+\S*\s*(.*)$',l)
-        if m and 'deleted' in m.group(3): t+=int(m.group(2),16)-int(m.group(1),16)
+        m=re.match(r\'^([0-9a-f]+)-([0-9a-f]+) \\S{4}\\s+\\S+\\s+\\S+\\s+\\S*\\s*(.*)$\', l)
+        if m and \'deleted\' in m.group(3): t += int(m.group(2),16)-int(m.group(1),16)
     return t
 G=2**30; b=sm()
-t=torch.empty(int(5*G/2), dtype=torch.bfloat16, device='cpu', pin_memory=True)
-print('requested 5.000 GiB -> mapped %.3f GiB' % ((sm()-b)/G))   # 8.000
-import ctypes
-p=ctypes.c_void_p(); rc=ctypes.CDLL('libcudart.so').cudaHostAlloc(ctypes.byref(p),ctypes.c_size_t(int(5*G)),1)
-print('cudaHostAlloc 5.000 GiB -> mapped %.3f GiB' % ((sm()-b)/G))"
+t=torch.empty(int(5*G/2), dtype=torch.bfloat16, device=\'cpu\', pin_memory=True)
+print(\'pin_memory    5 GiB -> mapped %.3f GiB\' % ((sm()-b)/G))
+p=ctypes.c_void_p()
+ctypes.CDLL(\'libcudart.so\').cudaHostAlloc(ctypes.byref(p), ctypes.c_size_t(int(5*G)), 1)
+print(\'after cudaHostAlloc 5 GiB, cumulative %.3f GiB (i.e. +5.000)\' % ((sm()-b)/G))"
+
+# 6. the ceiling, arithmetic only -- why 64 pins and 70 does not on a 125.68 GiB host
+python3 -c "
+from math import log2
+for gib in (47.684, 70, 95.367): print(gib, '->', 2**round(log2(gib)+0.5001))"
 ```
