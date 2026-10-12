@@ -1097,11 +1097,18 @@ to a 131,072-token context, with 262,144 an explicit tested override and DGX Spa
 
 Three consequences for this repo's own design notes:
 
-* **page deduplication is load-bearing, not an optimisation.** Rows are 160 or 320 bytes and
-  the read unit is a 4 KiB page, so 16 rows per token routinely share pages; reading pages
-  once instead of per row is most of what keeps the volume sane. The 16.5333 and 17.25
-  pages-per-token figures measured in section 5 are the page-level result of exactly this,
-  which is why they are far below the naive 16-pages floor.
+* **page deduplication is worth much less than the bullet above originally claimed, and my
+  own measurement refutes the first version of it.** It said 16 rows per token routinely share
+  pages, and that the 16.5333 pages/token figure was the result of deduplication. Both halves
+  are wrong, and the second was internally inconsistent: 16.5333 is *above* 16, so nothing was
+  being saved. The read-path instrument measured why -- `pages_per_row` is 1.0147 to 1.05 on
+  random ids, which is exactly the straddle rate a 160-byte row against a 4 KiB page predicts
+  (160/4096 = 3.9%). Random row ids land on distinct pages; 16 x 1.033 = 16.53 is the whole
+  story. So the volume is set by **byte amplification, 25.6x** (4096 bytes fetched per 160 used),
+  which deduplication cannot reduce. Dedup pays only where ids actually collide inside a step --
+  repeated n-grams across adjacent positions, duplicate lookups across the batch -- and that
+  collision rate is a property of real traces this repo has never captured. sglang dedups
+  anyway, which is cheap and correct, but it is not what keeps its volume sane.
 * **it is page-cache-backed, not O_DIRECT** -- "Linux may retain frequently used pages in
   reclaimable filesystem cache". So compression is transparent to it, `chattr +C` is not a
   precondition, and the real enemy is kernel readahead, which they defeat by requesting
@@ -1112,6 +1119,77 @@ Three consequences for this repo's own design notes:
   reader is an independent CPU-side implementation. "mmap-based" in a comparison table hides
   that distinction, and it is the distinction that decides whether the feature runs on a
   discrete RTX at all.
+
+### The device counter cannot see the drive's own cache
+
+Added while building `scripts/bench-ple-readpath.py`, and it invalidates a class of
+measurement including some of my own earlier reasoning. `/proc/diskstats` separates *host
+page cache* from *device traffic*. It has no idea what the drive does after that. An
+FX900 Pro has gigabytes of DRAM plus an SLC region, so a "cold" random read of a recently
+written 4 GiB region produced **398,978 page requests and 3,329 device read completions**
+-- a 99.2% hit rate with `mincore()` reporting essentially nothing resident in the host
+cache. The host did not serve those reads and neither did the media.
+
+Three consequences:
+
+* **A region must be far larger than the drive cache before its numbers mean anything.**
+  The 98%-honest figure for `gg`'s FP8 blob stands because that test swept ~100 GiB, far
+  above any drive cache. But the small-footprint runs on either host are measuring the
+  drive, not the media.
+* **Report the three-way decomposition, not a hit rate.** Requests = host-cache hits
+  (`mincore()` before/after) + device reads (diskstats) + residual, and the residual is
+  onboard cache. The instrument now prints `drive_cache_absorbed_pages` for exactly this.
+  A single "hit rate" number conflates all three, which is how a page-cache design can look
+  25x better than it is.
+* **Design implication, and it is small.** A few gigabytes of onboard cache is the same
+  order as a few gigabytes of host page cache, so under the C/N model it is worth a few
+  percent of the requirement on a 47.684 GiB table. It changes nothing about the choice of
+  access method -- consistent with the conclusion above -- but it must not be *counted* as
+  headroom on a benchmark receipt.
+
+### `posix_fadvise(DONTNEED)` semantics, and one of my controls that could not fail
+
+Demonstrated, with the caveat in the second bullet being the interesting part:
+
+* Whole-range `DONTNEED` works decisively: 2.00 GiB resident became 0.00.
+* Per-page `DONTNEED` **does bound the cache for pages this process just read**: starting
+  from a cold region, immediate per-page eviction left residency at ~0 after 399k page
+  requests that would otherwise have left ~1.5 GiB behind, and a 100k-page lag window left
+  0.641 GiB -- residency tracked the window size, which is the signature of the mechanism
+  working rather than being skipped.
+* The isolation test that "proved" per-page eviction was inert **was itself broken**: it
+  ran a whole-range evict first, so the pages it then tested per-page had already been
+  dropped, and the result was guaranteed before the interesting call happened. Fourth
+  self-inflicted no-fail experiment this session. The corrected conclusion comes from the
+  residency measurements above, not from that test.
+
+Practical consequence for stage B: a streaming reader can keep its own page-cache footprint
+bounded unprivileged, which is what "bounded footprint" meant in the plan. It cannot
+reclaim pages that other things made resident, and should not try -- the kernel does that
+under pressure for free, since they are clean file-backed pages.
+
+### What the read path costs to submit in Python
+
+The instrument is Python threads, and that turned out to be a result rather than an
+inconvenience. Two artefacts had to be removed first: claiming pages one at a time through
+a shared Condition made throughput *fall* with thread count (115k pages/s at 2 threads,
+23k at 16), and modelling one step as 16 rows (a single token) made every high-thread run
+barrier-bound rather than I/O-bound. With a static partition and a realistic prefill-sized
+batch of 2,048 tokens:
+
+| regime | threads | pages/s | notes |
+|---|---|---|---|
+| page-cache hits | 2 | 172,411 | 4.3 ms CPU per 1k pages: about half a core at the required rate |
+| page-cache hits | 16 | 196,499 | more threads mostly add GIL and barrier cost; hits are ~3-5 us |
+| device-latency reads | 4 | 42-52k | p50 82 us -- real NVMe latency, so the syscall path is where the time goes |
+
+The device-latency row is the one that sizes the implementation: at ~82 us per read,
+116k pages/s needs roughly ten requests in flight, and a synchronous per-thread read
+delivers exactly one. `burst`'s qd1 figure of 19,859 IOPS per thread is the same fact from
+the fio side. **Stage B therefore needs either many threads or an actual submission queue**
+(`io_uring` via C/Rust), which is very likely why sglang's reader is Rust with persistent
+`io_uring` rather than a thread pool. Whether Python can reach the target at 8-16 threads is
+open; the cold probe is measuring it.
 
 ### Two things the survey adds that the plan does not have
 
