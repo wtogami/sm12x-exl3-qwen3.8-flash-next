@@ -798,8 +798,9 @@ rewriting the table, and trim is not the lever. "A drive that has ever been writ
 heavily" is therefore not a permanent condition, and the sentence above about qd1
 viability should be read against the current placement rather than the drive's history.
 The defensible statement is narrower: if random-read latency to the PLE file is 60-70%
-worse than expected, suspect stale placement and rewrite the file or re-fetch the
-checkpoint. Fill level genuinely does not matter -- qd32 held 207,752 -> 211,412 IOPS
+worse than expected, suspect either stale placement or a drained
+write cache, and rewrite the file or re-fetch the checkpoint -- rewriting works
+whichever of the two is at fault. Fill level genuinely does not matter -- qd32 held 207,752 -> 211,412 IOPS
 across a 5.7% to 90% sweep.
 
 **Both hosts are submit-limited, not device-limited.** `burst` got the same worker sweep
