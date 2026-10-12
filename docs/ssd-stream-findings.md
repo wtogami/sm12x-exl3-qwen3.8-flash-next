@@ -147,7 +147,10 @@ GiB.
   into binary-sized `torch` allocations committed 95.38 GiB instead of 128.00 -- the
   same 32.6 GiB saving -- using only `pin_memory`, so it is a change to
   `allocate_embedding_weight()` alone, with no raw pointer lifetime to own. It is
-  the cheaper patch and lands the same result. Each tile rounds to itself, so the
+  the cheaper patch *in this specific sense* -- no raw pointer lifetime to own -- and
+  lands the same RAM result. Whether it is cheaper *overall* is still open: the
+  exact-size route in 1c, if it holds at full scale, needs no change to the
+  gather kernel at all, which tiling does. Each tile rounds to itself, so the
   waste collapses from 32.6 GiB to the sum of per-tile round-ups.
 * **Both together fit**: 97.38 GiB pinned (table + rounded embedding), 22.76 GiB
   still available, `swap_used` unchanged at 0.04 GiB throughout, so no silent
@@ -177,14 +180,16 @@ streaming costs an I/O subsystem and buys a 100x smaller RAM footprint. Which is
 right depends on whether the goal is "serve BF16 on this host" or "free the RAM" --
 see the re-staging note in section 5.
 
-## 1c. The exact-size alternative was tested at full scale, failed, and killed the engine
+## 1c. The exact-size test reported a failure that was not the design's, and killed the engine doing it
 
 Section 1b left one design open: skip tiling entirely by handing
 `get_cuda_view_from_cpu_tensor` a single **exact-size** externally-pinned buffer
-(95.368 GiB for BF16), which would dodge the pow2 rounding with one allocation
-instead of two. It was run at full size on `gg`. It does not work, and the
-failure mode is worth recording precisely because the *reason* is the op's branch,
-not the allocation.
+(95.368 GiB for BF16), dodging the pow2 rounding with one allocation instead of
+two. The first full-scale attempt appeared to refute it. **That refutation was a
+probe artifact.** The run is recorded here anyway, because both the artifact and
+the outage are traps for the next person.
+
+What the first attempt printed:
 
 ```
 cudaHostAlloc(95.368 GiB)                 rc=0   42.0 s  (2.27 GiB/s)  page_aligned=True
@@ -193,40 +198,72 @@ get_cuda_view_from_cpu_tensor             RuntimeError cuda_view.cu:53: cudaHost
 cudaHostRegister, sweep 1/8/16 GiB        rc=0 at every size, is_pinned() = False at every size
 ```
 
-`cudaHostAlloc` succeeded -- the buffer existed, 95.368 GiB, page-aligned. What
-killed it is that the wrapped tensor does not *report* as pinned, so the op took
-its fallback branch (`cuda_view.cu:53`: `cudaHostAlloc` a second buffer and copy
-into it) and asked the driver for another 95.368 GiB on a 125.68 GiB host. The
-driver refused cleanly. **An external buffer that the op cannot identify as
-pinned is not merely slower, it doubles the reservation**, which is worse than
-the pow2 rounding this was meant to fix: 190 GiB of demand versus 128.
+Two separate claims are hiding in that output, and only one of them is true. The
+true one: the op took its fallback branch, and the fallback branch really does
+double the reservation -- the source pins this down, the pinned path calls
+`cudaHostGetDevicePointer` on the existing buffer while the non-pinned path
+`cudaHostAlloc`s a second one and `cudaMemcpy`s into it. 190 GiB of demand
+instead of the 128 GiB the rounding cost, so the failure reading was right.
 
-So tiling stays the design, and for a specific reason now measured rather than
-inferred: each tile is allocated by torch's own `pin_memory`, which the op *does*
-recognise (a torch-pinned tensor came back at the same address), so tiles alias
-and nothing is duplicated.
+The false one: `is_pinned() = False` as a statement about the buffer. That
+process imported torch and vllm, allocated, registered, and called the op. It
+never touched CUDA. So `is_pinned` was querying an uninitialized runtime, and
+the op made the same query through the same door. The controlled version, 8 GiB,
+one buffer, identical registration, only context state differing:
 
-### One inconsistency in my own measurements, left open deliberately
+```
+cudaHostRegister rc=0  (no CUDA work yet in this process)
+  state BEFORE context init:  torch.cuda.is_initialized=False  driver=PinnedHost(rc=0)  is_pinned=False
+  state AFTER  context init:  torch.cuda.is_initialized=True   driver=PinnedHost(rc=0)  is_pinned=True
+```
 
-An earlier run at 512 MiB reported `is_pinned()=True` for both the
-`cudaHostRegister` and `cudaHostAlloc` wrapped buffers, and the view aliased at
-the same address. The full-scale run reports `False` for the same constructions.
-Sizes 1/8/16 GiB agree with the full-scale result, so the odd data point is the
-512 MiB one, but I do not have a mechanism that explains a size-dependent
-`is_pinned`, and I am not going to invent one. Two defects in that probe limit
-how much of it to trust:
+The driver calls the pointer pinned host memory in **both** rows, with a
+succeeding `rc`. Only torch's answer moves. And the op is on exactly that path:
+it does not query the driver itself, it dispatches `aten::is_pinned` through the
+torch stable ABI with a `std::nullopt` device. An uninitialized context sends it
+down the copy branch for any buffer, however genuinely pinned.
 
-* every `driver says Unregistered` line is void -- `cuPointerGetAttributes`
-  returned `rc=1` (`CUDA_ERROR_INVALID_VALUE`), i.e. the call failed, so it read
-  nothing;
-* the full-scale case never printed whether `torch.frombuffer` preserved the
-  buffer address, so a pointer-identity problem in my wrapper is not excluded as
-  the cause of the failed alias.
+This reconciles the two measurements I had left flagged as contradictory. The
+512 MiB probe reported `is_pinned()=True` and aliased because it had already run
+device-side gathers, i.e. it had a context; the 1/8/16 GiB sweep had not. Never
+a size effect. Two further artifacts from that broken run, so nobody re-reads its
+output as data:
 
-The resolution is one small run at 8-16 GiB, cgroup-capped, printing
-`p.value == w.data_ptr()`, `is_pinned`, and `view.data_ptr() == w.data_ptr()` so
-the three candidate failure points separate. It is not needed for the tiling
-decision; it is needed only to know whether an exact-size path is salvageable.
+* every `driver says Unregistered` line is void -- it used `cuPointerGetAttributes`,
+  which returned `rc=1`, so the call failed and read nothing. The singular
+  `cuPointerGetAttribute` with `CU_POINTER_ATTRIBUTE_MEMORY_TYPE` returns
+  `rc=0 PinnedHost` on those same pointers;
+* the full-scale case never checked whether `torch.frombuffer` preserved the
+  buffer address. It does: `data_ptr == alloc_ptr` in every case of the corrected
+  run.
+
+With a context established first, all three buffer flavors alias at 8 GiB, and
+each is verified by something other than pointer arithmetic:
+
+```
+A  torch pin_memory=True (control)   is_pinned=True  same_addr=True  MemAvailable delta +0.00  sentinel=True
+B  torch.empty + cudaHostRegister    is_pinned=True  same_addr=True  MemAvailable delta +0.00  sentinel=True
+C  cudaHostAlloc + frombuffer        is_pinned=True  same_addr=True  MemAvailable delta +0.00  sentinel=True
+```
+
+The delta column is the load-bearing one and it was simply missing before: had
+the op copied, host residency would have risen by the buffer size regardless of
+what any pointer said. The sentinel (write through the CPU tensor, read back
+through the CUDA view) is a second confirmation that does not depend on
+accounting either.
+
+Whether this survives at 95.368 GiB is now the open question, and it decides the
+shape of the fix rather than its size -- both designs commit the same 95.38 GiB.
+Exact-size is one allocation and no change to the gather kernel; tiling needs
+multiple base pointers threaded through it. It cannot be measured while the
+engine is resident (48.7 GiB available against a 95.368 GiB buffer), so it needs
+a deliberate stop of `gg`, and that run must carry the containment the first one
+lacked.
+
+**The rule this buys:** any probe that calls `is_pinned`,
+`cudaPointerGetAttributes`, or a vLLM op that dispatches them, must initialize
+CUDA first (`torch.zeros(1, device="cuda")`). A `False` from `is_pinned` on a
+pointer the driver accepts is a statement about the process, not the memory.
 
 ### Why the engine died: `cudaHostRegister` and `cudaHostAlloc` are not equally safe
 
