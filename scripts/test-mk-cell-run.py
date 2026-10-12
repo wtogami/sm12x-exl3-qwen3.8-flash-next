@@ -37,6 +37,15 @@ def base_image(container: str) -> str:
     return r.stdout.strip()
 
 
+def norm_ref(ref: str) -> str:
+    """Compare image references the way podman does, not the way strings do.
+
+    CreateCommand records the reference as typed (`qwen38-rtx:local`) while Config.Image is resolved
+    (`localhost/qwen38-rtx:local`). Treating those as different made a correct generator look broken.
+    """
+    return ref[len("localhost/"):] if ref.startswith("localhost/") else ref
+
+
 def image_index(toks, expected):
     """Locate the image by exact string, not by heuristic.
 
@@ -44,9 +53,14 @@ def image_index(toks, expected):
     made this test report a correct generated line as broken. We always know the exact image string, so
     there is nothing to infer.
     """
-    if expected not in toks:
-        raise AssertionError(f"image {expected!r} absent from generated line")
-    i = toks.index(expected)
+    try:
+        i = toks.index(expected)
+    except ValueError:
+        matches = [j for j, x in enumerate(toks) if norm_ref(x) == norm_ref(expected)]
+        if len(matches) != 1:
+            raise AssertionError(f"image {expected!r} not uniquely located "
+                                 f"(matched {len(matches)} tokens)")
+        i = matches[0]
     if toks[i - 1].startswith("-") and toks[i - 1] in ("-e", "--env", "-v", "--volume", "--device",
                                                        "--name", "--network", "--ipc"):
         raise AssertionError(f"{expected!r} matched a flag's value, not the image position")
@@ -73,7 +87,7 @@ def main():
     img = image_index(toks, a.image)
     pre, post = toks[:img], toks[img + 1:]
 
-    check("image replaced with the requested one", toks[img] == a.image)
+    check("image replaced with the requested one", norm_ref(toks[img]) == norm_ref(a.image))
     check("container name is ple-bench", toks[toks.index("--name") + 1] == "ple-bench")
     check("no podman-only flag appears after the image", not (set(post) & PODMAN_ONLY))
     check("PLE_STREAM=1 present before the image", "PLE_STREAM=1" in pre)
@@ -93,7 +107,9 @@ def main():
     check("--ipc preserved", "--ipc" in flagbag)
     check("--device preserved", "--device" in flagbag)
     check("volumes preserved", "-v" in bpre or "--volume" in bpre)
-    check("omitting --image keeps the base image", base_line[bi] == bimg and bimg != a.image)
+            same = norm_ref(base_line[bi]) == norm_ref(bimg)
+        swapped = norm_ref(base_line[bi]) != norm_ref(a.image)
+        check("omitting --image keeps the base image", same and swapped)
 
     print(f"  {'ALL PASS' if fails == 0 else str(fails) + ' FAILURE(S)'}")
     return 1 if fails else 0
