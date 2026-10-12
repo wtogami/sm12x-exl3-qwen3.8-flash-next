@@ -774,10 +774,22 @@ same, a further 12 min idle                 21,000    160,000   <- and it held
 Deleting and trimming do nothing because the bytes never moved; rewriting allocates new
 physical extents and the reads are fast again, immediately and still 12 minutes later.
 The variable is **where the data sits** -- not how full the drive is, and not whether
-free space was reported to the FTL. The rewrite ran at 4,936 MiB/s, above this drive's
-sustained TLC rate, so fresh SLC residency was probably part of it, but the 12-minute
-persistence together with trim's complete irrelevance points at placement rather than a
-write cache that drains.
+free space was reported to the FTL. **How much this settles, and how much it does not.** What is settled: occupancy is
+not the variable, trim is not the lever, and rewriting the file restores read speed.
+What is *not* settled is why, and the 12-minute persistence is weak evidence -- the
+rewrite ran at 4,936 MiB/s and the drive's TurboWrite region is roughly 236 GB on a
+2 TB part (about 230 GB dynamic plus 6 GB static, per TechPowerUp's 980 PRO 2 TB
+teardown data; Tom's Hardware measured 238 GB absorbing writes at ~5.1 GB/s before
+degrading to 1.5-2 GB/s), so a 100 GiB rewrite fits *entirely inside SLC*, and Samsung
+is documented to fold that cache back slowly -- Tom's Hardware recovered only the static
+portion in a 30-minute idle window. Twelve minutes therefore cannot distinguish
+"new physical placement" from "still resident in SLC". Trim's irrelevance and fill's
+irrelevance stand regardless of which it is.
+
+The discriminator is time, not another knob: re-measure after hours of idle, with
+nothing written in between. If the speed decays back toward 12.7k/96.4k the recovery was
+write-cache residency; if it holds near 21k/159k it is placement. That run is in
+progress; until it lands, read "placement" above as one of two live explanations.
 
 **Retracting operational advice given in session.** I said a streaming design must budget
 against the drive's post-full-write state because "a serving drive that has ever been
