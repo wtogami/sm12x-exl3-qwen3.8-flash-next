@@ -63,12 +63,33 @@ holding token counts fixed would be a mistake, so measure 262144-native and 5242
 
 What genuinely varies with context length, and is worth measuring:
 
-1. **Prefill burst shape.** This is where streaming is most at risk. A 261,632-token
-   prompt at 16.5333 pages/token is ~4.33M page reads, about **66 GiB of table traffic
-   for the FP8 table** in one pass, and it must be served inside the compute time of
-   that prefill rather than spread across decode steps. The plan's whole "2048-token
-   chunk in ~3.6 s" assumption is a statement about this arm and gets tested nowhere
-   else.
+1. **Prefill burst shape -- and this is the arm that sizes the design.** Prefill runs at
+   a far higher token rate than decode, and page demand is `pages_per_token x
+   tokens_per_second`, so the storage requirement tracks **prefill throughput, not decode
+   throughput** -- which inverts the framing used everywhere earlier in these findings,
+   where decode was treated as the binding rate. The arithmetic is unavoidable:
+
+   ```
+   pages/s required = 16.5333 x prefill tok/s   (fp8; 17.25 for bf16)
+
+   prefill tok/s     pages/s needed     gg single worker 122k   gg 4 workers 523k
+        5,000            82,700                1.5x                    6.3x
+       10,000           165,300                0.74x FAIL              3.2x
+       20,000           330,700                0.37x FAIL              1.6x
+   ```
+
+   A 261,632-token prompt is 4.33M page reads -- **about 16.5 GiB of device traffic for
+   the FP8 table** in one pass (17.2 GiB for BF16), against only ~670 MB of actually
+   useful row bytes. That 25x read amplification is the price of 160-byte rows at 4 KiB
+   granularity, and it is what the chunked-prefill boundary has to absorb inside compute
+   time rather than across decode steps.
+
+   Two conclusions. One worker is not enough once prefill exceeds ~7k tok/s, so the
+   multi-threaded submitter is not an optimisation for arm C but a prerequisite; and the
+   plan's "2048-token chunk in ~3.6 s" figure is a *decode-era* number that understates
+   what a real prefill pass demands, so it should be replaced by the table above.
+   Measuring `gg`'s actual prefill tok/s at each size is therefore load-bearing for arm
+   C in a way it is not for arms A and B.
 2. **Decode demand falls as context grows.** Longer context means slower tokens/s, so
    the worst-case page rate is at *short* context and high concurrency. If the c16/256-out
    arm passes, the long-context decode arms are comfortable by construction.
