@@ -86,6 +86,7 @@ fi
   echo "trace=${TRACE:-<uniform>}"
   echo "caps=${CAPS:-} threads=${THREADS:-} steps=${STEPS:-} toks=${TOKS:-} target=${TARGET:-} dev=${DEV:-} mws=${MWS:-}"
   echo "precell=${PRECELL:-<none>}"
+  echo "row_bytes=${ROW_BYTES:-160}"
   echo "blob_bytes=$(stat -c %s "$BLOB" 2>/dev/null)"
 } > "$OUT/manifest.txt" 2>/dev/null || true
 
@@ -131,7 +132,7 @@ run_host() {  # $1 mode $2 threads $3 tag
     if [ -n "${TRACE:-}" ]; then extra+=(--trace-file "$TRACE" --expect-access-model real-trace)
     else extra+=(--expect-access-model uniform); fi
     timeout 1800 python3 scripts/bench-ple-readpath.py --blob "$BLOB" \
-      --mode "$1" --threads "$2" --tokens-per-step "${TOKS:-2048}" --steps "${STEPS:-150}" \
+      --mode "$1" --threads "$2" --row-bytes "${ROW_BYTES:-160}" --tokens-per-step "${TOKS:-2048}" --steps "${STEPS:-150}" \
       --require-cold --evict-first --residency --dev "${DEV:-nvme0n1}" \
       --target-pages-per-s "${TARGET:-115700}" --min-working-set "${MWS:-0}" \
       "${extra[@]}" \
@@ -164,7 +165,7 @@ run_host() {  # $1 mode $2 threads $3 tag
       -v "$BLOB:/work/blob:ro,Z" \
       "${mnt[@]}" \
       --entrypoint python3 "$IMG" /work/bench.py --blob /work/blob \
-        --mode "$1" --threads "$2" --tokens-per-step "${TOKS:-2048}" --steps "${STEPS:-150}" \
+        --mode "$1" --threads "$2" --row-bytes "${ROW_BYTES:-160}" --tokens-per-step "${TOKS:-2048}" --steps "${STEPS:-150}" \
         --require-cold --evict-first --residency --dev "${DEV:-nvme0n1}" \
         --target-pages-per-s "${TARGET:-115700}" --min-working-set "${MWS:-0}" \
         "${extra[@]}" \
