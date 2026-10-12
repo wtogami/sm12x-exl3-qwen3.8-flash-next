@@ -134,6 +134,7 @@ def main() -> int:
     cmd, img_i, base_image = build(base, a.name, a.image, a.env, a.arg, a.drop_env)
     if a.detach:
         cmd = cmd[:2] + ["-d"] + cmd[2:]
+        img_i += 1        # the index build() reported is now one token later
 
     # --- content preservation -------------------------------------------------
     # The container argv (everything after the image) must be byte-identical to the base container's,
@@ -155,7 +156,7 @@ def main() -> int:
     drop_keys = set(a.drop_env) | {kv.split("=", 1)[0] for kv in a.env}
     cur_flag, missing = None, []
     i = sub + 1
-    while i < len(base):
+    while i < base_img_i:
         tok = base[i]
         if tok in ("--name",):
             cur_flag = tok
