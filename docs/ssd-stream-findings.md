@@ -1002,69 +1002,56 @@ only 1.44x from c8 to c16, so per-token page pressure rises far slower than conc
 
 ---
 
-## 4. The mmap path is not *blocked* on discrete RTX; it is *slow* there
+## 4. The mmap path IS blocked on discrete RTX -- my earlier correction here was wrong
 
-Plan section 3 states the architectural constraint as: a discrete RTX PRO 6000
-reports `PAGEABLE_MEMORY_ACCESS_USES_HOST_PAGE_TABLES=0`, "so mmap PLE is
-disabled on RTX", and calls this "the architectural constraint that decides the
-design", concluding that the gather must move off the GPU.
-
-The attribute readings are confirmed on both hosts (driver 615.71.09):
+This section previously argued that plan section 3 overstated the architectural
+constraint, and that checkpoint-mapped PLE on a discrete RTX PRO 6000 was *slow* rather
+than *disabled*. **That was mistaken, and the plan was right.** Measured by trying to run
+it on `gg` with `PLE_MMAP=1`:
 
 ```
-NVIDIA RTX PRO 6000 Blackwell Workstation Edition
-    CU_DEVICE_ATTRIBUTE_PAGEABLE_MEMORY_ACCESS                        = 1
-    CU_DEVICE_ATTRIBUTE_PAGEABLE_MEMORY_ACCESS_USES_HOST_PAGE_TABLES  = 0
-    CU_DEVICE_ATTRIBUTE_CONCURRENT_MANAGED_ACCESS                     = 1
-    CU_DEVICE_ATTRIBUTE_SYSTEM_MEMORY_INTEG_UNIFIED_ADDRESSING        = 1
+ngram_embedding.py:77   require_pageable_access(device.index)
+ple_pageable.py:90      raise RuntimeError(...)
+
+RuntimeError: Engram checkpoint_mapped requires a GPU that reads pageable host memory
+through the host page tables; device 0 reports
+CU_DEVICE_ATTRIBUTE_PAGEABLE_MEMORY_ACCESS_USES_HOST_PAGE_TABLES=0 (rc=0)
 ```
 
-But the attribute being 0 does not make the dereference illegal; it makes it
-expensive. `require_pageable_access()` treats 0 as unsupported, which is a
-correctness-and-performance *policy*, not a hardware *barrier*. Measured here,
-using the same indirection the vendored `_gather_mapped_rows_kernel` uses (host
-virtual addresses held in a device int64 tensor, cast to a pointer in-kernel):
+The container exited 60 s into startup. The gate is not defensive pessimism, it reflects
+what the code does: `MappedTable` opens the checkpoint with a plain
+`mmap(..., MAP_SHARED, PROT_READ)`, calls `madvise(MADV_RANDOM)` to defeat readahead, and
+`_gather_mapped_rows_kernel` -- a Triton kernel -- **dereferences that pageable host
+pointer from the GPU**. On a discrete part the GPU cannot walk host page tables for
+unregistered memory, so the access is illegal rather than merely slow.
 
-* the kernel **does** read a read-only file-backed mapping on this card, and the
-  bytes are **identical to `pread`** on the same offsets (6/6 sampled pages);
-* so the plan's sentence "the CUDA driver rejects them at startup" describes the
-  repo's guard firing, not the driver refusing the access.
+**Where my reasoning went wrong, in case it recurs.** I had measured host-memory gather
+throughput on `gg` and found it functional but mediocre, then concluded the mmap path was
+merely slow. But what I measured was **pinned** host memory via UVA, which a discrete GPU
+*can* dereference -- it is exactly how the engine serves today. Pinned and pageable are
+different capabilities here, and the attribute in question describes only the latter. A
+measurement of the adjacent supported thing was read as a measurement of the thing under
+test.
 
-### A cold-read measurement that needs no cache eviction at all
+That distinction also explains the design being corrected, rather than a knob to turn.
+`PagePrefetcher` already does the CPU-side half -- a `ThreadPoolExecutor` named `ple-touch`
+that faults in both ends of every row (`touch()`), plus pinned staging for the *step
+inputs* (ids, `query_start_loc`, ngram context). What it cannot do is move the gathered
+table bytes, because the kernel reads them straight out of the page cache mapping. So on
+discrete GPUs the entire payload path depends on an attribute the hardware does not set.
 
-Worth keeping as protocol: instead of faulting a page in and trying to evict it,
-read file offsets that have **never been touched**, one per trial, through a
-fresh mapping. Cold by construction, nothing to flush, no root, and it works
-while another engine is serving.
-
-| measurement | value |
-| --- | --- |
-| single never-faulted host page, GPU kernel read | p50 **55.3 us**, p90 72.6 us, max 85.8 us (n=40) |
-| same page afterwards (resident) | **11.6 us** per read |
-| gather of 256 rows x 320 B, one per page, mapping resident | 12.4 us per row |
-
-That last row is the one that decides the design. ~12 us per 320-byte row is
-~25 MB/s effective: a decode step needs 16 rows x 48 PLE-bearing layers, and
-each access is an uncoalesced PCIe round trip against pageable host memory.
-This is the same wall upstream reports in PR #58439 (cold 30K-token prefill:
-**88 s with GPU faults alone vs 1.6 s with 64 CPU threads faulting first**).
-
-So the plan's conclusion -- stream it on the CPU, do not let the GPU fault the
-table -- is **right**, but the stated reason is wrong, and the wrong reason
-matters: it implies an implementer must build a CPU gather because the GPU
-*cannot* touch the mapping. It can. The reason to build the CPU gather is
-per-access PCIe latency, which is a number you can measure before committing to
-the design.
-
-### Not established, and confounded
-
-A 1024-row cold gather failed with `CUDA out of memory`. That box had only
-0.77 GiB of free VRAM because the live `exl3` engine holds 92 of 97.9 GiB, so
-this is **not** evidence about UVM page-table limits; it is an artifact of
-co-tenancy. Re-measure on an idle GPU before drawing anything from it. Nothing
-in this section was measured on `gg`.
-
----
+**What stage B still needs, and why the disk numbers say it works.** The missing piece is
+a CPU-side gather into pinned staging followed by an async H2D copy -- i.e. route the
+payload through pinned memory, which discrete GPUs *can* read, instead of depending on
+pageable access. The volumes make this unscary: at `gg`'s measured 851 tok/s the useful
+payload is 851 x 16 rows x 160 B = **2.2 MB/s**, and even at 10k prefill tok/s it is
+25.6 MB/s, against 26 GiB/s of measured pinned H2D capability. The hard resource is page
+reads, not the copy: 16.5333 pages/token means 165k pages/s at that prefill rate, which
+exceeds `gg`'s single-worker 122k IOPS ceiling and needs the 2-4 workers already called
+for. The module is 547 lines with the layout discovery, shard location, verification and
+prefetch scaffolding already written, so this is a bounded change rather than a new
+subsystem -- but it is *code*, not configuration, and no flag on the current image will
+do it.
 
 ## 5. Prior art, checked against the sources (corrections to plan section 3)
 

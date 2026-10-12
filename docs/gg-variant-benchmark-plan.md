@@ -13,7 +13,7 @@ configurations, same everything else.
 | --- | --- | --- |
 | **A** `round2` | today's default: `pin_memory`, table pins 64.000 GiB for 47.684 GiB of FP8 | already running; receipt exists |
 | **B** `exact` | `PLE_PIN_STRATEGY=exact`: table pins 47.684 GiB, aliased, no kernel change | one build, then an env var |
-| **C** `stream` | checkpoint-mapped PLE table: `PLE_MMAP=1` -> `--engram-config {"cpu_offload": true, "checkpoint_mapped": true}` | **nothing -- already in the image** |
+| **C** `stream` | CPU-side gather into pinned staging + async H2D (**stage B; not written**) | code. `PLE_MMAP=1` **cannot work here** -- see below |
 
 Two consequences of that table that change the schedule:
 
@@ -22,14 +22,22 @@ Two consequences of that table that change the schedule:
   the `reject_exact_repin` import in `model_loader/utils.py`. Re-measure A on the
   B-image with the flag off (`A'`) and interleave `A'`/`B`. The build is the expensive
   part; the arm is one env var and a restart.
-* **C needs no build at all.** The mmap ports are already in the installed image --
-  labels `io.tpurtell.ple-mmap.pr = 58439+58835`, commit `47b9933db82d` -- and the
-  implementation lives in `nvidia/ple_pageable.py` (`PagePrefetcher`, `PrefetchSource`),
-  imported by `nvidia/model_state.py` and `nvidia/ngram_embedding.py`. An earlier note
-  here claimed "zero mmap lines" because it grepped `common/ngram_embedding.py`, the
-  wrong file; the feature is a config flag (`PLE_MMAP=1`), not a compile-time choice.
-  That reverses the schedule: C is measured first on the current image while nothing is
-  rebuilding, and only B needs the build.
+* **C is blocked, and needs no build either -- it needs code.** The mmap ports *are* in
+  the installed image (labels `io.tpurtell.ple-mmap.pr = 58439+58835`, commit
+  `47b9933db82d`; `nvidia/ple_pageable.py`), so I tried running arm C directly with
+  `PLE_MMAP=1`. The container died 60 s in:
+
+  ```
+  require_pageable_access: device 0 reports
+  CU_DEVICE_ATTRIBUTE_PAGEABLE_MEMORY_ACCESS_USES_HOST_PAGE_TABLES=0
+  ```
+
+  That gate is legitimate rather than conservative -- `MappedTable` hands a plain
+  pageable `mmap(PROT_READ)` to a Triton kernel that the GPU dereferences, which a
+  discrete part cannot do. So arm C is a development item, not a measurement arm: the
+  payload must be routed through **pinned** staging (which discrete GPUs *can* read, and
+  which is how the engine serves today) with a CPU-side gather and async H2D copy.
+  Sequenced accordingly: A'/B now, C after stage B lands.
 
 ## Grid: a staircase, not a cross product
 
