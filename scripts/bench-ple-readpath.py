@@ -407,6 +407,9 @@ def main():
                     help="sample background device traffic before timing; 0 disables")
     ap.add_argument("--evict-first", action="store_true",
                     help="fadvise DONTNEED the region before timing (whole range: proven effective)")
+    ap.add_argument("--expect-access-model", choices=["uniform", "real-trace"], default="",
+                    help="fail the cell unless the realized traffic model matches; a missing
+                         --trace-file otherwise degrades a trace cell to uniform silently")
     ap.add_argument("--allow-mapped", action="store_true",
                     help="proceed even though a process maps the blob (warm-start cells)")
     ap.add_argument("--evict-lag-pages", type=int, default=0,
@@ -430,6 +433,14 @@ def main():
                 "fadvise(DONTNEED) cannot evict mapped pages, so --require-cold would be a "
                 "claim about a state we cannot reach. Pass --allow-mapped only if the cell is "
                 "measuring a warm start on purpose.")
+
+    realized = "real-trace" if getattr(args, "trace_file", "") else "uniform"
+    if args.expect_access_model and args.expect_access_model != realized:
+        raise SystemExit(
+            f"--expect-access-model {args.expect_access_model} but the cell would run "
+            f"{realized} traffic (trace_file={args.trace_file or 'none'}). Refusing: a hit rate "
+            "measured under uniform random reads is not a measurement of this workload -- that "
+            "difference has already been worth a factor of two in this project.")
 
     if getattr(args, "dev", "") and getattr(args, "blob", ""):
         backing = disk_for_path(args.blob)
