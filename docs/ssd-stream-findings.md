@@ -1068,6 +1068,51 @@ sources say something more specific, or something different.
 | [sglang-ssd-stream](https://github.com/garnermccloud/sglang-ssd-stream) + [checkpoint](https://huggingface.co/garnermccloud/Qwen3.8-Flash-Next-NVFP4-SSD-Stream) | third-party | 51,200,245,760-byte read-only sidecar holding 128 FP8 shards; **32 MiB registered page pool + two 16 MiB pinned staging**; dedupes the exact 4 KiB pages per step; converts on a side CUDA stream. RTX PRO 6000: RAM 148.5-156.2, SSD 164.7, but random-row-heavy requests **126-137**, with the explicit disclaimer "The 164.7 tok/s run is not a claim that SSD is faster than RAM." |
 | [llama.cpp #28136](https://github.com/ggml-org/llama.cpp/pull/28136) | open | Author: "In an ideal world, maybe this would even be handled by something more elegant like `io_uring`. But, this works." The Linux table the plan quotes is RX 9070 XT/Vulkan, 23,664-token prompt, **cold eviction verified with mincore**: mmap demand-fault 18.01 s (207,913 major faults) vs 1 worker 15.75 s vs 32 workers **2.39 s**; warm, the two are within noise (154.6 vs 154.0 ms). Windows regression is real but warm-cache-specific: "2-4% slower than the mmap path, not faster", ~27 GiB table staying warm in NTFS cache. |
 
+### The sglang reader does not need host-page-table access at all
+
+Re-read against the section 4 finding, because the two are easy to conflate: `sglang-ssd-stream`'s
+reader is CPU-initiated and never asks the GPU to touch host pages. Its own description of
+the hot path:
+
+1. copy the required row IDs asynchronously into **pinned** host memory;
+2. **deduplicate the filesystem pages** touched by those rows;
+3. read the pages concurrently through **Rust and `io_uring`**;
+4. restore duplicate rows in their original order;
+5. convert FP8 or BF16 staging data on a **separate CUDA stream**;
+6. synchronise only if the SSD work outlasts the overlapping GPU computation.
+
+It owns "a 32 MiB registered page pool and two 16 MiB pinned staging buffers" -- about
+**64 MiB of extra fixed memory for a 47.68 GiB table** -- and explicitly has "no
+multi-gigabyte private row cache", relying on reclaimable filesystem cache. That is the
+stage-B shape, and it is why the attribute that blocks this repo's mmap path is simply not
+involved: every byte the GPU reads is in registered memory.
+
+It is also **validated on the exact GPU in `gg`**, an RTX PRO 6000 Blackwell 96 GB, with a
+comparison the plan should quote instead of my extrapolations: RAM-loaded 148.5-156.2 tok/s
+vs SSD Stream 164.7 tok/s, with the honest caveat that "the 164.7 tok/s run is not a claim
+that SSD is faster than RAM" and that **requests dominated by new, random lookup rows
+measured 126-137 tok/s** -- roughly 10-15% below the RAM-loaded range on the worst-case
+workload, alongside "no swap, OOM, restart, or host-memory growth". Its RTX profile defaults
+to a 131,072-token context, with 262,144 an explicit tested override and DGX Spark at 262K.
+
+Three consequences for this repo's own design notes:
+
+* **page deduplication is load-bearing, not an optimisation.** Rows are 160 or 320 bytes and
+  the read unit is a 4 KiB page, so 16 rows per token routinely share pages; reading pages
+  once instead of per row is most of what keeps the volume sane. The 16.5333 and 17.25
+  pages-per-token figures measured in section 5 are the page-level result of exactly this,
+  which is why they are far below the naive 16-pages floor.
+* **it is page-cache-backed, not O_DIRECT** -- "Linux may retain frequently used pages in
+  reclaimable filesystem cache". So compression is transparent to it, `chattr +C` is not a
+  precondition, and the real enemy is kernel readahead, which they defeat by requesting
+  exact 4 KiB pages "instead of triggering large mmap readahead windows". Any streaming doc
+  must say which access method a requirement applies to.
+* **the mmap and streaming designs are different lineages, not two settings.** This repo's
+  `PLE_MMAP=1` comes from vLLM #58439/#58835, written for GB10's unified memory; sglang's
+  reader is an independent CPU-side implementation. "mmap-based" in a comparison table hides
+  that distinction, and it is the distinction that decides whether the feature runs on a
+  discrete RTX at all.
+
 ### Two things the survey adds that the plan does not have
 
 **a) An O_DIRECT alignment requirement coarser than 4 KiB is possible.**
