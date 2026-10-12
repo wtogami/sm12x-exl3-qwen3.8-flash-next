@@ -579,13 +579,39 @@ work were double what was intended -- which strengthens, not weakens, the
 write-churn reading above. And qd1/qd128 were only measured at baseline; the
 degraded state is unmeasured at both.
 
-**The unmeasured case is the one the naive design would hit.** qd1 baseline is
-20,846 IOPS = 2.1x the chunk budget, the thinnest margin in the study. If qd1
-degrades the way qd8 did, a per-token synchronous read path lands near 1.3x
-budget -- a projection, not a measurement, which is exactly why it should not be
-left unmeasured. Practical consequence: submit at depth (io_uring or libaio,
->=8 outstanding) rather than synchronously per token, and measure degraded-qd1
-before trusting any qd1 number.
+**The degraded state is a latency effect, not a throughput effect, and that is
+what makes it design-critical.** qd1 and qd128 were missing from the sweep, so
+the drive was re-measured after a further 25 minutes idle, still at 8% occupancy
+and 42 C:
+
+```
+          baseline   idle-25m      chg   p50 base   p50 new    lat chg   x need
+qd1        20,846     12,729    -38.9%      43.3 us     71.2 us    +64.4%    1.3x
+qd8       160,953     96,448    -40.1%      44.8 us     75.3 us    +68.1%    9.8x
+qd32      207,752    209,317     +0.8%     146.4 us    144.4 us     -1.4%   21.3x
+qd128     208,027    210,434     +1.2%     602.1 us    593.9 us     -1.4%   21.4x
+```
+
+Only the latency-bound depths moved. Mean service time at qd1 went 48.0 -> 78.6
+us, while the aggregate ceiling at qd32/qd128 is unchanged to within noise and
+their p50 actually improved slightly. A fixed extra per-request cost that
+disappears once enough requests are in flight is absorbed by the device's
+internal parallelism; it is invisible at depth and it is the whole story at
+qd1. Which regime the streaming path lives in is therefore not a tuning detail,
+it decides whether the design has 21x headroom or 1.3x.
+
+So the earlier conditional -- "if qd1 degrades the way qd8 did, a per-token
+synchronous read lands near 1.3x budget" -- is now measured, at 1.3x, and it is
+the thinnest margin anywhere in this study. **A per-token synchronous read path
+is not viable on a drive that has ever been written heavily**: one 30% slip and
+the chunk deadline is missed with no reserve. Submit at depth instead (io_uring
+or libaio, >=8 outstanding, 32 comfortably), where the same drive delivers
+21.3x.
+
+Twenty-five minutes of idle produced no recovery whatsoever (qd8 96,448 vs
+96,572 at ten minutes, 0.1% apart), which is consistent with the untrimmed-
+garbage explanation above but still does not separate it from a persistent GC
+state -- that separation needs `fstrim`, and `fstrim` needs root.
 
 **None of these numbers transfer to the serving host.** Three different drives
 are in play: section 3's FX900 Pro is `burst`'s root device, this study is
