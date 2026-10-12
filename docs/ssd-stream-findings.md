@@ -613,6 +613,61 @@ Twenty-five minutes of idle produced no recovery whatsoever (qd8 96,448 vs
 garbage explanation above but still does not separate it from a persistent GC
 state -- that separation needs `fstrim`, and `fstrim` needs root.
 
+### The binding requirement is decode, not the prefill chunk
+
+Everything above budgets against the prefill chunk: 35,328 pages per 3.6 s of
+compute = 9,813 pages/s. That is the plan's *second* workload number. Its first is
+larger and is the one that runs most of the time -- plan section 4: "decode at
+`max_num_seqs=16` needs roughly 38k page-reads/s". The `x need` column above is
+against the prefill figure only, so it is the lenient reading.
+
+The decode figure deserves to be checked against measured throughput rather than
+arithmetic, and the repo has the receipts: 87 concurrency-16 runs with
+`decode_tokens_per_second`, split by the pages/token that profile actually costs
+(17.25 BF16, 16.5333 FP8, from section 5).
+
+```
+profile   c16 runs   median tok/s  -> pages/s      max tok/s  -> pages/s
+bf16          63            601       10,372            892       15,382
+fp8           24            864       14,279            993       16,420
+```
+
+The plan's 38,000 pages/s would require 2,203 tok/s at c16 for BF16, against a
+best run ever recorded of 993 -- 2.3x above anything these builds have produced. It
+is close to 16x the single-stream rate (121 tok/s at c1 = 1,936), i.e. it reads
+like a linear-scaling extrapolation, which is exactly the assumption the c16
+plateau of section 7 contradicts.
+
+But corrected downward it is still *bigger* than the prefill number I was using:
+15.4k (BF16) and 16.4k (FP8) pages/s at the best observed rate, 1.6-1.7x the
+9,813. Crossed against the degraded drive, that flips the last paragraph's
+conclusion the unfavourable way:
+
+```
+requirement                         qd1deg    qd8deg    qd32deg
+prefill only,  9,813 p/s             1.3x      9.8x      21.3x
+bf16 median,  10,372 p/s             1.2x      9.3x      20.2x
+bf16 max,     15,382 p/s             0.8x FAIL  6.3x      13.6x
+fp8  median,  14,279 p/s             0.9x FAIL  6.8x      14.7x
+fp8  max,     16,420 p/s             0.8x FAIL  5.9x      12.7x
+plan's 38k,   38,000 p/s             0.33x FAIL 2.5x       5.5x
+```
+
+**A per-token synchronous read path is not thin here, it is short**: the degraded
+drive misses the requirement at the FP8 median (0.9x) and at the maximum for both
+profiles (0.8x), and it is 3x short of the plan's own figure. Two independent
+corrections -- the drive's shallow-depth latency and the fact that decode, not
+prefill, sets the rate -- point the same way, so the design consequence is single
+valued: submit at depth (>=8, 32 comfortably) and treat every qd1 number,
+including the promising baseline ones, as inapplicable.
+
+Two caveats on the requirement itself. These receipts come from assorted dev builds
+with the table resident in RAM, which is the correct basis -- the streaming path
+has to keep up with today's decode rate to avoid regressing it, not with a slower
+one. And if a future build does lift c16 decode toward the plan's implied 2,200
+tok/s, the requirement rises proportionally; that is a further argument for
+engineering to >=38k pages/s rather than to the measured 16.4k.
+
 **None of these numbers transfer to the serving host.** Three different drives
 are in play: section 3's FX900 Pro is `burst`'s root device, this study is
 `burst`'s PM9A1 scratch, and serving runs on `gg`'s single **Samsung 990 PRO
