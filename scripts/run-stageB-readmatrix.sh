@@ -149,26 +149,33 @@ for line in open(os.path.join(out, "cells.txt")):
         rows.append((tag, None)); continue
     try: rows.append((tag, json.load(open(f))))
     except Exception as e: rows.append((tag, {"error": str(e)}))
-print(f"\n{'cell':26s} {'pages/s':>10s} {'met':>4s} {'host GiB':>9s} {'device':>10s} {'drive-abs':>10s} {'p50':>7s} {'p99':>8s} {'cpu ms/1k':>10s}")
+print(f"\n{'cell':26s} {'pages/s':>10s} {'met':>4s} {'host GiB':>9s} {'device':>10s} {'fs amp':>7s} {'p50':>7s} {'p99':>8s} {'cpu ms/1k':>10s}")
 for tag, j in rows:
     if j is None or "error" in (j or {}):
         print(f"{tag:26s}  MISSING/FAILED {(j or {}).get('error','')}"); continue
     hc = j.get("host_cache_gib_used"); dv = j.get("device_pages_read"); dr = j.get("drive_cache_absorbed_pages")
     warn = ""
     if j.get("evict_first") and (j.get("host_resident_pages_before") or 0) > 1000: warn = " !not cold"
+    if j.get("fs_device_amplification", 1) > 1.15:
+        warn += f" !fs-amplification {j['fs_device_amplification']:.2f}x"
     if j["mode"] == "odirect":
         # O_DIRECT that silently degrades to buffered populates the page cache, so growth in
         # residency across an "O_DIRECT" run IS the fallback signature (btrfs does this on
         # compressed extents without telling anyone).
-        if (j.get("host_cache_gib_used") or 0) > 0.5: warn += " !fell-back-to-buffered"
+        g = j.get("page_cache_growth_pages")
+        if g is not None and g > 0.05 * max(1, j["pages_requested"]):
+            warn += f" !direct-populated-cache {g*4096/2**20:,.0f} MiB"
         if j.get("measured_hit_rate", 0) > 0.5: warn += " !direct-but-cached"
     if not j["met_target"]: warn += " !under target"
     if j.get("contaminated"): warn += f" !background {j.get('background_pages_per_s',0):,.0f} p/s"
     print(f"{tag:26s} {j['pages_per_s_achieved']:10,.0f} {str(j['met_target']):>4s} "
           f"{(hc if hc is not None else -1):9.2f} {dv if dv is not None else -1:10,} "
-          f"{j.get("device_pages_net", dr) if dr is not None else -1:10,} {j['latency_us']['p50']:7.1f} {j['latency_us']['p99']:8.1f} "
+          f"{j.get('fs_device_amplification', 0):6.2f}x {j['latency_us']['p50']:7.1f} {j['latency_us']['p99']:8.1f} "
           f"{j['cpu_ms_per_1k_pages']:10.1f}{warn}")
-print("\n  device column is NET of measured background traffic.  flags: !not cold = region was resident at start; !fell-back-to-buffered = an O_DIRECT run")
+print("\n  flags: !not cold = region resident at start; !fs-amplification = the device moved")
+print("  more pages than were requested (btrfs metadata walks, cluster reads, or a fallback);")
+print("  !direct-populated-cache = an O_DIRECT run grew the page cache, i.e. the kernel did")
+print("  not honour O_DIRECT over that range")
 print("  that populated the page cache, i.e. the kernel ignored O_DIRECT (btrfs does this on")
 print("  compressed extents); !under target = could not sustain the prefill page rate, which")
 print("  is a real result about that configuration, not a failed run; !background N p/s = the")
