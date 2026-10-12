@@ -1937,3 +1937,101 @@ believed was a 79-byte pointer file was a 79-character *symlink target* into 8.6
 bytes, which I duly streamed through a text filter into my own context. Check `stat -Lc %s` or
 `file` before printing anything from a cache directory; the 79 bytes that looked like a file size
 was a path length.
+
+## The access pattern is not uniform, and that matters more than everything else in this document
+
+Everything above this section reasons with `C/N` -- cache fraction equals hit rate -- which is exact
+for uniform random access and is what every read-path cell I measured used, because the instrument
+picks rows uniformly. The real pattern was never measured until now.
+
+Port of the id math to numpy, **validated byte-identical against the engine's own CPU path** across
+24 randomised batches (single- and multi-request, eos segmentation, long prompts). Config-derived
+geometry reproduces the artifact from first principles: `ngram_size=3`, `heads_per_ngram=8` -> 16
+heads, per-head primes 20,000,003..20,000,171, `padded_vocab_size = 320,001,536` = 128 shards x
+2,500,012 rows exactly, `head_dim = 160`, **12,500,060 pages** (an earlier note of mine said
+12,500,074). Tokenised with the served tokenizer (`tokenizer.json`, sha256 matching the published
+oid) so the ids are real model tokens, not synthetic ones.
+
+Hit rates below are **exact LRU from reuse distances**, computed by a C tool whose stack-distance
+method was checked against an independent brute-force LRU (python, 30 cases, agreement exact; the C
+tool agrees within 0.4-0.6%, the residual being its geometric capacity buckets).
+
+| corpus | tokens | working set | LRU @ 6.18 GiB | LRU @ 17.2 GiB | uniform `C/N` prediction |
+|---|---|---|---|---|---|
+| python source | 9.95M | 32.1 GiB | 88.7% | 93.2% | 36.0% |
+| JSON payloads | 3.45M | 7.6 GiB | 96.4% | 96.4% | 36.0% |
+| docstrings/comments | 1.79M | 6.2 GiB | 94.3% | 94.3% | 36.0% |
+| **serving-shaped session** | 2.28M | 14.7 GiB | **86.4%** | **89.4%** | 36.0% |
+
+**The uniform model understated the achievable hit rate by a factor of about 2.5.** That is not a
+tuning difference; it is the difference between a design that scrapes past its requirement and one
+that has roughly an order of magnitude of margin. At the 170,126 pages/s hard end, ~86-91% hits
+means the device carries 15-24k pages/s against a measured capability of 177-227k, and the binding
+constraint moves entirely onto the submit path -- 16 pages per token issued by the gather, whatever
+the hit rate.
+
+### The miss rate decomposes almost entirely into first touches
+
+Warming an empty cache is not the same question as caching well, and the numbers separate cleanly.
+Second half of the session trace, cold process start into an empty cache:
+
+| cache | cold-start LRU | warmed from the first half's hot set | warm-up value |
+|---|---|---|---|
+| 6.18 GiB | 85.2% | 86.6% | +1.4pp |
+| 17.2 GiB | 86.1% | 91.1% | +5.0pp |
+| 19.4 GiB (a 32 GiB host) | 86.1% | 91.5% | +5.4pp |
+
+Caching the *entire* table from a cold start yields 86.1% -- because 13.9% of that half's accesses
+are its own first touches. So there is an irreducible cold component, LRU is within a few points of
+what any cache of that size can do, and the only lever left is warm-up, worth about 5 points at
+best.
+
+### Two features I planned that should not be built
+
+**The hot list is dead.** My pre-registered gate asked whether the hottest 41% of pages carry
+>= 55% of accesses; the answer is 97%, so by the letter of the rule I should build it. The rule was
+measuring the wrong quantity -- it detects skew, and skew is enormous, but a hot list only earns
+its keep by beating what a page cache already does at the *same capacity*:
+
+| corpus | capacity | LRU | hot-list ceiling | gain |
+|---|---|---|---|---|
+| code | 6.18 GiB | 88.7% | 85.7% | **-3.0pp** |
+| code | 17.2 GiB | 93.2% | 95.9% | +2.7pp |
+| session | 6.18 GiB | 86.4% | 93.0% | +6.6pp |
+| session | 17.2 GiB | 89.4% | 100.0% | +10.6pp |
+
+Those "100%" ceilings are not a hot list working; they mean the working set is smaller than the
+capacity, so *any* scheme that knew the set in advance would hit everything. LRU gets there without
+knowing anything, and at 6.18 GiB on code a static list is actively worse than LRU. The remaining
+gap is cold share, which is a warm-up question, not a list question. **Not building this.**
+
+**Warm-up is mostly unnecessary, for a reason that has nothing to do with the trace.** The page
+cache is system-wide and survives a process exit; restarting the engine does not empty it. The cold
+numbers above describe a *host* reboot or real memory pressure, both of which the kernel then
+refills on its own as traffic arrives. The one ordering constraint that genuinely matters is
+upstream's: weight loading evicts the table, so the first prefill after a start runs cold -- and
+the fix, if it is needed at all after the prototype measures it, is a bounded `WILLNEED` pass over
+the previously hot *regions* after weights load, not a persisted id list.
+
+### Retractions attached to this section
+
+* **"prose is the hard case" (63.6% LRU).** Artifact of a 254,824-token corpus: 36.4% of its
+  accesses are first touches simply because the trace is short. The same content type with 1.79M
+  tokens reaches 94.3%. My first read of that number was as a property of English rather than of
+  sample size.
+* **Every hit rate quoted earlier in this document** (70.0%, 42.9%, 31.1%, the `C/N` agreement
+  itself) describes the uniform probe, not the workload. Those cells remain valid as device and
+  filesystem characterisation -- throughput ceilings, amplification, `O_DIRECT` behaviour, layout
+  effects -- and those conclusions are unchanged. The hit-rate rows are now labelled as the null
+  model they always were.
+* **RAM sizing table.** If ~6.2 GiB of cache yields 86% and ~19.4 GiB yields 89-91%, the jump from
+  32 GiB to 64 GiB is worth a few points, and ~20 GiB of RAM -- about 6 GiB of cache after the
+  12.6 GiB engine floor -- is a plausible streaming target. That needs the prototype to confirm
+  before it goes in a recommendation, but it is the opposite direction from where `C/N` pointed.
+
+Honest limits: these are one-shot corpora of available text, not logged traffic. Model-generated
+decode tokens are more repetitive than inputs, so output-side traffic should be *better*; multiple
+concurrent users on diverse topics should be worse than a single session. The trace also credits
+every speculative token MTP drafts, rejected ones included, which matches what the gather actually
+fetches. Real prompt traffic from `gg` would replace the guesswork, and the prototype's own
+instrumented runs can supply it.
