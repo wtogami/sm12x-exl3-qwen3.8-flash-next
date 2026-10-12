@@ -87,6 +87,7 @@ fi
   echo "caps=${CAPS:-} threads=${THREADS:-} steps=${STEPS:-} toks=${TOKS:-} target=${TARGET:-} dev=${DEV:-} mws=${MWS:-}"
   echo "precell=${PRECELL:-<none>}"
   echo "row_bytes=${ROW_BYTES:-160}"
+  echo "trace_provenance=${TRACE_PROV:-<undeclared>}"
   echo "blob_bytes=$(stat -c %s "$BLOB" 2>/dev/null)"
 } > "$OUT/manifest.txt" 2>/dev/null || true
 
@@ -129,8 +130,11 @@ run_host() {  # $1 mode $2 threads $3 tag
       fi
     fi
     local extra=()
-    if [ -n "${TRACE:-}" ]; then extra+=(--trace-file "$TRACE" --expect-access-model real-trace)
-    else extra+=(--expect-access-model uniform); fi
+    if [ -n "${TRACE:-}" ]; then
+      extra+=(--trace-file "$TRACE" --expect-access-model real-trace)
+      [ -n "${TRACE_PROV:-}" ] && extra+=(--trace-provenance "$TRACE_PROV")
+    fi
+    if [ -z "${TRACE:-}" ]; then extra+=(--expect-access-model uniform); fi
     timeout 1800 python3 scripts/bench-ple-readpath.py --blob "$BLOB" \
       --mode "$1" --threads "$2" --row-bytes "${ROW_BYTES:-160}" --tokens-per-step "${TOKS:-2048}" --steps "${STEPS:-150}" \
       --require-cold --evict-first --residency --dev "${DEV:-nvme0n1}" \
@@ -157,6 +161,7 @@ run_host() {  # $1 mode $2 threads $3 tag
     if [ -n "${TRACE:-}" ]; then
       mnt+=(-v "$TRACE:/work/trace.bin:ro,Z")
       extra+=(--trace-file /work/trace.bin --expect-access-model real-trace)
+      [ -n "${TRACE_PROV:-}" ] && extra+=(--trace-provenance "$TRACE_PROV")
     else
       extra+=(--expect-access-model uniform)
     fi
