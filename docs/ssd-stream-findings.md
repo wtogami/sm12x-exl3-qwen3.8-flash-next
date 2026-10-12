@@ -1185,6 +1185,49 @@ bounded unprivileged, which is what "bounded footprint" meant in the plan. It ca
 reclaim pages that other things made resident, and should not try -- the kernel does that
 under pressure for free, since they are clean file-backed pages.
 
+### Two filesystem facts from `gg`'s real blob that the fio baselines could not show
+
+From the matrix validation pass (4 cells, 12 steps each, whole 8.1 GiB FP8 blob, background
+device traffic measured at exactly 0 p/s so this is not another process):
+
+| cell | pages/s | requested | device pages | ratio | page cache grown |
+|---|---|---|---|---|---|
+| `pcache` uncapped, 8 threads | 131,407 | 402,264 | 585,165 | **1.45x** | +1,778 MiB |
+| `pcache` 4 GiB cap, 8 threads | 129,173 | 402,264 | 588,685 | 1.46x | +1,794 MiB |
+| `odirect` uncapped, 8 threads | 125,936 | 402,264 | 619,203 | **1.54x** | **+430 MiB** |
+| `odirect` 4 GiB cap, 8 threads | 121,886 | 402,264 | 619,686 | 1.54x | +431 MiB |
+
+**1. A 4 KiB random read costs about 1.5 device pages on this filesystem.** Requests
+themselves are what `pages_per_s` counts, so the requirement table is unaffected in its own
+units, and the fio ceilings are in requests/s too, so the comparison still holds. What changes
+is the bandwidth and the interpretation of the counters: ~130k pages/s of requests is
+~190k pages/s = ~745 MiB/s at the drive, and a receipt where device pages exceed requests is
+not a broken measurement. Previously this surfaced only as a *negative* hit rate and a
+negative `drive_cache_absorbed`, which looks like bad arithmetic. The instrument now reports
+`fs_device_amplification` with `device_sectors_per_request` beside it so a cluster read can be
+told from a metadata walk.
+
+**2. `O_DIRECT` on this blob is not fully direct.** An "O_DIRECT" run grew the host page cache
+by 430 MiB across 402,264 pages of requests -- 27% of them. That is the partial-silent-fallback
+failure mode measured earlier on compressed extents, now showing up on the FP8 table that was
+previously rated 98% honest. Both statements can be true: most traffic reaches the device, some
+of it is buffered. The practical consequences:
+
+* `O_DIRECT` cannot be treated as a clean control for "what the drive alone would do". A
+  direct-mode measurement on this filesystem needs the page-cache-growth check that replaced
+  the old fixed 0.5 GiB threshold (`!direct-populated-cache`, comparing growth to pages
+  requested).
+* It also means `O_DIRECT` does not fully protect against cache pressure on a tight host:
+  it still occupies some page cache, which is exactly the resource being economised.
+* The `pcache` and `odirect` cells are within about 4% of each other in throughput at equal
+  thread counts (131k vs 126k uncapped, 129k vs 122k capped). If that survives the full
+  matrix, the access-method choice is decided by **predictability, copies, and RAM
+  accounting**, not by rate -- which is the conclusion already argued from the C/N model.
+
+Short cells understate the rate: the same blob at 8 threads measured 157,843 pages/s over 40
+steps against 131,407 over 12, so the matrix uses 48 steps per cell and single-cell numbers
+from shorter runs should not be quoted against it.
+
 ### What the read path costs to submit in Python
 
 The instrument is Python threads, and that turned out to be a result rather than an
