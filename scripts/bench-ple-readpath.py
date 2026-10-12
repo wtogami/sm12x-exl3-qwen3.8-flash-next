@@ -324,6 +324,48 @@ def disk_for_path(path):
     return parent_disk(name)
 
 
+def mmapping_pids(path):
+    """Pids with `path` mapped, by scanning /proc/*/(maps).
+
+    posix_fadvise(DONTNEED) cannot discard pages a process has mapped -- measured: 65,536 resident
+    pages stayed 65,536 with a live mapping and fell to 0 without one -- so --evict-first means
+    "cold" only if nothing maps the file. drop_caches is no help there either: in-use pages are
+    skipped by both. That condition is checkable without privilege, so check it.
+
+    Matching is by inode plus resolved pathname, NOT by the device field. The maps device column
+    is hex and refers to the superblock the mapping came from, which need not equal st_dev of the
+    path -- measured here as maps `00:23` versus st_dev minor 37 for the same file, because two
+    mounts cover the same tree. A key that cannot match produces a guard that never fires, which
+    is worse than no guard because it reads as protection.
+    """
+    try:
+        st = os.stat(path)
+    except OSError:
+        return []
+    want_ino = st.st_ino
+    want_path = os.path.realpath(path)
+    found = []
+    me = os.getpid()
+    for d in os.listdir("/proc"):
+        if not d.isdigit() or int(d) == me:
+            continue
+        try:
+            with open(f"/proc/{d}/maps") as fh:
+                for line in fh:
+                    parts = line.split(None, 5)
+                    if len(parts) < 5 or not parts[4].isdigit() or int(parts[4]) != want_ino:
+                        continue
+                    name = parts[5].strip() if len(parts) > 5 else ""
+                    if name and not name.endswith("(deleted)"):
+                        if os.path.realpath(name) != want_path:
+                            continue
+                    found.append(int(d))
+                    break
+        except OSError:
+            continue
+    return found
+
+
 def main():
     a = sys.argv[1:]
     ap = argparse.ArgumentParser()
@@ -365,6 +407,8 @@ def main():
                     help="sample background device traffic before timing; 0 disables")
     ap.add_argument("--evict-first", action="store_true",
                     help="fadvise DONTNEED the region before timing (whole range: proven effective)")
+    ap.add_argument("--allow-mapped", action="store_true",
+                    help="proceed even though a process maps the blob (warm-start cells)")
     ap.add_argument("--evict-lag-pages", type=int, default=0,
                     help="evict a page only after this many newer pages have been read")
     ap.add_argument("--residency-gib", type=int, default=0,
@@ -372,6 +416,20 @@ def main():
     ap.add_argument("--min-working-set", type=int, default=8 * 2**30,
                     help="warn below this many touched bytes (drive DRAM cache)")
     args = ap.parse_args(a)
+    if getattr(args, "evict_first", False):
+        mappers = mmapping_pids(args.blob)
+        if mappers and not getattr(args, "allow_mapped", False):
+            names = []
+            for pid in mappers[:6]:
+                try:
+                    names.append(f"{pid}:" + open(f"/proc/{pid}/comm").read().strip())
+                except OSError:
+                    names.append(str(pid))
+            raise SystemExit(
+                f"{len(mappers)} process(es) have the blob mapped: {', '.join(names)}. "
+                "fadvise(DONTNEED) cannot evict mapped pages, so --require-cold would be a "
+                "claim about a state we cannot reach. Pass --allow-mapped only if the cell is "
+                "measuring a warm start on purpose.")
 
     if getattr(args, "dev", "") and getattr(args, "blob", ""):
         backing = disk_for_path(args.blob)
