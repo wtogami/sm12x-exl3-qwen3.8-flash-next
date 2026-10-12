@@ -21,7 +21,7 @@ Two things this deliberately refuses to do:
     reader at qd1 does ~20k IOPS on gg, so six-plus threads of pure submit is the
     baseline cost of not using io_uring).
 """
-import argparse, json, mmap, os, random, resource, sys, threading, time
+import argparse, json, math, mmap, os, random, resource, sys, threading, time
 
 SECTOR = 512
 
@@ -530,9 +530,17 @@ def main():
         # hits. The defensible figure subtracts the pages that were actually pulled into
         # the page cache (mincore growth) from the requests issued. Requires a run whose
         # region fits the cache, so nothing was evicted.
-        "hit_rate_from_residency": (round((requested - (res1 - res0)) / requested, 4)
-                                    if (res0 is not None and res1 is not None and dev_pages > 0)
-                                    else None),
+        # Residency growth equals distinct pages read ONLY when nothing was evicted. Under a
+        # memory cap that fails loudly and silently at once: a capped cell reported 85.6% "hits"
+        # while the device served 88% of requests, because pages evicted mid-run are simply
+        # absent from the growth figure. Guard it against the birthday expectation.
+        "hit_rate_from_residency": (
+            round((requested - (res1 - res0)) / requested, 4)
+            if (res0 is not None and res1 is not None and dev_pages > 0
+                and (res1 - res0) >= 0.9 * min(n_pages, n_pages * (1 - math.exp(-requested / max(1, n_pages)))))
+            else None),
+        "eviction_expected": (res0 is not None and res1 is not None
+                              and (res1 - res0) < 0.9 * min(n_pages, n_pages * (1 - math.exp(-requested / max(1, n_pages))))),
         "distinct_pages_pulled": (res1 - res0) if (res0 is not None and res1 is not None) else None,
         "device_sectors_per_request": round((s1 - s0) / max(1, r1 - r0), 2),
         "page_cache_growth_pages": (res1 - res0) if (res0 is not None and res1 is not None) else None,
