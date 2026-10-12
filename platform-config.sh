@@ -188,13 +188,19 @@ qwen38_next_pow2() {
 # GiB of Shmem -- 64 GiB plus a 2 GiB embedding). Comparing rounded demand with
 # installed RAM removes both the bogus constant and the 1.35x fudge.
 #
-# Where to put the line is a judgement, stated as one. Recorded outcomes are 130
-# GiB pinned on 183 GiB (71.0% of RAM, the qualification host, served fine), 66
-# GiB on 125.68 GiB (52.5%, serving now), and 130 GiB on 125.68 GiB (103.4%,
-# impossible). So the boundary lies between 71% and 103% and has never been
-# probed. Refuse only what arithmetic condemns -- demand landing within
-# max(8 GiB, 5% of RAM) of installed -- and warn above 70%, just under the
-# highest share with a recorded success.
+# Where to put the line is a judgement, stated as one, and two kinds of evidence
+# are kept apart. Highest share with a *serving engine* on it: 71.0% -- 130 GiB
+# pinned on the 183 GiB qualification host; 52.5% (66 GiB on 125.68) serves today.
+# Highest share merely *pinned successfully* by a probe: 77.5%, measured 2026-10-11
+# on gg -- cudaHostAlloc of the 95.368 GiB BF16 table plus torch's 2 GiB rounded
+# embedding, 97.38 GiB of Shmem on a 125.68 GiB host, 22.76 GiB still available,
+# swap untouched, 42 s to page-lock. That is an allocation result, not a served
+# request, so it deliberately does NOT move the warn tier: a serving engine also
+# needs page cache, KV headroom and a kernel that can breathe, none of which the
+# probe exercised. Recorded failure is 103.4% (130 GiB on 125.68); between 77.5% and
+# 103.4% nothing has even been pinned. So refuse only what arithmetic condemns --
+# demand landing within max(8 GiB, 5% of RAM) of installed -- and warn above 70%,
+# just under the highest share that has actually served.
 #
 # Demand is read from the checkpoint so a geometry change needs no edit here.
 qwen38_ple_memcheck() {
@@ -260,9 +266,9 @@ print(int(text["ngram_vocab_size_base"]), int(text["ple_embed_dim"]),
   fi
   if (( demand_kib > warn_kib )); then
     echo "WARNING: this profile pins ${demand_gib} GiB, ${pct}% of the ${mem_gib} GiB installed." >&2
-    echo "  The highest share with a recorded successful pin is 71.0% (130 GiB on a 183 GiB" >&2
-    echo "  host); above that the outcome is untested, so expect it to fail if anything else" >&2
-    echo "  on this host is holding pinned memory." >&2
+    echo "  The highest share that has actually served an engine is 71.0% (130 GiB on a 183" >&2
+    echo "  GiB host). 77.5% has been pinned by a probe but never served; above 77.5% nothing" >&2
+    echo "  has been pinned at all. Expect failure if anything else holds pinned memory." >&2
   fi
   echo "PLE pinned host memory: table ${table_gib} GiB pins ${table_pin_gib} GiB; with token" \
      "embeddings ${demand_gib} GiB pinned against ${total_gib} GiB of checkpoint, on" \
