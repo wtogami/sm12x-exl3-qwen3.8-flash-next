@@ -2149,6 +2149,46 @@ path, the boundary, the fan-out path, the whole table, and scattered non-monoton
 what let the earlier 24x-underfilled buffer look plausible: `0 of 4000 sampled` passes on a build
 that copies 1/24 of a batch if the sample lands in the copied part.
 
+## Levelling the page cache changes nothing, and that result costs me a claim I made yesterday
+
+The `drop_caches` grant exists now (`/usr/local/bin/ple-drop-caches`, granted NOPASSWD to `rtx`,
+wrapped so it refuses while the engine has requests and prints `Shmem` before and after so the pinned
+table is visibly untouched: 66.18 -> 66.18 GiB while 16.11 GiB of file cache was released). It went
+straight onto the assumption behind every hit-rate receipt in this file: cells start cold via
+`posix_fadvise(DONTNEED)`, which provably fails to evict pages some process has mapped.
+
+Same blob (incompressible, 8 GiB, CoW arm), same eight threads, same cap-4 and uncapped
+configurations, run twice -- once cold-started by `fadvise` alone (how every earlier cell was run),
+once with a host-wide `drop_caches` before each cell:
+
+| cell | device pages, fadvise | device pages, drop_caches | difference | hit A | hit B | rate A | rate B | rate diff |
+|---|---|---|---|---|---|---|---|---|
+| pcache cap 4 | 12,005,164 | 12,008,313 | 0.026% | **0.427** | **0.427** | 174,490 | 174,551 | 0.04% |
+| pcache uncapped | 2,099,281 | 2,099,344 | 0.003% | **0.900** | **0.900** | 220,149 | 227,703 | **3.43%** |
+| odirect cap 4 | 20,951,519 | 20,955,016 | 0.017% | 0.000 | 0.000 | 139,665 | 139,711 | 0.03% |
+| odirect uncapped | 20,951,655 | 20,954,633 | 0.014% | 0.000 | 0.000 | 140,918 | 140,701 | 0.15% |
+
+Two conclusions, one of them a retraction.
+
+**The prediction held: there is no cold-start bias.** Retention is indistinguishable, worst case
+0.026% of device pages, and hit rates agree to the last reported digit. Nothing mapped these blobs,
+so `fadvise` was already doing complete eviction -- which is exactly the condition the mapper guard
+now enforces instead of trusting. Every `--require-cold` receipt in this file stands on its own
+measurement, and the grant turns out to be for metadata tidiness rather than validity.
+
+**Retraction: the 2-5% throughput differences I reported between the CoW and NOCOW arms are not
+established.** I wrote that run-to-run reproducibility was excellent and therefore those deltas were
+signal. The second column of this table says otherwise: two *identical* uncapped `pcache` arms
+differed by **3.43%** in achieved pages/s. Any rate difference below roughly that is indistinguishable
+from noise on this host, so the CoW-versus-NOCOW rate deltas (2.9-4.8%) sit inside the noise band and
+must be reported as "no measurable difference" rather than as a small effect favouring NOCOW.
+
+What survives intact is the part the layout argument actually rests on. Device-page counts reproduce
+to 0.026% between arms, so the retention claims -- 42.7% versus 2.7% for plain versus encoded extents,
+and the matched retention of CoW against NOCOW that exonerated copy-on-write -- are orders of
+magnitude above the noise floor. Method lesson: a noise floor has to be measured by repeating one
+arm, not by observing that two arms agree.
+
 ## The exclusion test: copy-on-write is innocent, so the layout advice collapses to nothing
 
 The controlled D-versus-E pair varied three things at once -- CoW flag, extent count, and whether
