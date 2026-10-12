@@ -60,6 +60,17 @@ PLE_PIN_STRATEGY="${PLE_PIN_STRATEGY:-round2}"
 # at 8-16 GiB of cache. Default off: the resident pinned table is faster when it fits.
 PLE_STREAM="${PLE_STREAM:-${VLLM_PLE_STREAM:-0}}"
 [[ "$PLE_STREAM" == 0 || "$PLE_STREAM" == 1 ]] || { echo "PLE_STREAM must be 0 or 1" >&2; exit 2; }
+# PLE_STREAM_V2=1 selects the staging design: rows are copied into a persistent device buffer from
+# prepare_inputs, before the step replays, so _lookup is a device-to-device copy and FULL cudagraphs stay
+# on. That matters because v1 must run under breakable graphs plus cudagraph_mode=PIECEWISE, and measured
+# on this host that graph regime alone costs 17.8% of decode with streaming switched off entirely
+# (162.8 -> 133.9 tok/s, spreads 1.1%/1.6%) -- most of v1's 22.2% decode loss. v2 implies PLE_STREAM=1 and
+# deliberately does NOT imply the graph-mode downgrades.
+PLE_STREAM_V2="${PLE_STREAM_V2:-${VLLM_PLE_STREAM_V2:-0}}"
+[[ "$PLE_STREAM_V2" == 0 || "$PLE_STREAM_V2" == 1 ]] || { echo "PLE_STREAM_V2 must be 0 or 1" >&2; exit 2; }
+if [[ "$PLE_STREAM_V2" == 1 ]]; then
+  PLE_STREAM=1
+fi
 if [[ "$PLE_STREAM" == 1 && "$PLE_MMAP" == 0 ]]; then
   # Streaming selects its backend by class before checkpoint_mapped is consulted, but the storage
   # plumbing it inherits (never-materialised weights, host page prefetcher) is gated on that flag.
@@ -68,7 +79,7 @@ if [[ "$PLE_STREAM" == 1 && "$PLE_MMAP" == 0 ]]; then
   echo "  note: PLE_STREAM=1 implies PLE_MMAP=1 (checkpoint-mapped storage, CPU gather); setting it" >&2
   PLE_MMAP=1
 fi
-if [[ "$PLE_STREAM" == 1 ]]; then
+if [[ "$PLE_STREAM" == 1 && "$PLE_STREAM_V2" == 0 ]]; then
   # A streaming gather is host code and cannot live inside a captured CUDA graph: capture would
   # freeze one row set and replay it forever. Breakable CUDA graphs are what makes it legal --
   # @eager_break_during_capture on start_prefetch records the callable and re-runs the Python on
@@ -121,7 +132,7 @@ esac
 # because breakable is enabled: _normalize_piecewise_cudagraph_mode downgrades a PIECEWISE request to
 # NONE when compilation is off *and* breakable is disabled, and streaming turns breakable on precisely
 # because compilation mode is forced to NONE.
-if [[ "$PLE_STREAM" == 1 ]]; then
+if [[ "$PLE_STREAM" == 1 && "$PLE_STREAM_V2" == 0 ]]; then
   case " $* " in
     *" --compilation-config "*|*" --compilation-config="*|*" -cc "*|*" -cc="*|*" -O "*|*" -O="*)
       echo "  note: caller supplied a compilation config; not forcing cudagraph_mode=PIECEWISE." >&2
@@ -305,6 +316,7 @@ docker run -d --name "$container_name" \
   -e PLE_PIN_STRATEGY="${PLE_PIN_STRATEGY}" \
   -e PLE_STREAM="${PLE_STREAM}" \
   -e VLLM_USE_BREAKABLE_CUDAGRAPH="${VLLM_USE_BREAKABLE_CUDAGRAPH:-0}" \
+  -e PLE_STREAM_V2="${PLE_STREAM_V2}" \
   -e PLE_ROWCOPY_SO="${PLE_ROWCOPY_SO:-/opt/qwen38/ple_rowcopy.so}" \
   -e CUDA_CACHE_PATH=/root/.cache/cuda \
   -e TRITON_CACHE_DIR=/root/.cache/triton \

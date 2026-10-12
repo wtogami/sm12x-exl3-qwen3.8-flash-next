@@ -82,8 +82,8 @@ class StepStager:
     guarantees freshness.
     """
 
-    def __init__(self, embedding, wrapper, *, max_rows: int, threads: int = 24,
-                 arenas: int | None = None):
+    def __init__(self, embedding, wrapper, *, max_rows: int, max_reqs: int, ctx_len: int,
+                 threads: int = 24, arenas: int | None = None):
         import sys
         from pathlib import Path
         sys.path.insert(0, str(Path(__file__).resolve().parent))
@@ -117,8 +117,10 @@ class StepStager:
         self.cur_seq = torch.zeros(1, dtype=torch.int64, device=self.device)
 
         self._ids_host = torch.empty(self.max_rows, dtype=torch.int64, pin_memory=True)
-        self._qsl_host = torch.empty(16384, dtype=torch.int64, pin_memory=True)
-        self._ctx_host = torch.empty(16384, 64, dtype=torch.int64, pin_memory=True)
+        # Sized from the model state, not from guesses: an oversized step must be impossible by
+        # construction rather than caught by a copy that happens to raise.
+        self._qsl_host = torch.empty(int(max_reqs) + 1, dtype=torch.int64, pin_memory=True)
+        self._ctx_host = torch.empty(int(max_reqs), int(ctx_len), dtype=torch.int64, pin_memory=True)
         self._mask = torch.empty(self.max_rows, dtype=torch.bool, device=self.device)
         self._ev = torch.cuda.Event()
         self._side = torch.cuda.Stream(self.device) if self.mode == MODE_ASYNC else None
@@ -148,6 +150,11 @@ class StepStager:
         if n > self._ids_host.numel():
             raise RuntimeError(f"step needs {n} id slots, staging holds {self._ids_host.numel()}")
         nr = int(ctx.shape[0])
+        if nr > self._ctx_host.shape[0] or ctx.shape[1] > self._ctx_host.shape[1]:
+            raise RuntimeError(
+                f"step needs {nr}x{ctx.shape[1]} ngram context slots, staging has "
+                f"{self._ctx_host.shape[0]}x{self._ctx_host.shape[1]}; the stager was sized from a "
+                "smaller model state than the batch the engine is running")
         self._ids_host[:n].copy_(input_ids.reshape(-1), non_blocking=True)
         self._qsl_host[: nr + 1].copy_(qsl[: nr + 1], non_blocking=True)
         self._ctx_host[:nr, : ctx.shape[1]].copy_(ctx[:nr, : ctx.shape[1]], non_blocking=True)
@@ -244,14 +251,54 @@ def make_stager(embedding, wrapper, max_rows: int) -> StepStager:
     return StepStager(embedding, wrapper, max_rows=max_rows)
 
 
-def stage_step_rows(model, input_ids, query_start_loc, ngram_context, num_reqs: int) -> bool:
-    """Hook called from model_state.prepare_inputs. Returns True if anything was staged."""
-    did = False
-    for module in model.modules():
+def _build_stagers(state) -> list:
+    """One stager per streaming n-gram embedding, sized from the model state that owns them."""
+    from vllm.model_executor.models.qwen4_exp.nvidia.ngram_embedding import (  # noqa: F401
+        Qwen4ExpNGramEmbedding,
+    )
+
+    out = []
+    for module in state.model.modules():
         emb = getattr(module, "ngram_embedding", None)
-        stager = getattr(emb, "_stream_stager", None)
-        if stager is None or not isinstance(stager, StepStager):
+        if emb is None or getattr(emb, "table", None) is None:
             continue
+        if not type(emb).__name__.endswith("PLEStreamHostEmbedding"):
+            continue
+        if isinstance(getattr(emb, "_stream_stager", None), StepStager):
+            out.append(emb._stream_stager)
+            continue
+        heads = int(getattr(module, "ngram_heads", 0) or 0)
+        if heads <= 0:
+            raise RuntimeError(f"{module}: ngram_heads is not readable; refusing to size staging")
+        stager = StepStager(emb, module,
+                            max_rows=int(state.max_num_tokens) * heads,
+                            max_reqs=int(state.max_num_reqs),
+                            ctx_len=int(state.ngram_context_len))
+        emb._stream_stager = stager
+        out.append(stager)
+        logger.info("PLE stream v2: staging %d rows x %d B (%.1f MiB device + %d pinned arenas), "
+                    "max %d reqs x %d ctx, mode=%s",
+                    stager.max_rows, stager.row_bytes,
+                    stager.max_rows * stager.row_bytes / 2**20, stager.arenas,
+                    int(state.max_num_reqs), int(state.ngram_context_len), stager.mode)
+    return out
+
+
+def stage_step_rows(state, input_ids, query_start_loc, ngram_context, num_reqs: int) -> bool:
+    """Hook called from Qwen4ExpModelState.prepare_inputs, eagerly, once per step.
+
+    Returns False (and does nothing) unless a streaming v2 backend is actually present, so a deployment
+    that never enabled it pays one attribute lookup per step. The stager list is cached on the state --
+    but only once it is non-empty, because during weight loading the tables are not bound yet and caching
+    an empty list there would permanently disable staging.
+    """
+    stagers = getattr(state, "_ple_v2_stagers", None)
+    if not stagers:
+        stagers = _build_stagers(state)
+        if stagers:
+            state._ple_v2_stagers = stagers
+        else:
+            return False
+    for stager in stagers:
         stager.stage(input_ids, query_start_loc, ngram_context, num_reqs)
-        did = True
-    return did
+    return True
