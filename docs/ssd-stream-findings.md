@@ -2817,3 +2817,45 @@ work around with `QWEN38_SKIP_MEMCHECK`, so it now prints both terms and their s
 cases (3 GiB cgroup refuses, 14 GiB warns, 60 GiB accepts) were re-run against the real checkpoint config
 with `rc` captured directly -- not through a pipe, which is what reported `rc=0` for a refusal a moment
 earlier.
+
+## Breakable graphs are necessary and not sufficient — decode captures FULL
+
+Attempt two failed on my own guard, which is the guard doing its job: the log said
+`Breakable CUDA graph enabled` and the host gather *still* reached a capture. I had written the guard
+message claiming `VLLM_USE_BREAKABLE_CUDAGRAPH=1` was the remedy, and the engine disproved it in about
+three minutes.
+
+There are two capture paths, and only one of them breaks:
+
+```python
+self.use_breakable_cg = (is_breakable_cudagraph_enabled()
+                         and self.cudagraph_mode.has_piecewise_cudagraphs())
+```
+
+with the default mode `FULL_AND_PIECEWISE`. In `cudagraph_utils.capture()`, a `PIECEWISE` descriptor
+either runs uncaptured or `continue`s before the graph block; every other descriptor reaches
+
+```python
+with torch.cuda.graph(graph, self.pool, stream=self._capture_stream(desc)):
+    forward_fn(CUDAGraphMode.NONE)          # line 478 — this is the FULL path
+```
+
+and inside a FULL capture `eager_break_during_capture` *deliberately* does not break:
+`if mode == CUDAGraphMode.FULL: return fn(...)`. So prefill was already safe and **decode was not**.
+That is the precise shape of bug a single successful startup would have missed, and it is the second
+time tonight that "the host-side gather is fine under graphs" needed to be checked per graph mode rather
+than per flag.
+
+Fix: `PLE_STREAM=1` also implies `--compilation-config '{"cudagraph_mode": "PIECEWISE"}'`, unless the
+caller supplied their own compilation config, in which case `start.sh` says so and lets the guard refuse.
+`PIECEWISE` survives the engine's own normalisation only because breakable is on —
+`_normalize_piecewise_cudagraph_mode` rewrites `PIECEWISE → NONE` when compilation is off *and* breakable
+is disabled, and streaming forces compilation mode to `NONE` as a side effect of enabling breakable. The
+two flags are load-bearing for each other.
+
+The cost is real and belongs to the feature, not to a footnote: dropping FULL graphs means decode replays
+piecewise segments instead of one whole-step graph. That is part of what streaming costs on this engine,
+and it is one of the reasons the comparison has to be a 2×2 rather than a pair.
+
+Both prior attempts restored the serving engine cleanly — health 200, greedy `f91132436fb09e45`, Shmem
+66.18 GiB, VRAM 91,992 MiB — and both failures were archived before cleanup, unlike the first one.
