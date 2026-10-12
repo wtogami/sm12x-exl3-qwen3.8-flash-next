@@ -107,9 +107,9 @@ def main():
     check("--ipc preserved", "--ipc" in flagbag)
     check("--device preserved", "--device" in flagbag)
     check("volumes preserved", "-v" in bpre or "--volume" in bpre)
-            same = norm_ref(base_line[bi]) == norm_ref(bimg)
-        swapped = norm_ref(base_line[bi]) != norm_ref(a.image)
-        check("omitting --image keeps the base image", same and swapped)
+    same = norm_ref(base_line[bi]) == norm_ref(bimg)
+    swapped = norm_ref(base_line[bi]) != norm_ref(a.image)
+    check("omitting --image keeps the base image", same and swapped)
 
     print(f"  {'ALL PASS' if fails == 0 else str(fails) + ' FAILURE(S)'}")
     return 1 if fails else 0
