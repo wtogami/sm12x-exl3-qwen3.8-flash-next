@@ -220,6 +220,41 @@ def row_pages(rows, row_bytes, bs, n_rows):
     return out
 
 
+class TraceSource:
+    """Real n-gram page access, in recorded order, from a dumped row-id stream.
+
+    The uniform generator is the pessimistic model for a cache and nothing more: reuse-distance
+    analysis of actual ids showed 86-94% LRU hits where uniform predicts 36-41%, so layout
+    conclusions drawn from uniform traffic describe the access model, not the workload. Rows are
+    folded into the measured region with a modulo when the fixture is smaller than the full table;
+    that inflates absolute hit rates by shrinking the address space, but the inflation is identical
+    across arms, so comparisons between layouts stay valid.
+    """
+
+    def __init__(self, path, span, lo):
+        import numpy as np
+        self.np = np
+        self.rows = np.fromfile(path, dtype=np.int32).astype(np.int64)
+        if self.rows.size < 1024:
+            raise SystemExit(f"trace file {path} has only {self.rows.size} rows")
+        self.span = span
+        self.lo = lo
+        self.pos = 0
+
+    def take(self, count):
+        out = np.empty(count, dtype=np.int64)
+        filled = 0
+        while filled < count:
+            chunk = np.minimum(self.span - 1,
+                               self.rows[self.pos:self.pos + (count - filled)] % self.span)
+            out[filled:filled + chunk.size] = chunk + self.lo
+            filled += chunk.size
+            self.pos += chunk.size
+            if self.pos >= self.rows.size:
+                self.pos = 0
+        return out.tolist()
+
+
 def id_stream(rng, count, n_rows, hot_fraction, hot_share, lo=0, span=None):
     """Rows a step would ask for. Uniform is the pessimistic case for the cache; a hot
     set brackets what a Zipf-ish real n-gram distribution would do without needing a
@@ -245,6 +280,8 @@ def main():
     ap.add_argument("--steps", type=int, default=2000)
     ap.add_argument("--target-pages-per-s", type=int, default=115700,
                     help="the rate to sustain; misses are reported, not hidden")
+    ap.add_argument("--trace-file", default="",
+                    help="int32 row-id stream from a real n-gram trace; replaces uniform access")
     ap.add_argument("--hot-fraction", type=float, default=0.0)
     ap.add_argument("--hot-share", type=float, default=0.0)
     ap.add_argument("--seed", type=int, default=1)
@@ -442,9 +479,15 @@ def main():
     rows_total = 0
     staging_copy_s = 0.0
 
+    trace = TraceSource(args.trace_file, span, lo) if args.trace_file else None
+    if trace is not None:
+        print(f"  access model: REAL TRACE ({len(trace.rows):,} recorded row ids, folded into {span:,} rows)", file=sys.stderr)
     for step in range(args.steps):
-        rows = id_stream(rng, args.tokens_per_step * args.rows_per_token, n_rows,
-                         args.hot_fraction, args.hot_share, lo, span)
+        if trace is not None:
+            rows = trace.take(args.tokens_per_step * args.rows_per_token)
+        else:
+            rows = id_stream(rng, args.tokens_per_step * args.rows_per_token, n_rows,
+                             args.hot_fraction, args.hot_share, lo, span)
         rows_total += len(rows)
         pages = sorted(row_pages(rows, args.row_bytes, bs, n_rows))
         requested += len(pages)
@@ -506,6 +549,9 @@ def main():
         # amplification is the separate and much larger number: bytes fetched per byte used.
         "pages_per_row": round(requested / max(1, rows_total), 4),
         "pages_per_token": round(requested / max(1, rows_total / args.rows_per_token), 4),
+        "raw_row_requests": rows_total * args.rows_per_token,
+        "dedup_saving_frac": round(1 - requested / max(1, rows_total * args.rows_per_token), 4),
+        "access_model": "real-trace" if args.trace_file else "uniform",
         "tokens_per_step": args.tokens_per_step,
         "byte_amplification": round(bs / args.row_bytes, 2),
         "elapsed_s": round(el, 2),
