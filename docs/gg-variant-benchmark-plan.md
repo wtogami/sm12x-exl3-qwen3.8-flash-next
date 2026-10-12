@@ -309,6 +309,45 @@ design, roughly **half a day** including both builds and the C-only instrumentat
 B comparison is the cheap and decision-relevant half -- one build, one env var, and a
 claim about pinned bytes that is already provable from `/proc` in seconds.
 
+## Decision: 32 GiB is the floor, and the predictions that run tests
+
+**Adopted 2026-10-12: the streaming target is a 32 GiB host.** The 16 GiB case is explicitly
+out of scope for now, because it is blocked by the engine's own ~12.6 GiB non-table footprint
+rather than by anything to do with the table or the drive. Design consequences: page cache is
+the default with no caveat left over, `O_DIRECT` is an option for jitter control and nothing
+more, and staging stays small (tens of MiB) because at 32 GiB there is no RAM to spare for it.
+
+The steady-state run tests the C/N model at 32 GiB by scale: a 32 GiB host has ~19.4 GiB of
+page cache for a 47.684 GiB table, a fraction of 0.407. Against the 8.1 GiB blob on `gg` that
+fraction is reproduced by container caps of 3 GiB (0.37) and 4 GiB (0.49), with the uncapped
+case as a ceiling. At 200 steps the run makes 6.73M requests over 2.1M pages, i.e. 3.2 passes,
+which is what makes it a steady-state measurement rather than the single-pass artifact that
+produced the retracted 11.5%.
+
+Written down before the data, using `hit_rate_from_residency` (requests minus pages actually
+pulled into cache, over requests):
+
+| cell | prediction | reasoning |
+|---|---|---|
+| uncapped, 8 threads | **~70%** | whole region fits; only the first pass costs. distinct = N(1−e^−3.2) = 2.04M of 6.73M |
+| 4 GiB cap | **~49%** | LRU under uniform requests: hits = C/N |
+| 3 GiB cap | **~37%** | same, smaller C |
+| any cap, throughput | rises with the hit rate, sub-linearly | fewer device waits per request |
+
+What each outcome means. **If they land near prediction**, the C/N model is validated on this
+filesystem and the 32 GiB design is sound: the device carries ~60% of the requirement, and the
+whole plan rests on arithmetic that has now survived contact. **If hits come in well below
+C/N**, the kernel is not holding what we assume -- readahead pollution, reclaim that is not
+LRU-selective for file pages, or the 1.16x amplification path bypassing the cache -- and then a
+32 GiB host behaves like a 16 GiB one, which would put the floor back to 64 GiB and change the
+answer to "is this worth building". **If hits exceed C/N**, something is caching beyond the
+cap, and the caps are not containing the experiment -- which would invalidate the method, not
+improve the design.
+
+Also recorded so the metric is not misread later: `device_sectors_per_request` ≈ 9.83 on the
+direct path and ≈ 10.6 on the buffered path, so any device-derived hit rate on this filesystem
+is pessimistic by construction. Use `hit_rate_from_residency` and check `!not cold`.
+
 ## Target hosts, measured footprint, and two of my own conclusions I had to retract
 
 The goal is stated by host size, not by throughput: **make a 16 GiB host able to serve this
