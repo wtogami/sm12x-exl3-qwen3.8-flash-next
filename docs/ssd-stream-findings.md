@@ -2035,3 +2035,109 @@ concurrent users on diverse topics should be worse than a single session. The tr
 every speculative token MTP drafts, rejected ones included, which matches what the gather actually
 fetches. Real prompt traffic from `gg` would replace the guesswork, and the prototype's own
 instrumented runs can supply it.
+
+## Layout as the cause now has a proper control, and `st_blocks` turns out to be a liar
+
+The control that the destroyed file made impossible has been rebuilt from bytes I own: identical
+FP8 content, written in the same minute, differing only in extent type.
+
+| fixture | encoded extents | pcache cap4 pages/s | hits from device | `O_DIRECT` cache growth | dev/req |
+|---|---|---|---|---|---|
+| D-encoded | 4,642 | 160,045 | 2.7% | **+0.58 GiB** | 0.95 |
+| E-nocow | 0 | **176,462** | **42.9%** | **+0.00 GiB** | 1.00 |
+
+Same bytes, same recency, so content and placement are both held constant and layout is the only
+variable. E-nocow landed at 42.9% against the pre-registered 40-43% band; `O_DIRECT` polluted the
+cache by 0.58 GiB on the encoded file and not at all on the plain one; throughput differs by 10.3%.
+The pre-registered falsifier -- "if D-encoded matches E-nocow, retract the finding" -- did not
+fire. **The layout conclusion from earlier stands, now with the control it lacked.**
+
+### `st_blocks` cannot see compression on this mount, so my disk-cost pricing is void
+
+The compressibility control settled it: **1 GiB of zeros** -- the most compressible data that
+exists -- reports `st_blocks` ratio **100.0%** while carrying 8,189 encoded extents (1 GiB / 8,189
+= 128 KiB, exactly btrfs's compression block size, so compression is definitely being applied).
+Therefore:
+
+* `st_blocks` on this kernel/mount reflects logical size for compressed extents, and the
+  "encoded extents save nothing" reading I built on it was an artifact of the metric, not a
+  property of the data.
+* So is the price I attached to `compress=no` -- "forfeits about 6.7 GiB" -- **unmeasured**. It may
+  be roughly right (standalone zstd-1 does reach 86.0% at 128 KiB blocks, which matches the extent
+  size) or it may be nothing; this mount's accounting cannot tell us either way.
+* The tool that would answer it is `compsize` (fiemap-based, reports RAM size versus on-disk size
+  per algorithm). Not installed, and installing needs root. Until then the honest statement in the
+  deployment note is: *compression is on, it is costing retention and throughput as measured above,
+  and its disk benefit on this filesystem is unverified by the instruments available here.*
+
+That is the third time tonight a number I quoted confidently turned out to be an artifact of the
+measuring stick rather than the thing measured -- after `diskstats` field indices and a
+`du`-derived compression claim. The pattern is consistent enough to be a rule: when two of my
+instruments disagree, one of them is lying, and the one I notice is not necessarily the culprit.
+
+## The streaming gather prototype: the design I was building was 143x more expensive than it needed to be
+
+Built on `burst` (RTX PRO 6000 Blackwell, 96 GiB VRAM, 995 GiB RAM) against a 47.684 GiB fixture
+with the exact real geometry, driven by the **actual session access trace** rather than a uniform
+probe, inside capped containers.
+
+**Page-granular staging is the wrong shape.** The first prototype fetched whole 4 KiB pages into
+pinned staging, which copies 4,256 bytes to deliver a 160-byte row. For a 2048-token prefill batch
+that is 53 MiB of copying to produce 5 MiB of rows:
+
+| shape | page-granular `pread` | row-granular `memcpy` from a mapping | ratio |
+|---|---|---|---|
+| 1 token (16 rows) | 31.3 us | **2.7 us** | 11.6x |
+| 16 tokens (256 rows) | 512.9 us | **3.5 us** | 146.7x |
+| 2048 tokens (32,768 rows) | 34,685 us | **242.9 us** | 142.8x |
+
+Arm C died because the *GPU* cannot dereference pageable host pages. Nothing prevents the *CPU*
+from reading them, and a `memcpy` of 160 bytes from the mapping into packed pinned staging has no
+page amplification and no per-row syscall. That is the shape the copy-based design should have.
+
+**Row straddling is a real constraint, not a corner case.** The first version failed its own
+correctness gate on 28 sampled rows because a 160-byte row starting above offset 3,936 inside a
+page is split across two page slots and is therefore not contiguous in staging. Slots are now
+`PAGE + ROW_BYTES` with overlapping reads (a 3.9% byte overhead) rather than special-casing the
+~4% of rows that straddle. I had measured `pages_per_row` as 1.01-1.05 weeks ago; the geometry was
+telling me this all along.
+
+**Within-batch deduplication is load-bearing under real access.** It removes **47.5%** of requests
+at 2048 tokens per batch (31.1% at 256, 57.5% at 8192). My earlier note that dedup "is worth 0.3%
+on the real table" was measured under uniform access and is withdrawn: under the real trace it
+halves the request count, which is a design-level effect, not a micro-optimisation.
+
+**Cost by phase, steady state, 2048-token batch, 20 reader threads, 20 GiB cap:**
+
+```
+  copy phase (memcpy/pread with faults)   50.7 ms p50   <-- all of it
+  host-to-device                           0.04 ms
+  device gather + sync                     0.30 ms
+  reader CPU                            0.56 cores
+  device traffic                    15.2 GiB for 5.5 GiB of rows (2.8x)
+  DECODE, one token (16 rows), same cache: 16.6 us p50, 25.4 us p99, zero device reads
+```
+
+Decode is a non-issue: 16.6 us against a step budget of tens of milliseconds, and 60,000
+steps/s of headroom before any model compute. **Prefill is different in kind, but the number is not
+what it looks like.** 50 ms of exposed copy time per 2048-token batch is +25% against the ~205 ms
+of compute such a batch takes -- except that it runs at 0.56 cores, which means the machine is
+waiting on page-fault latency with 20 outstanding requests, not short of CPU. The gather for batch
+k+1 can run inside batch k's compute window, where it costs nothing measurable; upstream already
+has the hook that makes this possible (`start_prefetch` runs the lookup while the previous decoder
+layer executes). So the open question is no longer "is the copy too slow" but "is the pipeline deep
+enough", which is a much smaller piece of engineering.
+
+Predictions written before the run, scored after: at a 20 GiB cache I predicted ~89-91% hits and
+about 12 GiB of device traffic; measured 85.8% and 15.2 GiB. At 8 GiB I predicted 86.4% and
+15.4 GiB; measured 80.5% and 20.9 GiB. Right direction and right order of magnitude, consistently
+optimistic by 4-8 points of hit rate -- the miss model deserves that correction before it goes into
+a sizing recommendation.
+
+**One measurement discarded rather than reported.** The first capped-vs-uncapped comparison showed
+106 ms against 168 ms and I was about to attribute the difference to the cap. Both arms had moved
+exactly 6,016 MiB of device traffic and charged exactly 5.97 GiB -- the 8 GiB cap was never binding,
+because 250 batches only touch 5.97 GiB of distinct pages, and the difference was device variance.
+The same run also initially reported uncapped numbers identical to capped ones because the host had
+already cached the file from the earlier arm: the cross-cgroup free-hit effect measured that
+morning, appearing as a result.
