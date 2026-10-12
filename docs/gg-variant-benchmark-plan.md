@@ -309,7 +309,22 @@ design, roughly **half a day** including both builds and the C-only instrumentat
 B comparison is the cheap and decision-relevant half -- one build, one env var, and a
 claim about pinned bytes that is already provable from `/proc` in seconds.
 
-## Steady-state scorecard: one cell validated to 0.4%, two missed by exactly 1.64x
+## Steady-state scorecard: resolved in favour of layout -- NOCOW is a prerequisite
+### 10-pass resolution (same night, so the prediction and the answer sit together)
+
+NOCOW landed **inside** the pre-registered bands -- 42.9% at cap4 against 40-46%, 31.1% at cap3
+against 30-34% -- while the encoded file came in at 9.2% and -15%. Stationarity is excluded
+because the encoded file got *worse* with more passes. Full write-up in
+`docs/ssd-stream-findings.md`; the design consequence is below.
+
+**Requirement check with the fix in place:** against the 170,126 pages/s hard end (2,048-token
+prefill), NOCOW at a 4 GiB cap sustains 177,409 -- **1.04x**, so run 12 threads for margin --
+while the encoded file manages 163,749 (**0.96x**) and does not clear it. CPU cost at that rate
+is ~2.4 cores. At 32 GiB the host's real cache fraction is 0.407, so expect ~41% hits, the
+device carrying ~59% of the requirement, and the request rate -- not the device rate -- setting
+the thread count: hits make requests cheap, they do not reduce how many the gather must issue.
+
+
 
 3.2 passes, 6,704,725 requests over a 2,097,152-page region. Scorecard against the predictions
 written before the run:
