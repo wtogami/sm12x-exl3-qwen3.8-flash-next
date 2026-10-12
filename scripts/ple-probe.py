@@ -107,11 +107,17 @@ def main():
         # every cell would be a measurement of how recently it booted.
         for _ in range(a.warmup):
             post(a.url, a.model, prompt, mt)
-        rates = []
+        rates, pt0 = [], 0
         for _ in range(a.reps):
             _, ptok, ctok, el = post(a.url, a.model, prompt, mt)
+            pt0 = ptok
             rates.append((ptok if mt == 1 else ctok) / el)
-        print(f"{label} {statistics.median(rates):.1f} tok/s")
+        # Print the shape, not just the rate. A prefill number measured without the truncation on the
+        # prompt is not comparable to one measured with it, and dropping that truncation in a rewrite is
+        # exactly how I nearly reported a 2.2x instrument failure that was a change of definition.
+        print(f"{label} {statistics.median(rates):.1f} tok/s "
+              f"(prompt={pt0} tok, completion={'1' if mt == 1 else mt}, "
+              f"reps={a.reps}, warmup={a.warmup}, prompt_chars={len(prompt)})")
 
     if a.expect:
         ok = strict.startswith(a.expect)
