@@ -49,6 +49,25 @@ PLE_MMAP="${PLE_MMAP:-${VLLM_PLE_MMAP:-${DEFAULT_PLE_MMAP:-0}}}"
 # the gate approves a footprint the host cannot commit.
 PLE_PIN_STRATEGY="${PLE_PIN_STRATEGY:-round2}"
 [[ "$PLE_PIN_STRATEGY" == round2 || "$PLE_PIN_STRATEGY" == exact ]] || { echo "PLE_PIN_STRATEGY must be round2 or exact" >&2; exit 2; }
+# PLE_STREAM=1 reads the PLE table from the checkpoint by CPU row copy into pinned staging
+# (patches/qwen_ple_stream.py), instead of page-locking the whole table in host RAM. It exists for
+# hosts with less RAM than the table: the FP8 table pins 47.684 GiB and the BF16 one 95.368 GiB,
+# neither of which a 32 GiB host can commit. It reuses the checkpoint_mapped storage plumbing --
+# including the host page prefetcher, which is what keeps the page cache warm -- and replaces only
+# the gather, because the mapped path asks the GPU to dereference host page-table mappings and
+# discrete RTX parts report PAGEABLE_MEMORY_ACCESS_USES_HOST_PAGE_TABLES=0.
+# Measured on this shape: ~0.5% of prefill exposed at p50, ~0.8% at p99, page-cache hits 74-80%
+# at 8-16 GiB of cache. Default off: the resident pinned table is faster when it fits.
+PLE_STREAM="${PLE_STREAM:-${VLLM_PLE_STREAM:-0}}"
+[[ "$PLE_STREAM" == 0 || "$PLE_STREAM" == 1 ]] || { echo "PLE_STREAM must be 0 or 1" >&2; exit 2; }
+if [[ "$PLE_STREAM" == 1 && "$PLE_MMAP" == 0 ]]; then
+  # Streaming selects its backend by class before checkpoint_mapped is consulted, but the storage
+  # plumbing it inherits (never-materialised weights, host page prefetcher) is gated on that flag.
+  # Turning it on silently would run the streaming gather with the prefetcher off and the weights
+  # resident -- slower and using the RAM the feature exists to avoid.
+  echo "  note: PLE_STREAM=1 implies PLE_MMAP=1 (checkpoint-mapped storage, CPU gather); setting it" >&2
+  PLE_MMAP=1
+fi
 # LONGCTX=1 serves 512K via YaRN 2.0 rope scaling of the 262K-native
 # checkpoint (RULER 97.66 at 523K vs 97.92 at native 262K, no measured
 # throughput cost). LONGCTX=0 stays at the native 262144 window.
@@ -78,8 +97,11 @@ esac
 # Size the pinned host memory before the container exists. A checkpoint-mapped
 # table allocates nothing table-sized, and a caller-supplied --engram-config
 # means we cannot know the placement, so both cases skip the check.
-if [[ "$PLE_MMAP" == 0 && "$CUSTOM_ENGRAM" == 0 && "${QWEN38_SKIP_MEMCHECK:-0}" != 1 ]] \
-   && [[ -r /proc/meminfo ]]; then
+# With PLE_STREAM=1 there is no table-sized pinned allocation, so this gate would refuse a host
+# that fits -- the exact disagreement this check exists to prevent. The staging arena it needs
+# instead is megabytes, not gigabytes, and is sized by the loader.
+if [[ "$PLE_MMAP" == 0 && "$PLE_STREAM" == 0 && "$CUSTOM_ENGRAM" == 0 \
+     && "${QWEN38_SKIP_MEMCHECK:-0}" != 1 ]] && [[ -r /proc/meminfo ]]; then
   mem_total_kib=0
   mem_avail_kib=0
   while read -r key value _; do
@@ -226,6 +248,8 @@ docker run -d --name "$container_name" \
   --ipc=host --network=host \
   -e OMP_NUM_THREADS="${CPU_THREADS:-8}" \
   -e PLE_PIN_STRATEGY="${PLE_PIN_STRATEGY}" \
+  -e PLE_STREAM="${PLE_STREAM}" \
+  -e PLE_ROWCOPY_SO="${PLE_ROWCOPY_SO:-/opt/qwen38/ple_rowcopy.so}" \
   -e CUDA_CACHE_PATH=/root/.cache/cuda \
   -e TRITON_CACHE_DIR=/root/.cache/triton \
   -e QWEN38_B12X_VOCAB="${B12X_VOCAB:-$DEFAULT_B12X_VOCAB}" \
