@@ -2782,3 +2782,38 @@ the total cannot tell them apart: 64.000 + 2.18 (round2) or 47.684 + 18.50 (exac
 settles it -- round2 -- so under the actual deployed baseline, streaming should take Shmem to **~2.2
 GiB**. The check's threshold would have reached the right verdict either way, which is exactly why the
 printed expectation needed correcting rather than leaving a check whose reasoning I could not reproduce.
+
+## Two numbers I had wrong while writing the streaming gate
+
+**`ple_embed_dim` is 2560, not 160.** 160 is one head's row bytes. The table is 16 heads
+(`(ngram_size-1) x heads_per_ngram = (3-1) x 8`) of ~20,000,000 rows apiece, so the checkpoint reads as
+320,001,536 rows x 160 B -- and 16 x 160 = 2560, which means the deployed gate's `base x dim x bytes`
+formula and the checkpoint's `rows x row_bytes` are the *same number*, not a 16x discrepancy. I read the
+gate as buggy, went to check, and found the two forms agree exactly at 47.68 GiB (FP8). The lesson is the
+same one as the `--dev` resolver: a plausible arithmetic objection is worth five minutes of checking
+before it becomes a refactor.
+
+**The head count cancels out of the staging arena.** rows = tokens x heads, row_bytes = dim/heads x
+bytes, so arena bytes = tokens x dim x bytes regardless of how the table is split -- 5 MiB at 2048
+tokens, FP8. Printing it as GiB rendered "0.0 GiB", which reads like a bug in the sizing rather than a
+rounding artifact; it is in MiB now.
+
+## What the streaming preflight is for, and how it was tested
+
+`PLE_STREAM=1` deletes a table-sized pin; it does not delete the memory requirement. The requirement
+moves into page cache, so `qwen38_ple_stream_check` refuses below a 2 GiB cache floor and warns below the
+16 GiB point where the measured hit rate plateaus -- with the warning naming its own provenance as
+synthetic, and a test case asserting that it does. `qwen38_cgroup_avail_kib` clips `MemAvailable` by
+cgroup headroom because `/proc/meminfo` is not namespaced; that number is an upper bound on reclaimable
+space, not a promise, since committed anon memory is not reclaimable and a page-cache overrun causes
+reclaim rather than an OOM kill.
+
+`scripts/test-ple-stream-gate.sh` runs 10 cases and was mutation-tested four ways -- refusal disabled,
+cgroup clip ignored, warn band widened, table size divided by 16 -- each of which produced failures, so
+the suite is capable of disagreeing. Then the live host disagreed with *the message*: refusing a 3 GiB
+cgroup, it explained that 3.0 GiB was "less than the 2.0 GiB floor". The comparison is pin + floor; the
+text printed only the floor. A refusal whose arithmetic the reader cannot reconcile is a refusal people
+work around with `QWEN38_SKIP_MEMCHECK`, so it now prints both terms and their sum, and the three live
+cases (3 GiB cgroup refuses, 14 GiB warns, 60 GiB accepts) were re-run against the real checkpoint config
+with `rc` captured directly -- not through a pipe, which is what reported `rc=0` for a refusal a moment
+earlier.
