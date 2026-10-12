@@ -100,6 +100,15 @@ wait_idle() {   # the device counters are host-wide, so a benchmark must not ove
 # says which.
 run_host() {  # $1 mode $2 threads $3 tag
     wait_idle || return 1
+    if [ -n "${PRECELL:-}" ]; then
+      echo "    precell hook: $PRECELL"
+      if bash -c "$PRECELL" >"$OUT/$3.precell.log" 2>&1; then
+        echo "      ok: $(tr '\\n' ' ' <"$OUT/$3.precell.log" | cut -c1-110)"
+      else
+        echo "      PRECELL FAILED -- cell still runs, but this receipt is from an unknown state:"
+        tail -2 "$OUT/$3.precell.log" | cut -c1-120 | sed 's/^/        /'
+      fi
+    fi
     local extra=()
     if [ -n "${TRACE:-}" ]; then extra+=(--trace-file "$TRACE"); fi
     timeout 1800 python3 scripts/bench-ple-readpath.py --blob "$BLOB" \
@@ -115,6 +124,15 @@ run_host() {  # $1 mode $2 threads $3 tag
 
   run_capped() {  # $1 mode $2 threads $3 gib $4 tag
     wait_idle || return 1
+    if [ -n "${PRECELL:-}" ]; then
+      echo "    precell hook: $PRECELL"
+      if bash -c "$PRECELL" >"$OUT/$4.precell.log" 2>&1; then
+        echo "      ok: $(tr '\\n' ' ' <"$OUT/$4.precell.log" | cut -c1-110)"
+      else
+        echo "      PRECELL FAILED -- cell still runs, but this receipt is from an unknown state:"
+        tail -2 "$OUT/$4.precell.log" | cut -c1-120 | sed 's/^/        /'
+      fi
+    fi
     local mnt=() extra=()
     if [ -n "${TRACE:-}" ]; then
       mnt+=(-v "$TRACE:/work/trace.bin:ro,Z"); extra+=(--trace-file /work/trace.bin)
