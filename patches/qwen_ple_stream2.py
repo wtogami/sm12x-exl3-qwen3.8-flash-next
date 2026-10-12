@@ -62,10 +62,20 @@ DEFAULT_ARENAS = 4
 
 
 def v2_enabled() -> bool:
+    """True when the pre-replay staging design was explicitly asked for.
+
+    Separate from stream_enabled() because the two designs have opposite graph requirements: v1 needs
+    breakable graphs and PIECEWISE mode, v2 needs FULL graphs left alone. One flag per requirement set,
+    so the loader and the memory preflight cannot disagree about which regime is in force.
+    """
     return os.getenv(MODE_ENV, "0").strip().lower() in ("1", "true", "yes")
 
 
 def v2_mode() -> str:
+    """sync: the CPU waits on this step's D2H. async: a worker thread does, at the cost of a staleness path.
+
+    Both are measured rather than assumed; the mode is explicit so a regression in either is attributable.
+    """
     m = os.getenv(MODE_ENV_NAME, MODE_SYNC).strip().lower()
     if m not in (MODE_SYNC, MODE_ASYNC):
         raise RuntimeError(f"{MODE_ENV_NAME} must be {MODE_SYNC} or {MODE_ASYNC}, got {m!r}")
