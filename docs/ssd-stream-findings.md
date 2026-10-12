@@ -911,22 +911,38 @@ no margin, consistent with `burst`'s degraded 0.8-0.9x being a symptom of the sa
 design error rather than of that drive's state.
 
 
-### The `gg` baseline, and why the headroom column above is provisional
+### The `gg` baseline: measured, and it rewrites the requirement
 
-The `x req` column in the table above divides by `burst`'s requirement. Redoing it
-for `gg` requires `gg`'s own decode rate, which had never been measured -- so a
-baseline arm was run on `gg` with the repo's own instrument, configured to match the
-historical receipts exactly (`--mtp-tokens 3 --mtp-policy static --output-tokens 256
---warmup-runs 2 --runs 3 --concurrency 1 2 4 8 16`, co-located client, against the
-serving `qwen38-exl3-ple8` container with `--max-num-seqs 16`), with
-`capture-runtime.py` writing a `runtime.json` beside it so the receipt says what host
-produced it.
+`benchmarks/gg-ple8-pinned-20261011/` is the first `gg`-produced receipt in this repo,
+run with the repo's own instrument configured to match the historical ones (`mtp 3`,
+`static`, 256 output tokens, 2 warmup + 3 runs, concurrency 1/2/4/8/16, co-located
+client, against the serving `qwen38-exl3-ple8` container) and a `runtime.json` beside
+it naming the GPU and container. This is the pinned `round2` arm -- the baseline every
+later arm is compared against.
 
-Until that arm is in, the honest reading of the disk table is ordinal rather than
-absolute: `gg`'s single-thread ceiling of ~150k IOPS with near-linear scaling to 722k
-across 8 workers is comfortably above *any* plausible decode rate on this class of
-machine (which the receipts bound at roughly 1k tok/s, i.e. ~17k pages/s), and qd1 is
-the wrong shape regardless of which host's number you pick.
+```
+  c    min  median     max  spread   pages/s @16.53   qd8 headroom   qd1 headroom
+  1    127     132     135    6.1%        2,179         55.6x           9.11x
+  2    217     227     229    5.5%        3,760         32.2x           5.28x
+  4    349     385     385   10.5%        6,360         19.1x           3.12x
+  8    586     593     600    2.3%        9,802         12.4x           2.03x
+ 16    845     851     889    5.2%       14,066          8.6x           1.41x
+```
+
+So the requirement for *this* host is **14,066 pages/s** at the c16 median, or
+14,694 using the fastest run. Against `gg`'s own disk that is 8.6x at qd8 and 1.41x at
+qd1 -- the same qualitative verdict as before, now with both numerator and denominator
+from the same machine.
+
+Worth stating plainly because it partly rescues the number I was criticising: `burst`'s
+fp8 c16 median is 864 tok/s and `gg`'s is 851, so the borrowed requirement was wrong by
+only 1.5%. Decode throughput here is GPU-bound, so a much larger host buys almost
+nothing on this axis -- `burst`'s advantage shows up in the *max* (993 vs 889) rather
+than the median, and of course in 995 GiB of RAM versus 126 GiB. The provenance rule
+still stands, but for this metric it happened to be nearly free. It would not be for a
+CPU-bound or storage-bound measurement, and the per-concurrency rows are also the first
+`gg` evidence of the c16 plateau this time on the target hardware: throughput gains
+only 1.44x from c8 to c16, so per-token page pressure rises far slower than concurrency.
 
 
 ---
