@@ -47,14 +47,21 @@ COPY patches/port-nvfp4-moe.py /tmp/port-nvfp4-moe.py
 COPY patches/port-nvfp4-ple-ct.py /tmp/port-nvfp4-ple-ct.py
 COPY patches/port-exl3-ple-fp8.py /tmp/port-exl3-ple-fp8.py
 COPY patches/port-ple-exact-pin.py /tmp/port-ple-exact-pin.py
+COPY patches/port-ple-stream.py /tmp/port-ple-stream.py
+COPY patches/qwen_ple_stream.py /usr/local/lib/python3.12/dist-packages/vllm/model_executor/layers/qwen_ple_stream.py
+COPY patches/qwen_stream_gather.py /usr/local/lib/python3.12/dist-packages/vllm/model_executor/layers/qwen_stream_gather.py
+COPY patches/ple_rowcopy.c /tmp/ple_rowcopy.c
 RUN python3 /tmp/port-host-embedding.py /usr/local/lib/python3.12/dist-packages/vllm \
  && python3 /tmp/port-vocab-projection.py /usr/local/lib/python3.12/dist-packages/vllm \
  && python3 /tmp/port-nvfp4-moe.py /usr/local/lib/python3.12/dist-packages/vllm \
  && python3 /tmp/port-nvfp4-ple-ct.py /usr/local/lib/python3.12/dist-packages/vllm \
  && python3 /tmp/port-exl3-ple-fp8.py /usr/local/lib/python3.12/dist-packages/vllm \
  && python3 /tmp/port-ple-exact-pin.py /usr/local/lib/python3.12/dist-packages/vllm \
+ && mkdir -p /opt/qwen38 && gcc -O3 -shared -fPIC -o /opt/qwen38/ple_rowcopy.so /tmp/ple_rowcopy.c \
+ && python3 /tmp/port-ple-stream.py /usr/local/lib/python3.12/dist-packages/vllm \
  && python3 -c 'from vllm.model_executor.layers.quantization import get_quantization_config; assert get_quantization_config("exl3").__name__ == "Exl3Config"' \
- && python3 -c 'import vllm.models.qwen4_exp.nvidia.ple_pageable, vllm.models.qwen4_exp.nvidia.ngram_embedding'
+ && python3 -c 'import vllm.models.qwen4_exp.nvidia.ple_pageable, vllm.models.qwen4_exp.nvidia.ngram_embedding' \
+ && python3 -c 'import os; from vllm.model_executor.layers import qwen_ple_stream as s; assert not s.stream_enabled(); os.environ["PLE_STREAM"]="1"; assert s.stream_enabled(); os.environ["PLE_STREAM"]="0"; from vllm.models.qwen4_exp.nvidia.ngram_embedding import Qwen4ExpPLEStreamHostEmbedding as C; assert C.__mro__[1].__name__ == "Qwen4ExpPLEPageableHostEmbedding", C.__mro__'
 ENV EXL3_TRELLIS_MIN_M=1 \
     EXL3_PREFILL_TRELLIS=1 \
     EXL3_PREFILL_CAPACITY=2048
