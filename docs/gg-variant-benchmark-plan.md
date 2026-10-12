@@ -167,6 +167,102 @@ What genuinely varies with context length, and is worth measuring:
    submitter worker count swept 1/2/4/8, since both drives were shown to be
    submit-limited rather than device-limited.
 
+## Stage B arms: page cache versus O_DIRECT, and why the memory cap is the experiment
+
+Decided after the pinned-versus-exact pair, in response to the observation that sglang's
+streaming reader is page-cache-backed rather than `O_DIRECT`. Both access methods get
+implemented and both get measured. They are not a speed race against each other, for the
+reason quantified below, and the arm that matters is the one run under a memory cap.
+
+### The cache bonus is proportional to the RAM the feature exists to free
+
+Under independent random requests over N pages, LRU hit rate is C/N: the cache holds the C
+most recently used distinct pages and any page is equally likely to be requested next. For
+the 47.684 GiB FP8 table (12,500,074 pages) against the observed ~115,700 pages/s prefill
+requirement, with `gg`'s measured ceilings of 122,571 IOPS on one worker and 523,000 on four:
+
+| spare RAM | hit rate | device pages/s | vs 1 worker | vs 4 workers |
+|---|---|---|---|---|
+| 2 GiB | 4.2% | 110,847 | 1.11x | 4.7x |
+| 8 GiB | 16.8% | 96,289 | 1.27x | 5.4x |
+| 16 GiB | 33.6% | 76,878 | 1.59x | 6.8x |
+| 32 GiB | 67.1% | 38,056 | 3.22x | 13.7x |
+
+Two conclusions from that table, both of which change the design:
+
+* **Capacity is a worker-count problem, not a cache problem.** Two workers already clear the
+  requirement with a *zero-hit* cache. So the access method must be chosen on predictability
+  and RAM accounting, not on throughput. Anyone tempted to pick page cache "for the speed"
+  should note that four workers beat a 16 GiB cache at zero extra RAM.
+* **The bonus and the purpose are in direct conflict.** A large cache benefit costs 16-32 GiB
+  of the exact resource the feature exists to recover. On a host too small to pin the table,
+  the model predicts a few percent hits.
+
+The C/N result is pessimistic for real workloads because n-gram access is plausibly Zipf-ish;
+a small hot set can beat C/N by a lot. That is testable and is the one measurement that could
+overturn the choice of default: capture row IDs from a real prompt stream, count distinct
+pages in the working set, or `mincore()` a resident cache and read the hit rate directly.
+
+### Correcting the premise that page cache avoids the mmap penalty
+
+It does not, not by being page cache. The penalty is **kernel readahead on random 4 KiB
+reads**, and it attaches to how the file is touched. A plain buffered `read()` in a loop gets
+readahead too. `MADV_RANDOM` is what defeats it, which is why both sglang's reader and this
+repo's `MappedTable` call it. So the design requirement is explicit read sizes plus advice
+discipline; "page-cache-backed" without them is the naive-mmap case wearing a different hat,
+and on a tight host it is the worst of all three -- readahead amplification, cache-churn
+overhead, and no device-level control.
+
+### One risk I raised and then retracted
+
+Page cache on a low-RAM host was characterised here as dangerous. For *clean file-backed
+pages* that is wrong: they are the cheapest memory the kernel holds, reclaimed with no I/O and
+no swap. The real costs are the extra copy (page cache to user buffer to pinned staging),
+per-page LRU and PTE work at 116k pages/s, and refill latency when a wanted page was just
+evicted. Every near-disaster this session came from *anonymous* memory -- the 64 GiB
+`cudaHostRegister` that killed the serving engine -- and anon is what swaps. That asymmetry
+argues **for** page cache, and it is why it is the default rather than the fallback:
+
+* **default: page cache**, with `MADV_RANDOM`, an explicit 4 KiB read unit, and a bounded
+  footprint via `posix_fadvise(DONTNEED)` if it has to be bounded;
+* **`O_DIRECT` as the predictable option, not the worst case**: no cache pollution in either
+  direction, one fewer copy when reading straight into a registered buffer
+  (`IORING_REGISTER_BUFFERS`), and latency that depends on the drive rather than on the whole
+  machine's memory state. For a decode-step deadline, low variance beats a good mean.
+
+### Two non-negotiable measurement requirements
+
+1. **Verify that `O_DIRECT` is actually direct.** Measured this session: on btrfs, `O_DIRECT`
+   *silently falls back to buffered* on compressed extents. `gg`'s FP8 table happened to be
+   honest -- 98% of reads hit the device, `du` ratio 1.0000 -- because zstd gives up on FP8
+   bytes, but a BF16 table does compress, so an `O_DIRECT` arm on BF16 could quietly be a
+   buffered arm reporting device numbers. Every direct run carries a `/proc/diskstats` delta.
+   Without it the flag is a label, which is how the original plan ended up with fake numbers.
+2. **Run the streaming arms under a memory cap.** `gg` sits at 49-65 GiB spare, so a
+   page-cache-backed prototype on this box flatters itself into meaninglessness for the hosts
+   the feature is for. Rootless `podman --memory` was proven to enforce (rc=137 inside the
+   cgroup, host `MemAvailable` unmoved), so the simulation is honest. Report the number under
+   the cap, not beside it.
+
+That makes the streaming matrix: **pinned, stream-pcache, stream-odirect, each at full and
+capped memory** -- six configurations. The cap is the only way the answer transfers off this
+machine.
+
+### Sequencing: measure the read path before integrating it into the engine
+
+Full-size streaming needs ids on the CPU, which means the n-gram hashing moves off the GPU or
+the ids come across a synchronisation point -- that is engine work with its own hazards. The
+access-method question does not depend on any of it. So it splits:
+
+* **B-i, read-path prototype.** Standalone: replay row-id streams (uniform, and Zipf-sampled
+  to bracket real skew) through a CPU gather into pinned staging at the measured ~116k pages/s
+  target, for both access methods, at 1/2/4/8 workers, under both memory settings. Measures
+  pages/s, p50/p99 read latency, CPU%, and sustained-versus-transient. No engine restarts, no
+  correctness surface, and it can run on either host.
+* **B-ii, engine integration**, only once B-i says a configuration can sustain the rate.
+  Behind a flag, with the same determinism check that made arm B credible -- byte-identical
+  greedy output, because resource statistics cannot prove the gather is reading the right rows.
+
 ## Statistics: this is a non-inferiority test, not a speed test
 
 B is expected to be neutral and C is allowed to be slower, so the question is "by how
