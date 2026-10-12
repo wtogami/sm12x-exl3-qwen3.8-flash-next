@@ -17,21 +17,41 @@ def engram_arg(args):
 with tempfile.TemporaryDirectory() as tmp:
     tmp=Path(tmp)
     fake=tmp/'bin';fake.mkdir()
-    docker=fake/'docker';docker.write_text('#!/bin/sh\nprintf "%s\\n" "$@"\n');docker.chmod(0o755)
+    docker=fake/'docker';docker.write_text(
+        '#!/bin/sh\n'
+        'if [ "$1" = "inspect" ]; then exit 1; fi\n'   # no such container -> launcher proceeds
+        'printf "%s\\n" "$@"\n')
+    docker.chmod(0o755)
+    # Deliberately NOT REPLACE=1: with a real runtime reachable, that flag would stop and
+    # delete a live serving container. Making inspect fail is both safer and deterministic.
     for name,(repo,revision) in profiles.items():
         model=tmp/'hf/hub'/('models--'+repo.replace('/','--'))/'snapshots'/revision
         model.mkdir(parents=True);(model/'config.json').write_text('{}')
         for mode in (0,1):
-            env=os.environ|{'PATH':str(fake)+':'+os.environ['PATH'],'HF_CACHE':str(tmp/'hf'),
-                'RUNTIME_CACHE':str(tmp/'runtime'),'QUANT':name,'PLE_MMAP':str(mode)}
-            args=subprocess.check_output(['bash',str(root/'start.sh')],env=env,text=True).splitlines()
-            engram=engram_arg(args)
-            assert engram=={'cpu_offload':True,'checkpoint_mapped':bool(mode)},engram
-            assert not [a for a in args if a.startswith('VLLM_PLE_MMAP=')]
-            assert not [a for a in args if a.startswith('VLLM_PLE_CPU_OFFLOAD=')]
-            assert 'qwen38-'+name in args
-            assert '--tensor-parallel-size' in args and '--kv-cache-dtype' in args
-            print(json.dumps({'profile':name,'mmap':bool(mode),'passed':True}))
+            for strategy in ('round2','exact'):
+                env=os.environ|{'PATH':str(fake)+':'+os.environ['PATH'],'HF_CACHE':str(tmp/'hf'),
+                    'RUNTIME_CACHE':str(tmp/'runtime'),'QUANT':name,'PLE_MMAP':str(mode),
+                    'PLE_PIN_STRATEGY':strategy}
+                args=subprocess.check_output(['bash',str(root/'start.sh')],env=env,text=True).splitlines()
+                engram=engram_arg(args)
+                assert engram=={'cpu_offload':True,'checkpoint_mapped':bool(mode)},engram
+                assert not [a for a in args if a.startswith('VLLM_PLE_MMAP=')]
+                assert not [a for a in args if a.startswith('VLLM_PLE_CPU_OFFLOAD=')]
+                assert 'qwen38-'+name in args
+                assert '--tensor-parallel-size' in args and '--kv-cache-dtype' in args
+                # The preflight sizes the pinned reservation on the host and the loader
+                # performs it inside the container. If the strategy is not forwarded, the
+                # gate approves the smaller footprint while torch pins the rounded one --
+                # which is how the first version of this change shipped.
+                assert f'PLE_PIN_STRATEGY={strategy}' in args, \
+                    f'{name}/{strategy}: strategy never reached the container'
+                print(json.dumps({'profile':name,'mmap':bool(mode),
+                                  'pin_strategy':strategy,'passed':True}))
+            # A typo must fail loudly rather than silently mean round2.
+            bad=os.environ|{'PATH':str(fake)+':'+os.environ['PATH'],'HF_CACHE':str(tmp/'hf'),
+                'RUNTIME_CACHE':str(tmp/'runtime'),'QUANT':name,'PLE_PIN_STRATEGY':'pow2please'}
+            r=subprocess.run(['bash',str(root/'start.sh')],env=bad,capture_output=True,text=True)
+            assert r.returncode==2,('invalid PLE_PIN_STRATEGY must exit 2',r.returncode,r.stderr[-120:])
     env = os.environ | {'PATH': str(fake)+':'+os.environ['PATH'],
         'HF_CACHE': str(tmp/'hf'), 'RUNTIME_CACHE': str(tmp/'runtime')}
     for key in ('QUANT', 'PLE_MMAP', 'VLLM_PLE_MMAP', 'CONTAINER_NAME'):

@@ -32,6 +32,15 @@ MTP_TOKENS="${MTP_TOKENS:-$( [[ ${QUANT:-exl3} == nvfp4 ]] && echo 2 || echo "$D
 # resident table (the upstream cpu_offload default).
 PLE_MMAP="${PLE_MMAP:-${VLLM_PLE_MMAP:-${DEFAULT_PLE_MMAP:-0}}}"
 [[ "$PLE_MMAP" == 0 || "$PLE_MMAP" == 1 ]] || { echo "PLE_MMAP must be 0 or 1" >&2; exit 2; }
+# PLE_PIN_STRATEGY chooses how the PLE table's pinned host memory is allocated.
+# round2 (default) is torch's pin_memory path, which rounds every request up to a power
+# of two -- 47.684 GiB of FP8 table costs 64.000 GiB pinned. exact page-locks the true
+# size through the CUDA driver instead (patches/qwen_pinned_host.py), which does not
+# round. The value has to reach the container as well as the preflight a few lines
+# below: the gate sizes the reservation, the loader performs it, and if they disagree
+# the gate approves a footprint the host cannot commit.
+PLE_PIN_STRATEGY="${PLE_PIN_STRATEGY:-round2}"
+[[ "$PLE_PIN_STRATEGY" == round2 || "$PLE_PIN_STRATEGY" == exact ]] || { echo "PLE_PIN_STRATEGY must be round2 or exact" >&2; exit 2; }
 # LONGCTX=1 serves 512K via YaRN 2.0 rope scaling of the 262K-native
 # checkpoint (RULER 97.66 at 523K vs 97.92 at native 262K, no measured
 # throughput cost). LONGCTX=0 stays at the native 262144 window.
@@ -146,6 +155,7 @@ docker run -d --name "$container_name" \
   "${GPU_ARGS[@]}" \
   --ipc=host --network=host \
   -e OMP_NUM_THREADS="${CPU_THREADS:-8}" \
+  -e PLE_PIN_STRATEGY="${PLE_PIN_STRATEGY}" \
   -e CUDA_CACHE_PATH=/root/.cache/cuda \
   -e TRITON_CACHE_DIR=/root/.cache/triton \
   -e QWEN38_B12X_VOCAB="${B12X_VOCAB:-$DEFAULT_B12X_VOCAB}" \
