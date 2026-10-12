@@ -110,9 +110,23 @@ What genuinely varies with context length, and is worth measuring:
    pages/s required = 16.5333 x prefill tok/s   (fp8; 17.25 for bf16)
 
    prefill tok/s     pages/s needed     gg single worker 122k   gg 4 workers 523k
-        5,000            82,700                1.5x                    6.3x
+        5,000            82,700                1.48x                    6.3x
+        7,000           115,700                1.06x no margin        4.5x
        10,000           165,300                0.74x FAIL              3.2x
        20,000           330,700                0.37x FAIL              1.6x
+
+   The middle row is measured, not interpolated. `benchmarks/exl3-final/prefill.json`
+   reports effective prompt throughput of 6,472-7,513 tok/s and it is essentially flat
+   from 2,048 to 261,632-token prompts, so the page-rate requirement is ~107k-124k pages/s
+   regardless of context size -- **0.99x to 1.15x of `gg`'s single-worker ceiling.** A
+   one-thread streaming submitter sits on the limit, not under it, at every prompt length.
+   Four workers move it to 4.2-4.9x. Time to first token in the same receipt: 0.3 s at
+   2,048 rising to 40.4 s at 261,632.
+
+   Caveat before this is used as a `gg` number: that receipt is `burst` running the BF16
+   `exl3` profile. It settles the architectural question (one worker is insufficient)
+   because the required rate is a property of pages/token and prefill tok/s, but the
+   absolute pages/s must be restated from `gg`'s own prefill arm, which is scheduled.
    ```
 
    A 261,632-token prompt is 4.33M page reads -- **about 16.5 GiB of device traffic for
