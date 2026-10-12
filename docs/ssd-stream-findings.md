@@ -1204,6 +1204,37 @@ Three consequences for this repo's own design notes:
   that distinction, and it is the distinction that decides whether the feature runs on a
   discrete RTX at all.
 
+### Retracted: "zstd gave up on the FP8 bytes" -- it did not, and that changes the trade
+
+I explained the production blob's 4,010 encoded extents by saying compression was attempted and
+declined, so the extents were an artefact with no benefit attached. That was an inference, never a
+measurement. Measured, on 256 MiB of real FP8 weight bytes taken from the byte-verified copy:
+
+```
+  256 MiB of real FP8:  zstd-1 -> 86.0%   gzip-1 -> 87.1%
+```
+
+So **FP8 weight data compresses about 14%**, btrfs compresses it because it can, and the encoded
+extents are exactly what a `compress=zstd:1` mount should produce -- no download-path mystery
+required. It also retires the directory-inheritance hypothesis: `lsattr -d` on every level of the
+production cache tree shows no `c` flag anywhere.
+
+This makes the NOCOW recommendation a genuine trade rather than a free win. Choosing a NOCOW layout
+for the 47.684 GiB table gives up roughly **6.7 GiB of disk** to gain the retention and throughput
+measured above. On the target host, ~6.7 GiB of disk against ~8-14% throughput and model-matching
+hit rates is not close -- but it should be priced on both sides instead of asserted as free, and the
+BF16 case needs the same arithmetic rather than the 84.4% figure I quoted from a different file.
+
+Two mechanism notes worth keeping, both from fixtures that failed loudly rather than quietly:
+
+* **`chattr +C` on a directory applies only to files created afterwards.** Setting it after a copy
+  leaves the copy on CoW with compressed extents, and the file looks fine. A layout4 fixture built
+  that way reported 4,639 encoded extents while labelled "nocow"; the encoded-count assertion is
+  what caught it. Any install instruction must therefore read: flag the directory, *then* download.
+* **`chattr +c` is not `compress-force`.** Forcing compression on genuinely incompressible data
+  still falls back to plain extents, so an encoded-extent fixture has to be made from data that
+  really compresses -- which, per the measurement above, FP8 does.
+
 ### Encoded extents damage page-cache retention, and that is what "O_DIRECT is not direct" really was
 
 The 1.64x steady-state shortfall had two candidate causes -- more passes needed, or btrfs
