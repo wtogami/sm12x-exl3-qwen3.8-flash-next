@@ -293,15 +293,60 @@ RAM-wise the two candidate fixes are now nearly identical: exact-size commits
 * **tiling** is torch-native but needs the kernel to resolve a row against
   multiple base pointers.
 
-The lifetime problem looks solvable rather than fatal, and that is the next thing
-to test rather than to assume: the alias path returns `from_blob(device_ptr, ...,
-[base = cpu_tensor](void*) {})`, so the returned CUDA tensor holds the CPU tensor,
-whose storage holds the buffer-protocol object that `frombuffer` was given. A
-wrapper object whose finalizer calls `cudaFree` therefore gets freed exactly when
-the last GPU view is released -- the chain already exists, it just needs a
-destructor on the right object. That needs proving with a drop-and-GC test before
-anyone writes it into a loader; the failure mode if the chain is wrong is a use
-after free on the device, which is the worst way to save 0.632 GiB.
+### The lifetime question is resolved, and one route to it is a trap
+
+The pointer-lifetime cost turns out to be avoidable, but the obvious way to pay it
+fails silently, so both halves are worth writing down.
+
+**Works.** Expose the `cudaHostAlloc` pointer through an *owning* object that is a
+plain buffer-protocol object -- a Python subclass of a ctypes array type, which
+gets a `__dict__` and so can carry the pointer and free it in `__del__`:
+
+```
+tensor made; is_pinned=True
+after del(owner) + gc:   no free  -> owner STILL ALIVE, torch anchored it
+read through the GPU view: VALID, sentinel intact
+after dropping tensor+view: cudaFree fired from OwnArr.__del__
+```
+
+`torch.frombuffer` keeps the exporter alive, and the alias path's
+`from_blob(..., [base = cpu_tensor](void*) {})` deleter keeps the CPU tensor alive.
+Those two chains compose: the pinned buffer is released exactly when the last GPU
+view is released, which is the correct lifetime, with no registry and no manual
+teardown. And since the serving launch carries no `--enable-sleep-mode`, weights
+are never released at runtime anyway, so even a mis-designed owner could only
+leak, not dangle.
+
+**Silently broken.** The modern-looking equivalent, PEP 688 `__buffer__` /
+`__release_buffer__` on the owner, is a trap. torch releases the export *inside*
+`frombuffer`, so the owner dies immediately while the tensor is still handing out
+that address:
+
+```
+after alloc + frombuffer:  alloc 8 GiB  ->  cudaFree from __release_buffer__  ->  __del__
+tensor.is_pinned() = True          <- reports success about freed memory
+view same_addr=True                <- reports success about freed memory
+first read  -> CUDA error: invalid argument
+```
+
+Note how much of that is a lie: `is_pinned` is True and the view is created
+without complaint, both *after* the buffer was freed. The failure only surfaces on
+first touch, far from the cause. The same `invalid argument` was reproduced
+deliberately by calling `cudaFree` under a live view, which confirms the mechanism
+rather than inferring it.
+
+**A methodology note on the test that got this wrong first.** The preceding run
+deleted the ctypes array and gc'd, saw the read still succeed, and concluded torch
+did not anchor -- but the array came from `from_address`, which is a *non-owning*
+view, and nothing in that script ever called `cudaFree`. The memory could not have
+gone away, so the test could not have failed, and its verdict was meaningless in
+both directions. Any lifetime test needs an owner whose destructor is observable;
+otherwise it is measuring nothing.
+
+Practical consequence for a loader patch: allocate with `cudaHostAlloc`, wrap with
+a ctypes-array subclass that owns the pointer, hand it to `torch.frombuffer`, then
+`get_cuda_view_from_cpu_tensor` -- and initialize the CUDA context before any
+`is_pinned` call, per the rule below.
 
 **The rule this buys:** any probe that calls `is_pinned`,
 `cudaPointerGetAttributes`, or a vLLM op that dispatches them, must initialize
