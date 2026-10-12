@@ -22,14 +22,24 @@ PODMAN_ONLY = {"-e", "--env", "-d", "--detach", "--name", "-v", "--volume", "--d
 
 
 def create_command(container: str) -> list[str]:
+    """The container's argv, token for token.
+
+    Read it as JSON, never as a joined string. The first version asked podman to join CreateCommand
+    with spaces and then shlex.split()ed the result -- but shlex.split PARSES shell quoting, and
+    CreateCommand is an argv list with no quoting information left in it. So an argument that legitimately
+    contains double quotes, like --hf-overrides '{"text_config":{...}}', came back with every quote
+    stripped. The container then died on its own command line ("argument --hf-overrides: Value ... cannot
+    be converted to <function loads>"), which looks like a podman rejection and is nothing of the kind.
+    """
+    import json
     r = subprocess.run(["podman", "inspect", container, "--format",
-                        "{{join .Config.CreateCommand \" \"}}"], capture_output=True, text=True)
+                        "{{json .Config.CreateCommand}}"], capture_output=True, text=True)
     if r.returncode != 0:
         raise SystemExit(f"cannot inspect {container}: {r.stderr.strip()[:200]}")
-    toks = shlex.split(r.stdout.strip())
-    if not toks:
+    toks = json.loads(r.stdout)
+    if not isinstance(toks, list) or not toks:
         raise SystemExit(f"{container} has no CreateCommand; cannot derive a faithful run line")
-    return toks
+    return [str(x) for x in toks]
 
 
 def build(base: list[str], name: str, image: str | None, envs: list[str], args: list[str],
@@ -104,10 +114,27 @@ def main() -> int:
                     help="appended AFTER the image, i.e. container argv. Use the --arg=VALUE form for "
                          "values that start with a dash (--arg=--enforce-eager); argparse cannot tell a "
                          "bare --enforce-eager from another option")
+    ap.add_argument("--detach", action="store_true",
+                    help="add -d (the base line's own -d is stripped, so cells must ask for it)")
     ap.add_argument("--emit", choices=("script", "line"), default="script")
     a = ap.parse_args()
 
-    cmd, img_i = build(create_command(a.base_container), a.name, a.image, a.env, a.arg, a.drop_env)
+    base = create_command(a.base_container)
+    cmd, img_i = build(base, a.name, a.image, a.env, a.arg, a.drop_env)
+    if a.detach:
+        cmd = cmd[:2] + ["-d"] + cmd[2:]
+
+    # Content preservation: every token of the original container command must survive verbatim, except
+    # the ones deliberately replaced. Without this check a quoting bug can produce a line that is
+    # structurally perfect -- right flags, right order -- and semantically wrecked.
+    replaced = {a.name} | {kv.split("=", 1)[0] for kv in a.env} | set(a.drop_env)
+    if a.image:
+        replaced.add(cmd[img_i])
+    for tok in base[base.index("run" if "run" in base else "create") + 1:]:
+        if tok in replaced or tok in ("-d", "--detach", "--name") or tok.startswith("-"):
+            continue
+        if tok not in cmd:
+            raise SystemExit(f"BUG: token from the base container did not survive: {tok[:70]!r}")
 
     # self-check: podman-level flags must never appear after the image. Container argv legitimately
     # starts with flags (--enforce-eager, --max-model-len), so only the podman-only set is a bug.

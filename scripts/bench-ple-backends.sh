@@ -68,7 +68,7 @@ cell() {  # name image ple_stream breakable enforce_eager cudagraph_mode
   # The run line is derived from the live container's CreateCommand by mk-cell-run.py, which refuses
   # to emit podman flags after the image (that is how "vllm serve" once received -e PLE_STREAM=1).
   local gen=(python3 "$REPO/scripts/mk-cell-run.py" --base-container "$CONT" --name ple-bench
-             --image "$img")
+             --image "$img" --detach)
   [ "$ps" = 1 ] && gen+=(--env PLE_STREAM=1 --env PLE_ROWCOPY_SO=/opt/qwen38/ple_rowcopy.so)
   [ "$bc" = 1 ] && gen+=(--env VLLM_USE_BREAKABLE_CUDAGRAPH=1)
   [ "$ee" = 1 ] && gen+=(--arg=--enforce-eager)
@@ -122,7 +122,7 @@ if [[ "${DRY_RUN:-0}" == 1 ]]; then
   cell_dry() {
     local name=$1 img=$2 ps=$3 bc=$4 ee=$5 cgm=$6
     local gen=(python3 "$REPO/scripts/mk-cell-run.py" --base-container "$CONT" --name "ple-dry-$name"
-               --image "$img")
+               --image "$img" --detach)
     [ "$ps" = 1 ] && gen+=(--env PLE_STREAM=1 --env PLE_ROWCOPY_SO=/opt/qwen38/ple_rowcopy.so)
     [ "$bc" = 1 ] && gen+=(--env VLLM_USE_BREAKABLE_CUDAGRAPH=1)
     [ "$ee" = 1 ] && gen+=(--arg=--enforce-eager)
