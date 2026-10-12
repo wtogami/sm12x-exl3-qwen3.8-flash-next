@@ -158,6 +158,24 @@ def stream_lookup(embedding, input_ids: torch.Tensor,
     its cost is measured rather than assumed; the host-ids route the engine already has for GB10
     (`cpu_ngram_ids_fn`) removes it and is the intended follow-up.
     """
+    # HARD INVARIANT: this function must never run inside a CUDA graph capture.
+    #
+    # The row copy is host code (ctypes memcpy out of the page cache). torch raises on a CPU<->CUDA
+    # copy during capture, but it cannot see a ctypes memcpy, so a capture that reached this line
+    # would record the graph around it and re-run NO host work: every replay would reuse the rows
+    # staged during capture -- i.e. silently stale n-gram features, not an error. Breakable CUDA
+    # graphs are the supported route: @eager_break_during_capture on start_prefetch records this
+    # callable and re-invokes the *Python* on every replay, so the gather really does run per step.
+    # The one branch that would defeat that is CUDAGraphMode.FULL, where the decorator deliberately
+    # passes the call through instead of breaking -- hence a runtime check rather than trust in config.
+    if torch.cuda.is_current_stream_capturing():
+        raise RuntimeError(
+            "PLE streaming gather was reached inside a CUDA graph capture. The host-side row copy "
+            "cannot be captured: capture would freeze one set of rows and every replay would reuse "
+            "them, producing wrong output instead of failing. Start with "
+            "VLLM_USE_BREAKABLE_CUDAGRAPH=1 (start.sh sets it when PLE_STREAM=1), which runs this "
+            "as an eager segment on every replay, or --enforce-eager."
+        )
     if embedding.table is None:
         raise RuntimeError("PLE streaming storage was not bound after loading")
     expected = (*input_ids.shape, embedding.embedding_dim)
