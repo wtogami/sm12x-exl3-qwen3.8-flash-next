@@ -802,6 +802,71 @@ traps *do* apply there. The missing measurement that matters most is therefore
 990 PRO + uncompressed PLE file (`chattr +C`, section 3) at qd1/qd8/qd32, not
 another fill sweep on a drive nobody serves from.
 
+## 3c. `gg`'s own drive, measured honestly, for the first time
+
+Every disk number above belongs to `burst`. The transfer question -- does the
+serving host behave the same -- was answered without writing anything, because two
+earlier assumptions turned out not to hold on this filesystem.
+
+**The checkpoint's PLE bytes carry the compressed-extent flag but are not
+compressed.** `filefrag` reports `encoded` on every extent of the safetensors
+blobs, yet `btrfs filesystem du` shows `Total == Exclusive` and
+`st_blocks*512 / st_size = 1.0000`. zstd:1 gave up on FP8 payload bytes and stored
+them at full size behind an encoded extent.
+
+**O_DIRECT is honest on those extents.** Section 3's fallback trap is therefore
+narrower than stated: it is triggered by *actually compressed* extents, not by the
+`encoded` flag alone. Verified against the real serving file with block-layer
+counters rather than page-cache deltas:
+
+```
+arm                          app read    device read
+direct=1 randread 4k qd32     8.62 GiB     8.43 GiB   -> 98% real device traffic
+direct=1 read  256k qd8     107.00 GiB    98.56 GiB   -> honest at 7.35 GiB/s (spec peak)
+direct=0 randread 4k qd32     1.20 GiB     1.51 GiB   -> buffered, and 7x slower
+```
+
+Note the third row: on this host the buffered path is the slow one, at 20.9k IOPS
+against 151k direct, so section 3's warning matters more here than it did on
+`burst`, where fallback merely produced flattering numbers.
+
+**Two instrumentation dead ends, recorded so they are not retried.** Net
+`Cached`/`SwapCached` delta cannot detect a fallback on a host already holding
+~114 GiB of cache: a 2 GiB re-read window displaces existing cache and the net
+movement is ~0. And `/proc/<pid>/io` is useless under `libaio`, because
+`io_submit` bypasses per-task I/O accounting -- both threads reported
+`read_bytes: 0` through a run that moved 8.4 GiB of real device traffic.
+`/proc/diskstats` around the arm is the instrument that works, unprivileged.
+
+Measured on the real FP8 blob, full 8 GiB span, **while the engine was serving**
+(so contention is included, which makes these conservative):
+
+```
+qd      IOPS   x req    p50 us    p99 us   p99.9 us
+ 1    19,859   1.2x       39.7      49.9        56.1
+ 8   121,243   7.4x       47.4     329.7       593.9
+32   122,571   7.5x      197.6     823.3      1351.7
+128  124,985   7.6x      806.9    2867.2      3915.8
+```
+
+Single-job throughput saturates by qd8 at ~122k, far below the 990 PRO's ~1M
+spec, which raised a real question: device, submit path, or btrfs per-IO cost.
+It is the submit path -- scaling is near-linear in worker count:
+
+```
+numjobs=1   107k      numjobs=4   523k IOPS (2.0 GiB/s)
+numjobs=2   249k      numjobs=8   722k IOPS (2.8 GiB/s)
+```
+
+Consequences, in order of importance. The plan's Stage B needs a *multi-threaded*
+(or multi-queue io_uring) submitter for the same reason llama.cpp #28136 needed 32
+workers: one thread cannot get this device past ~150k IOPS however deep its queue
+is. Against the FP8 decode requirement of 16,420 pages/s, four jobs give ~32x
+headroom. And qd1 remains the wrong shape on this host too -- 1.2x, clearing with
+no margin, consistent with `burst`'s degraded 0.8-0.9x being a symptom of the same
+design error rather than of that drive's state.
+
+
 ---
 
 ## 4. The mmap path is not *blocked* on discrete RTX; it is *slow* there
