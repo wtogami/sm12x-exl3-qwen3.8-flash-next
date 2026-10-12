@@ -2149,6 +2149,50 @@ path, the boundary, the fan-out path, the whole table, and scattered non-monoton
 what let the earlier 24x-underfilled buffer look plausible: `0 of 4000 sampled` passes on a build
 that copies 1/24 of a batch if the sample lands in the copied part.
 
+## The BF16 table on encoded extents costs 15x the device traffic, and my prediction was wrong in kind
+
+Same bytes (`cmp`-verified, 8,013,268,456 both), same host, cold start enforced by `drop_caches` plus
+`fadvise` plus the mapper check, uniform traffic, 20,480,000 row requests per cell over a 7.46 GiB blob,
+8 threads, `--memory 4g` standing in for a small-RAM host. `manifest.txt` confirms each arm read the
+file it was aimed at.
+
+| cell | original (39,257 encoded extents) | NOCOW copy (0 encoded) | ratio |
+|---|---|---|---|
+| pcache, 4 GiB cap | **649.6 GiB** device, amp **8.13x**, 61,293 pages/s | **43.3 GiB** device, amp 0.54x, **149,687 pages/s** | **15.0x** traffic |
+| pcache, uncapped | 18.3 GiB device, amp 0.23x, hits 0.771 | 7.5 GiB (one pass), amp 0.09x, hits **0.906** | 2.4x |
+| odirect, 4 GiB cap | 425.1 GiB device, amp 5.32x, 83,906 pages/s | 79.9 GiB, amp 1.00x, 99,029 pages/s | 5.3x |
+| odirect, uncapped | 43.3 GiB, amp 0.54x, **page cache grew 4.81 GiB** | 79.9 GiB, amp 1.00x, cache grew 0.00 | -- |
+
+**The prediction was directionally right and conceptually wrong.** I predicted the encoded arm would
+show ~2-3% hits -- a retention collapse -- and the plain arm ~42.7%. The plain arm came in at 45.8%,
+within three points. The encoded arm returned a hit rate of **-7.13**, which is not a bad retention
+number but a metric that has stopped meaning anything, because the device moved **8.13 pages for every
+page requested**. The penalty is not only that compressed pages are poorly retained; it is that every
+miss costs a whole compressed cluster, and under a cache cap misses are constant. Retention and
+amplification multiply: 15x the device traffic, and 2.4x *slower* in aggregate (61.3k against 149.7k
+pages/s) because the extra traffic is not free. The plain arm met the 132,734 pages/s prefill target at
+a 4 GiB cache; the encoded arm delivered 46% of it.
+
+Three secondary findings, each from an instrument finally asking the right question:
+
+* **O_DIRECT over compressed extents is charged for amplification too** (5.32x, 425 GiB) and
+  simultaneously grew the page cache by 4.81 GiB at 0.54x amplification uncapped -- direct I/O being
+  partly served through the buffered path, exactly the substitution the `!direct-populated-cache` flag
+  exists to catch. Over plain extents it honoured the flag perfectly: 1.00x, zero cache growth.
+* **Uncapped, the encoded file is merely untidy** (18.3 GiB read for a 7.46 GiB file, hits 0.771 against
+  0.906). The catastrophe needs the cache cap. That is worth stating precisely because the cap is the
+  entire premise of the low-RAM work -- the penalty is a cache-pressure effect, not a constant tax.
+* Run self-consistency held: 649.6 GiB over 342 s is 1.9 GiB/s of device reads, which the drive does
+  sustain for cluster-sized requests, and the plain arm's uncapped cell read exactly one pass.
+
+**Deployment consequence, and it is the first one tonight that changes an action.** For FP8, nothing:
+its table bytes already sit in plain contiguous extents and the matched-region A/B differed by 0.2-0.8%.
+For BF16, the plain layout is not optimisation but a requirement -- 650 GiB versus 43 GiB of device
+reads for identical bytes is the difference between meeting the prefill read rate and delivering 46% of
+it. So the `/home/rtx/ckpt-nocow` tree is the only place BF16 PLE should be tested or served on this
+host, and my earlier "delete the copy" advice is withdrawn for the second time, now on evidence rather
+than on the discovery that the data was already there.
+
 ## An A/B that compared a file against itself, and the two real numbers it left behind
 
 The first BF16 layout A/B was void. The resolution script that was supposed to name the blob failed on
