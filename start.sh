@@ -129,6 +129,8 @@ if [[ "$PLE_STREAM" == 1 ]]; then
       ;;
     *)
       EXTRA_ARGS+=(--compilation-config '{"cudagraph_mode": "PIECEWISE"}')
+      echo "  note: PLE_STREAM=1 also forces cudagraph_mode=PIECEWISE; FULL cudagraph captures do not" >&2
+      echo "        break for host-side work, so decode would freeze one captured row set." >&2
       ;;
   esac
 fi
