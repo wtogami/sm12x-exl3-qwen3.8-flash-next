@@ -59,7 +59,7 @@ def skip_pageable_gate():
     of prefetch-buffer and layout setup that the streaming path must not drift away from. It is
     restored in `finally`, and the assertion afterwards is what makes a silent failure impossible.
     """
-    from vllm.model_executor.models.qwen4_exp.nvidia import ngram_embedding as ngram_mod
+    from vllm.models.qwen4_exp.nvidia import ngram_embedding as ngram_mod
 
     original = ngram_mod.require_pageable_access
     ngram_mod.require_pageable_access = lambda device_index: None
