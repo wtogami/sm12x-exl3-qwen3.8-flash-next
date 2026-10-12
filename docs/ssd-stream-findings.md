@@ -2149,6 +2149,52 @@ path, the boundary, the fan-out path, the whole table, and scattered non-monoton
 what let the earlier 24x-underfilled buffer look plausible: `0 of 4000 sampled` passes on a build
 that copies 1/24 of a batch if the sample lands in the copied part.
 
+## The "real trace" is synthetic, and I have been calling it real all evening
+
+Asked where `session.rows.bin` came from, the honest answer turned out to be a provenance I had never
+checked. It is not logged traffic, not `burst`, not this session. `build2.py` produced it at 07:32:
+
+* `text.code` -- 40 MB of Python source from the container image's `dist-packages`
+* `text.prose2` -- docstrings and comments scraped from those same files with `tokenize`
+* `text.json` -- 12 MB of JSON from the same tree
+* `text.session` -- **2,600 pseudo-turns** assembled by slicing random windows (`random.seed(11)`) out
+  of those three and interleaving prose/code/json, 8.4 MB total
+
+That 8.4 MB was tokenized with the checkpoint's own tokenizer (2,279,111 tokens) and pushed through the
+byte-identical numpy port of `compute_ngram_ids`, giving the 36,465,776 (token, head) row ids that every
+"trace-driven" number in this file rests on. The instrument's own field says `access_model:
+real-trace`, which meant only "driven from a file", and I read it as "driven by real workload".
+
+Two specific ways this biases the result, pulling in opposite directions, which is why I am not
+guessing a sign:
+
+* **Optimistic.** The corpus contains **2,487 copies of the Apache licence header** and is drawn from a
+  fixed ~80 MB pool, so late windows revisit pages touched early. Real traffic from different files,
+  different repositories and different users has far more cold first touch -- and first touches are
+  exactly what my miss decomposition showed the residual misses to be.
+* **Pessimistic.** An agentic client resends its entire prior context on every request, so the same
+  prefix -- and therefore the same n-gram ids -- is re-touched once per turn. A synthetic stream of
+  mostly-novel windows cannot express that, and page caches love it. This is plausibly the largest
+  single effect in coding-agent traffic and it is entirely absent here.
+
+What this does and does not invalidate. The uniform-traffic results are untouched, because they never
+used a trace: the CoW exoneration, the 15x BF16 encoded-extent cost, `O_DIRECT`'s amplification and
+buffered fallback, the 25.6x page-versus-row copy amplification, the mapper/`fadvise` semantics, and the
+streaming module's correctness gate. What is provisional is every **hit rate and every capacity number**
+derived from the corpora -- 86.4% at 6.2 GiB, 0.797 at 16 GiB, and therefore the 32 GiB target floor
+that sizing decision rests on. Those are properties of a synthetic mixture, not measurements of the
+workload.
+
+Mitigations now in place: the corpora are renamed `synth-*` on both hosts, the instrument records
+`trace_file`, `trace_rows` and a `--trace-provenance` string in every receipt and flags undeclared
+provenance, so a synthetic curve can no longer be mistaken for a measured one six hours later.
+
+The fix is a capture, not an argument. The cheapest one that does not touch the serving engine is a
+loopback packet capture on the inference port for a bounded window, parsed offline against the same
+tokenizer -- no proxy in front of the thing doing this reasoning, no restart, no client reconfiguration.
+It records conversation content, so it is the user's call, and it should be time-boxed because agentic
+traffic re-sends whole contexts and fills disks quickly.
+
 ## The BF16 table on encoded extents costs 15x the device traffic, and my prediction was wrong in kind
 
 Same bytes (`cmp`-verified, 8,013,268,456 both), same host, cold start enforced by `drop_caches` plus
