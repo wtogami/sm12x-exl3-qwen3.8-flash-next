@@ -48,8 +48,8 @@ restore_serving() {
 }
 trap restore_serving EXIT INT TERM
 
-cell() {  # name image ple_stream breakable enforce_eager
-  local name=$1 img=$2 ps=$3 bc=$4 ee=$5 rep=$6
+cell() {  # name image ple_stream breakable enforce_eager cudagraph_mode
+  local name=$1 img=$2 ps=$3 bc=$4 ee=$5 cgm=$6 rep=$7
   echo
   echo "=== cell $name (ple_stream=$ps breakable=$bc enforce_eager=$ee) repeat $rep, image $img ==="
   podman rm -f ple-bench >/dev/null 2>&1 || true
@@ -67,6 +67,10 @@ cell() {  # name image ple_stream breakable enforce_eager
   [ "$ps" = 1 ] && gen+=(--env PLE_STREAM=1 --env PLE_ROWCOPY_SO=/opt/qwen38/ple_rowcopy.so)
   [ "$bc" = 1 ] && gen+=(--env VLLM_USE_BREAKABLE_CUDAGRAPH=1)
   [ "$ee" = 1 ] && gen+=(--arg=--enforce-eager)
+  # Streaming cannot run with FULL cudagraphs at all (the decorator declines to break inside them), and
+  # a "pinned + breakable" cell that keeps FULL graphs would not be the same graph regime as the
+  # streaming cells -- so the mode is an explicit axis of the matrix, not a side effect.
+  [ -n "$cgm" ] && gen+=(--arg=--compilation-config --arg="{\"cudagraph_mode\": \"$cgm\"}")
   "${gen[@]}" > $ACC/run-cell.sh || { echo "  run-line generation failed"; return 1; }
   bash -n $ACC/run-cell.sh || { echo "  cell run line does not parse"; return 1; }
   bash $ACC/run-cell.sh >/dev/null 2>&1 || { echo "  run rejected"; return 1; }
@@ -98,11 +102,52 @@ cell() {  # name image ple_stream breakable enforce_eager
     "$name" "$rep" "$img" "$ps" "$bc" "$ee" "$sha" "${pre:-NA}" "${dec:-NA}" "$shm" "$ca" "$vr" "$((r1-r0))" "$el" "$verdict" | tee -a "$TSV"
 }
 
+if [[ "${DRY_RUN:-0}" == 1 ]]; then
+  # Generate and validate every cell's run line without touching the GPU. Cheap insurance against
+  # discovering a malformed cell ten minutes into a paired-boot ladder.
+  echo "=== DRY RUN: generating run lines only ==="
+  trap - EXIT
+  cell_dry() {
+    local name=$1 img=$2 ps=$3 bc=$4 ee=$5 cgm=$6
+    local gen=(python3 "$REPO/scripts/mk-cell-run.py" --base-container "$CONT" --name "ple-dry-$name"
+               --image "$img")
+    [ "$ps" = 1 ] && gen+=(--env PLE_STREAM=1 --env PLE_ROWCOPY_SO=/opt/qwen38/ple_rowcopy.so)
+    [ "$bc" = 1 ] && gen+=(--env VLLM_USE_BREAKABLE_CUDAGRAPH=1)
+    [ "$ee" = 1 ] && gen+=(--arg=--enforce-eager)
+    [ -n "$cgm" ] && gen+=(--arg=--compilation-config --arg="{\"cudagraph_mode\": \"$cgm\"}")
+    if "${gen[@]}" > "$OUT/$name.dry.sh" 2>"$OUT/$name.dry.err"; then
+      python3 - "$OUT/$name.dry.sh" "$img" <<'PY'
+import shlex, sys
+PODMAN = {"-e","--env","-d","--detach","--name","-v","--volume","--device","--network","--ipc",
+          "--security-opt","--annotation","-p","--publish"}
+toks = shlex.split(open(sys.argv[1]).read().strip().splitlines()[-1][5:])
+img = next((i for i, x in enumerate(toks) if x == sys.argv[2]), None)
+assert img is not None, "image token missing"
+bad = [x for x in toks[img + 1:] if x in PODMAN]
+assert not bad, f"podman flags after image: {bad}"
+argv = toks[img + 1:]
+print(f"  OK  {sys.argv[1].split('/')[-1]:26s} container argv={len(argv)} "
+      f"env_before={sum(1 for x in toks[:img] if x=='-e')}")
+PY
+    else
+      echo "  FAIL $name: $(tail -1 "$OUT/$name.dry.err")"
+      false
+    fi
+  }
+  cell_dry pinned-default      "$IMAGE_PIN"    0 0 0 ""
+  cell_dry pinned-breakable-pw "$IMAGE_PIN"    0 1 0 "PIECEWISE"
+  cell_dry stream-breakable-pw "$IMAGE_STREAM" 1 1 0 "PIECEWISE"
+  cell_dry stream-eager        "$IMAGE_STREAM" 1 0 1 ""
+  echo "  dry run complete; nothing started"
+  exit 0
+fi
+
 for rep in $(seq 1 "$REPEATS"); do
-  cell pinned-graphs   "$IMAGE_PIN"    0 0 0 $rep
-  cell pinned-breakable "$IMAGE_PIN"   0 1 0 $rep
-  cell stream-breakable "$IMAGE_STREAM" 1 1 0 $rep
-  cell stream-eager     "$IMAGE_STREAM" 1 0 1 $rep
+  #                                                       ple_stream breakable eager  cudagraph_mode
+  cell pinned-default        "$IMAGE_PIN"     0 0 0 ""          $rep   # deployed baseline
+  cell pinned-breakable-pw   "$IMAGE_PIN"     0 1 0 "PIECEWISE" $rep   # graph-mode cost alone
+  cell stream-breakable-pw   "$IMAGE_STREAM"  1 1 0 "PIECEWISE" $rep   # the feature, legal config
+  cell stream-eager          "$IMAGE_STREAM"  1 0 1 ""          $rep   # fallback, no graphs at all
 done
 
 echo
