@@ -34,7 +34,7 @@ PROBE_REPS=${PROBE_REPS:-4}
 REF_HASH=${REF_HASH:-a6cc8fed286b7071}
 mkdir -p "$OUT"
 TSV=$OUT/results.tsv
-[ -f "$TSV" ] || printf "cell\trepeat\timage\tple_stream\tbreakable\tcudagraph_mode\tstrict\tprefill_tok_s\tdecode_tok_s\tshmem_gib\tcached_gib\tvram_mib\tdisk_sectors\telapsed_s\tverdict\n" > "$TSV"
+[ -f "$TSV" ] || printf "cell\trepeat\timage\tple_stream\tbreakable\tenforce_eager\tstrict\tprefill_tok_s\tdecode_tok_s\tshmem_gib\tcached_gib\tvram_mib\tdisk_sectors\telapsed_s\tverdict\n" > "$TSV"
 
 restore_serving() {
   echo "=== restoring the serving configuration ==="
