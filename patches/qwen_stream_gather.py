@@ -69,7 +69,8 @@ class StreamGather:
     def __init__(self, table_path: str, *, row_bytes: int = 160, n_rows: int | None = None,
                  max_rows_per_batch: int = 2048 * 16, threads: int = 24,
                  rowcopy_so: str | None = None, device: str = "cuda",
-                 madv_random: bool = True, small_copy_rows: int = 4096):
+                 madv_random: bool = True, small_copy_rows: int = 4096,
+                 buffers: int = 4):
         import torch
 
         self.torch = torch
@@ -95,9 +96,21 @@ class StreamGather:
         self.device = device
         self.max_rows = int(max_rows_per_batch)
         nbytes = self.max_rows * self.row_bytes
-        # Two arenas so batch k+1 can be filled while batch k is in flight on the GPU.
-        self._arena = [torch.empty(nbytes, dtype=torch.uint8, pin_memory=True) for _ in range(2)]
+        # A ring of arenas, each guarded by the CUDA event of its last H2D.
+        #
+        # Two buffers and one-batch-ahead pipelining are NOT safe: filling batch k+2 writes the
+        # buffer that batch k used, and k's copy_ was issued non-blocking one iteration earlier, so
+        # the CPU can overwrite pinned memory the DMA engine is still reading. That is both a
+        # correctness hole and the explanation for a measured effect -- with two buffers, the last
+        # quartile of a 600-batch run filled 5x slower than the first while faulting zero pages,
+        # which is what competing with an in-flight DMA over the same cache lines looks like.
+        # Reuse now waits on the buffer's event, and depth is configurable rather than hard-coded.
+        self._nbuf = int(buffers)
+        self._arena = [torch.empty(nbytes, dtype=torch.uint8, pin_memory=True)
+                       for _ in range(self._nbuf)]
         self._arena_base = [int(a.data_ptr()) for a in self._arena]
+        self._free_ev = [torch.cuda.Event() for _ in range(self._nbuf)]
+        self._ev_armed = [False] * self._nbuf
         self._dst = torch.empty(nbytes, dtype=torch.uint8, device=device)
         # Two executors on purpose. _pool runs one whole-batch fill at a time (the pipelined
         # path); _fan spreads that fill's row-copy slices across threads. Sharing one pool means
@@ -121,6 +134,8 @@ class StreamGather:
         n = len(byte_off)
         if n > self.max_rows:
             raise ValueError(f"{n} rows exceeds staging capacity {self.max_rows}")
+        if self._ev_armed[buf]:
+            self._free_ev[buf].synchronize()   # do not overwrite a buffer the DMA engine still owns
         base = self._arena_base[buf]
         k = self.threads
         bounds = [int(x) for x in np.linspace(0, n, k + 1)]
@@ -155,11 +170,11 @@ class StreamGather:
         if ids.size and (int(ids.min()) < 0 or int(ids.max()) >= self.n_rows):
             raise ValueError(f"row id out of range: [{int(ids.min())}, {int(ids.max())}] "
                              f"vs n_rows={self.n_rows}")
-        buf = self._next_buf
         with self._lock:
+            buf = self._next_buf
             self._queued.append((self._pool.submit(self._fill, ids * self.row_bytes, buf),
                                  buf, ids.size))
-            self._next_buf = 1 - buf
+            self._next_buf = (self._next_buf + 1) % self._nbuf
 
     def wait(self) -> tuple:
         """Block until the batch passed to submit() is resident. Returns (view, count)."""
@@ -172,13 +187,15 @@ class StreamGather:
         self.stats["fill_s"] += dt
         ru = resource.getrusage(resource.RUSAGE_SELF)
         self.rusage.append((self.stats["batches"], count, ru.ru_minflt, ru.ru_majflt))
-        return self._arena[buf][: count * self.row_bytes], count
+        return self._arena[buf][: count * self.row_bytes], count, buf
 
     # ----------------------------------------------------------------- device side
-    def _upload(self, view, count: int, index):
+    def _upload(self, view, count: int, index, buf: int):
         torch = self.torch
         dst = self._dst[: count * self.row_bytes]
         dst.copy_(view, non_blocking=True)
+        self._free_ev[buf].record()            # this buffer is free for the CPU once this completes
+        self._ev_armed[buf] = True
         rows = dst.view(count, self.row_bytes)
         if index is not None:
             rows = rows[torch.from_numpy(np.ascontiguousarray(index, dtype=np.int64)).to(
@@ -191,8 +208,8 @@ class StreamGather:
         `index` selects and orders rows within the uploaded batch (defaults to identity). The
         engine's dequant path then consumes [tokens, heads, row_bytes] exactly as it does today.
         """
-        view, count = self.wait()
-        return self._upload(view, count, index)
+        view, count, buf = self.wait()
+        return self._upload(view, count, index, buf)
 
     def fetch(self, row_ids: np.ndarray, index: np.ndarray | None = None):
         """Synchronous path (decode: 16 rows, nothing to pipeline)."""
@@ -200,12 +217,12 @@ class StreamGather:
         if ids.size and (int(ids.min()) < 0 or int(ids.max()) >= self.n_rows):
             raise ValueError("row id out of range in fetch()")
         buf = self._next_buf
-        self._next_buf = 1 - buf
+        self._next_buf = (self._next_buf + 1) % self._nbuf
         dt = self._fill(ids * self.row_bytes, buf)
         self.stats["batches"] += 1
         self.stats["rows"] += ids.size
         self.stats["fill_s"] += dt
-        return self._upload(self._arena[buf][: ids.size * self.row_bytes], ids.size, index)
+        return self._upload(self._arena[buf][: ids.size * self.row_bytes], ids.size, index, buf)
 
     # ----------------------------------------------------------------- verification
     def verify(self, sample: int = 4000, seed: int = 3) -> int:
