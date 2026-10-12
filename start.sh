@@ -119,6 +119,21 @@ if [[ "$PLE_MMAP" == 0 && "$PLE_STREAM" == 0 && "$CUSTOM_ENGRAM" == 0 \
   done < /proc/meminfo
   qwen38_ple_memcheck "$CONFIG_PATH" "${PLE_BYTES_PER_ELEMENT:-2}" "$mem_total_kib" "$mem_avail_kib"
 fi
+# Streaming replaces the pinned-table requirement with a page-cache requirement, so it needs its own
+# preflight rather than the absence of one: "no table pinned" is not "no memory needed". This reads the
+# cgroup limit too, because /proc/meminfo inside a capped container reports the host's RAM.
+if [[ "$PLE_STREAM" == 1 && "$CUSTOM_ENGRAM" == 0 && "${QWEN38_SKIP_MEMCHECK:-0}" != 1 ]] \
+   && [[ -r /proc/meminfo ]]; then
+  mem_total_kib=0
+  mem_avail_kib=0
+  while read -r key value _; do
+    case "$key" in
+      MemTotal:) mem_total_kib=$value ;;
+      MemAvailable:) mem_avail_kib=$value ;;
+    esac
+  done < /proc/meminfo
+  qwen38_ple_stream_check "$CONFIG_PATH" "${PLE_BYTES_PER_ELEMENT:-2}" "$mem_total_kib" "$mem_avail_kib" || exit 3
+fi
 # A container left over from a previous run still owns the name, and both engines
 # then reject the run with "name is already in use". Removing a dead one is done
 # automatically: it is serving nothing, and otherwise the documented stop.sh then
