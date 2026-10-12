@@ -252,13 +252,56 @@ what any pointer said. The sentinel (write through the CPU tensor, read back
 through the CUDA view) is a second confirmation that does not depend on
 accounting either.
 
-Whether this survives at 95.368 GiB is now the open question, and it decides the
-shape of the fix rather than its size -- both designs commit the same 95.38 GiB.
-Exact-size is one allocation and no change to the gather kernel; tiling needs
-multiple base pointers threaded through it. It cannot be measured while the
-engine is resident (48.7 GiB available against a 95.368 GiB buffer), so it needs
-a deliberate stop of `gg`, and that run must carry the containment the first one
-lacked.
+### It holds at full scale: one allocation, no rounding, no copy
+
+The redo, engine stopped, cgroup capped at 104 GiB, CUDA context established
+first, on `gg` (121.68 GiB available, `Shmem 0.00` asserted before starting):
+
+```
+cudaHostAlloc(95.368 GiB)        rc=0 in 63.8 s (1.49 GiB/s)   page_aligned=True
+ptr identity                    : data_ptr == alloc_ptr   True
+driver memory type              : PinnedHost (rc=0)
+is_pinned                       : True
+view                            : same_addr=True in 0.00 s   MemAvailable delta -0.00 GiB
+sentinel (CPU write -> GPU read): True
+gather 200k rows x 160 bf16     : 4.04 ms = 49.54 M rows/s
+```
+
+So the exact-size design **works**: one allocation, 95.368 GiB committed instead of
+128.000, aliased into the device with no copy. The pow2 rounding -- the entire
+32.6 GiB -- is not a constraint of the allocator, it is a constraint of
+`pin_memory`, and the fix is one allocation rather than a tiling scheme.
+
+Two things to keep honest about that output. `63.8 s` against the `42.0 s` the
+same call took an hour earlier means page-locking the table costs 42-64 s with
+1.5x run-to-run spread, so any startup estimate built on one sample is soft. And
+the gather line is *not* a GPU-compute number: the view is aliased host memory, so
+every one of those 200,000 rows is a random 320-byte PCIe read, which works out to
+15.8 GB/s effective. That is the path this host already uses for PLE today, and
+the decode requirement (993 tok/s x 16 rows = 15,888 rows/s) is roughly 3,100x
+below the 49.54 M rows/s measured here, so host-resident gathering is not the
+bottleneck at either profile.
+
+### What this decides, and the one thing it costs
+
+RAM-wise the two candidate fixes are now nearly identical: exact-size commits
+95.368 GiB, two-tile pow2 commits 96.000 (64+32), so tiling wastes 0.632 GiB more
+-- negligible. The difference is entirely structural:
+
+* **exact-size** needs no change to the gather kernel, but it takes the
+  allocation outside torch, so something has to own the `cudaHostAlloc` pointer;
+* **tiling** is torch-native but needs the kernel to resolve a row against
+  multiple base pointers.
+
+The lifetime problem looks solvable rather than fatal, and that is the next thing
+to test rather than to assume: the alias path returns `from_blob(device_ptr, ...,
+[base = cpu_tensor](void*) {})`, so the returned CUDA tensor holds the CPU tensor,
+whose storage holds the buffer-protocol object that `frombuffer` was given. A
+wrapper object whose finalizer calls `cudaFree` therefore gets freed exactly when
+the last GPU view is released -- the chain already exists, it just needs a
+destructor on the right object. That needs proving with a drop-and-GC test before
+anyone writes it into a loader; the failure mode if the chain is wrong is a use
+after free on the device, which is the worst way to save 0.632 GiB.
 
 **The rule this buys:** any probe that calls `is_pinned`,
 `cudaPointerGetAttributes`, or a vLLM op that dispatches them, must initialize
@@ -300,8 +343,11 @@ does not lose the probe, it loses whatever else is resident. Non-negotiable rule
 for host-memory probes on a box that also serves:
 
 1. `podman run --memory=<cap>` so the cgroup kills the offender instead of the
-   kernel hunting a victim host-wide (established earlier that this does enforce
-   rootless);
+   kernel hunting a victim host-wide. Now proven rather than assumed, with the
+   exact test the failed run needed: a container capped at 2 GiB touching 8 GiB
+   died with `rc=137` inside its cgroup while host `MemAvailable` went
+   122 -> 122 GiB, unmoved. That pre-flight is cheap (~5 s) and belongs at the
+   top of every host-memory probe, *before* the expensive allocation;
 2. a raised `--oom-score-adj` on the probe container, so if the host is threatened
    anyway the probe is selected, not the engine;
 3. pre-flight asserts that no earlier probe is still *alive*, not just that
