@@ -1,20 +1,26 @@
 #!/usr/bin/env python3
-"""Determinism + throughput probe for PLE backend comparisons. Run with: python3 -I <this> 
+"""Determinism + throughput probe for PLE backend comparisons. Run: python3 -I <this>
 
 Correctness first, and wider than the 392-byte greedy check it replaces. A row gather that reads the
 wrong n-gram rows can still produce a plausible short answer, so hashing two short replies proves less
-than it looks like it does. This hashes six greedy completions of 64 tokens each across deliberately
-different regimes (long context, code, arithmetic, verbatim repetition, multilingual, multi-step), where
-a corrupted PLE contribution has much more room to show.
+than it looks like it does. This hashes greedy 64-token completions of six prompts across regimes where
+a corrupted PLE contribution has room to show (long context, code, arithmetic, verbatim repetition,
+multilingual, multi-step).
+
+ONLY SINGLE-CHUNK PROMPTS ARE GATED. Measured on the deployed pinned engine: repeated identical requests
+at temperature 0 reproduce while prompt_tokens <= max_num_batched_tokens (2048 here) and do not above it,
+where prefill is chunked -- five back-to-back calls of one 2110-token prompt produced three different
+completions. Prefix caching is exonerated (103,379 queries, 0 hits). A longer 4010-token prompt looked
+stable over three runs, so no tail-size rule is claimed: the boundary the data supports is "needs chunked
+prefill". The long prompt is therefore hashed into `all` and reported, never gated -- gating on an
+irreproducible prompt manufactures false failures and can equally manufacture a false pass.
 
 Prints machine-parseable lines the matrix driver diffs:
-  aggregate <sha256-16>       over the concatenation of all six completions
-  correct <yes|no>            against --expect, when given
+  strict <sha256-16>     over completions whose prompt_tokens <= --chunk-limit  (the gate)
+  all    <sha256-16>     over every completion, chunked ones included
+  tokens <n>             completion tokens hashed, so an empty run cannot read as a match
+  correct <yes|no>       strict vs --expect, when given
   prefill <tok/s>  decode <tok/s>
-  tokens <n>                  total completion tokens hashed (so an empty run cannot look "identical")
-
-Nothing is randomised: temperature 0, fixed seed, fixed prompt list, fixed order. A difference between
-configurations is then the configuration, not the workload.
 """
 import argparse
 import hashlib
@@ -23,9 +29,10 @@ import statistics
 import time
 import urllib.request
 
+LONG_UNIT = "The quick brown fox jumps over the lazy dog. "
 PROMPTS = [
-    ("long-context", "The quick brown fox jumps over the lazy dog. " * 220 +
-     "\n\nIn one paragraph, what changed if I replaced 'fox' with 'owl' throughout, and why?"),
+    ("long-context", LONG_UNIT * 220 + "\n\nIn one paragraph, what changed if I replaced 'fox' with "
+     "'owl' throughout, and why?"),
     ("code", "Write a Python function `shard_of(row_id, rows_per_shard)` that returns the shard index "
              "and local offset, then explain the integer arithmetic line by line."),
     ("arithmetic", "A table is 320,001,536 rows of 160 bytes. How many GiB is that? Show the division "
@@ -34,9 +41,9 @@ PROMPTS = [
     ("multilingual", "Erkläre in zwei Sätzen, warum CUDA Graphs keine Host-Copy enthalten dürfen. "
                      "Antworte auf Deutsch."),
     ("multi-step", "List three reasons a compressed btrfs extent costs more device traffic than an "
-                   "uncompressed one for random 160-byte reads, then say which reason dominates and why."),
+                   "uncompressed one for random 160-byte reads, then say which reason dominates and "
+                   "why."),
 ]
-LONG = ("The quick brown fox jumps over the lazy dog. " * 700)[:14000]
 SHORT = "Define page-cache reuse distance in one sentence."
 
 
@@ -47,50 +54,64 @@ def post(url, model, prompt, max_tokens):
     t0 = time.time()
     with urllib.request.urlopen(req, timeout=900) as r:
         d = json.load(r)
-    txt = d["choices"][0]["text"]
-    return txt, d["usage"]["prompt_tokens"], d["usage"]["completion_tokens"], time.time() - t0
+    return (d["choices"][0]["text"], d["usage"]["prompt_tokens"],
+            d["usage"]["completion_tokens"], time.time() - t0)
 
 
 def main():
     ap = argparse.ArgumentParser()
     ap.add_argument("--url", default="http://127.0.0.1:8001/v1/completions")
     ap.add_argument("--model", default="qwen38-exl3-ple8")
-    ap.add_argument("--expect", default="", help="aggregate sha to match (16-hex prefix ok)")
+    ap.add_argument("--expect", default="", help="strict hash to match (16-hex prefix ok)")
     ap.add_argument("--max-tokens", type=int, default=64)
+    ap.add_argument("--chunk-limit", type=int, default=2048,
+                    help="prompt_tokens at or below this are single-chunk, hence reproducible")
     ap.add_argument("--reps", type=int, default=4, help="repeats for the throughput shapes")
     a = ap.parse_args()
 
-    parts, total_tokens = [], 0
+    parts, total = [], 0
     for name, prompt in PROMPTS:
         try:
             txt, ptok, ctok, el = post(a.url, a.model, prompt, a.max_tokens)
         except Exception as e:  # a dead engine must not look like a matching hash
             print(f"  request failed on {name}: {type(e).__name__}: {e}")
-            print("aggregate ERROR")
+            print("strict ERROR")
             print("correct no")
             return 2
-        parts.append(f"[{name}]{txt}")
-        total_tokens += ctok
-        print(f"  {name:13s} prompt={ptok:6d} tok  completion={ctok:3d} tok  {el:.2f}s")
+        parts.append((name, ptok, txt))
+        total += ctok
+        flag = "" if ptok <= a.chunk_limit else "   (chunked: reported, not gated)"
+        print(f"  {name:13s} prompt={ptok:6d} tok  completion={ctok:3d} tok  {el:.2f}s{flag}")
 
-    blob = "\n".join(parts).encode()
-    agg = hashlib.sha256(blob).hexdigest()[:16]
-    print(f"aggregate {agg}")
-    print(f"tokens {total_tokens}")
-    if a.expect:
-        ok = agg.startswith(a.expect)
-        print(f"correct {'yes' if ok else 'no'}")
-        if not ok:
-            print("--- first divergence ---")
-            print(blob.decode(errors="replace")[:400])
-    # throughput: median of reps, two shapes
-    for label, prompt, mt in (("prefill", LONG, 1), ("decode", SHORT, 256)):
+    def sha(items):
+        return hashlib.sha256("\n".join(f"[{n}]{x}" for n, _, x in items).encode()).hexdigest()[:16]
+
+    strict_items = [x for x in parts if x[1] <= a.chunk_limit]
+    if not strict_items:
+        print("  every prompt exceeded the chunk limit; nothing can be gated")
+        print("strict NONE")
+        return 2
+    strict = sha(strict_items)
+    print(f"strict {strict}")
+    print(f"all {sha(parts)}")
+    print(f"tokens {total}")
+    print(f"gated {len(strict_items)}/{len(parts)} prompts")
+
+    for label, prompt, mt in (("prefill", LONG_UNIT * 700, 1), ("decode", SHORT, 256)):
         rates = []
         for _ in range(a.reps):
             _, ptok, ctok, el = post(a.url, a.model, prompt, mt)
             rates.append((ptok if mt == 1 else ctok) / el)
         print(f"{label} {statistics.median(rates):.1f} tok/s")
-    return 0 if not a.expect or agg.startswith(a.expect) else 1
+
+    if a.expect:
+        ok = strict.startswith(a.expect)
+        print(f"correct {'yes' if ok else 'no'}")
+        if not ok:
+            print("--- strict-set text (first 160 chars each) ---")
+            for n, _, x in strict_items:
+                print(f"  [{n}] {x[:160]}")
+    return 0 if not a.expect or strict.startswith(a.expect) else 1
 
 
 if __name__ == "__main__":
