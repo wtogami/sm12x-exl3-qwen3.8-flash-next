@@ -2092,10 +2092,22 @@ on a 47.684 GiB table is about **1.4 GiB**.
 That leaves a genuine unexplained gap -- standalone zstd-1 at btrfs's own 128 KiB block size said
 86.0% on a 256 MiB sample, while allocation says 97.1% over 1 GiB. The likeliest cause is that the
 sample and the written region are not the same material: this shard holds no n-gram tensors at all,
-so its first 256 MiB may be a more compressible tensor than what follows. If so, my per-block
-measurement was right about its own bytes and wrong about the shard. Either way the deployment
-recommendation gets stronger rather than weaker: giving up 1.4 GiB of disk to buy 42.9% hit rate
-instead of 2.7%, and 10.3% throughput, is not a close call.
+and that is exactly what happened -- measured per window: 86.0% at offset 0, then **100.0% at 256,
+512 and 768 MiB**. Whole-window zstd-1 over that 1 GiB returns 96.5%, and btrfs allocated 97.1%.
+The instruments were both correct; my sample was not representative, because this shard opens with
+one compressible quarter (it contains no n-gram tensors, so probably a scale or embedding tensor)
+and the rest is genuinely incompressible.
+
+The consequence is sharper than a pricing correction. `filefrag` reports 4,642 of 4,668 extents in
+this file as encoded -- 99.4% -- so btrfs routed essentially the whole shard through the compression
+path and gained 2.9% of disk, while the encoded-extent retention penalty applies across the whole
+file: 42.9% hit rate plain versus 2.7% encoded, and 10.3% throughput. That is paying the cost of
+compression on 99.4% of extents to collect a benefit on about a quarter of them. `compress=no` or
+`chattr +C` on the checkpoint tree is not a close call, and it is now measured on both sides.
+
+This is the third time tonight the sample was wrong while the instrument was right -- the 254k-token
+prose corpus, the 256 MiB compression sample, and a uniform-random access model standing in for real
+traffic -- which is a pattern worth remembering louder than any of the individual corrections.
 
 That is the third time tonight a number I quoted confidently turned out to be an artifact of the
 measuring stick rather than the thing measured -- after `diskstats` field indices and a
