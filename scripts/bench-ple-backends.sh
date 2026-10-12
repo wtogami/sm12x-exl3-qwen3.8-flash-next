@@ -29,6 +29,7 @@ NPRO=${NPRO:-8}
 OUT=${OUT:-$ACC/backend-matrix}
 PROBE=${PROBE:-/home/rtx/stage/ple-probe.py}
 PROBE_REPS=${PROBE_REPS:-4}
+PROBE_WARMUP=${PROBE_WARMUP:-2}
 # Reference strict hash, measured on the pinned engine: five single-chunk greedy completions, identical
 # across repeated runs of the same configuration (the six-prompt "all" hash is not).
 REF_HASH=${REF_HASH:-a6cc8fed286b7071}
@@ -40,7 +41,7 @@ restore_serving() {
   echo "=== restoring the serving configuration ==="
   podman rm -f ple-bench >/dev/null 2>&1 || true
   podman start $CONT >/dev/null 2>&1 || bash $ACC/run-restore.sh >/dev/null 2>&1
-  for i in $(seq 1 90); do
+  for i in $(seq 1 120); do
     c=$(curl -s -o /dev/null -m 3 -w '%{http_code}' http://127.0.0.1:8001/health 2>/dev/null)
     [ "$c" = "200" ] && break; sleep 10
   done
@@ -79,8 +80,10 @@ cell() {  # name image ple_stream breakable enforce_eager cudagraph_mode
   "${gen[@]}" > $ACC/run-cell.sh || { echo "  run-line generation failed"; return 1; }
   bash -n $ACC/run-cell.sh || { echo "  cell run line does not parse"; return 1; }
   bash $ACC/run-cell.sh >/dev/null 2>&1 || { echo "  run rejected"; return 1; }
+  # Boot was measured at 290s for a fresh cell on this host, so the wait has to cover it with margin;
+  # a shorter loop reports a healthy-but-slow engine as a dead cell.
   local code=000
-  for i in $(seq 1 150); do
+  for i in $(seq 1 120); do
     [ -z "$(podman ps -q --filter name=ple-bench)" ] && { echo "  cell DIED"; podman logs --tail 12 ple-bench 2>&1 | sed 's/^/    /'; podman logs ple-bench > "$OUT/$name-die.log" 2>&1; return 1; }
     code=$(curl -s -o /dev/null -m 3 -w '%{http_code}' http://127.0.0.1:8001/health 2>/dev/null)
     [ "$code" = "200" ] && break; sleep 10
@@ -96,7 +99,7 @@ cell() {  # name image ple_stream breakable enforce_eager cudagraph_mode
   local gsha=$(sha256sum < "$OUT/$name-greedy.txt" | cut -c1-16)
   local r0=$(awk '$3=="nvme0n1"{print $6}' /proc/diskstats)
   local t0=$(date +%s.%N)
-  ( cd /tmp && python3 -I "$PROBE" --expect "$REF_HASH" --reps "$PROBE_REPS" ) > "$OUT/$name-bench.txt" 2>&1
+  ( cd /tmp && python3 -I "$PROBE" --expect "$REF_HASH" --reps "$PROBE_REPS" --warmup "$PROBE_WARMUP" ) > "$OUT/$name-bench.txt" 2>&1
   local el=$(awk -v a=$(date +%s.%N) -v b=$t0 'BEGIN{printf "%.1f", a-b}')
   local r1=$(awk '$3=="nvme0n1"{print $6}' /proc/diskstats)
   local strict=$(awk '$1=="strict"{print $2}' "$OUT/$name-bench.txt")
