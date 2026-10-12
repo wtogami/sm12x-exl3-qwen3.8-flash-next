@@ -297,6 +297,10 @@ def _selftest(argv):
     dmin = [ru[i][2] - ru[i - 1][2] for i in range(1, len(ru))]
     dmaj = [ru[i][3] - ru[i - 1][3] for i in range(1, len(ru))]
     print(f"  fill:  p50 {np.percentile(per_fill,50):6.2f} ms  p99 {np.percentile(per_fill,99):6.2f} ms")
+    q = max(2, len(per_fill) // 4)
+    print(f"  fill, first {q} batches (cold):  p50 {np.percentile(per_fill[:q],50):6.2f} ms   "
+          f"last {q} (warm): p50 {np.percentile(per_fill[-q:],50):6.2f} ms   "
+          f"-> {'residency-bound: cold is much slower' if np.percentile(per_fill[:q],50) > 2 * max(np.percentile(per_fill[-q:],50), 1e-9) else 'no cold/warm split: cost is not page residency'}")
     print(f"  faults per batch: minor p50 {np.percentile(dmin,50):,.0f}  major p50 {np.percentile(dmaj,50):,.0f}"
           f"  (major = pages read from disk during the fill; minor = page-table work on warm pages)")
     mem = {}
