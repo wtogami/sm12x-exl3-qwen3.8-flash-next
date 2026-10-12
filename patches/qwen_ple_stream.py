@@ -151,13 +151,36 @@ def make_stager(embedding, table) -> RowStager:
 
 def stream_lookup(embedding, input_ids: torch.Tensor,
                   output: torch.Tensor | None = None) -> torch.Tensor:
-    """`_lookup` for the streaming backend: host ids, host copy, one H2D, write into output.
+    """`_lookup` for the streaming backend, dispatching on which stager is bound.
 
-    v1 pulls the ids to the host with a synchronising copy, because the engine computes n-gram ids on
-    the device in this path. That is a real per-step sync point (~256 KB for a 2048-token batch) and
-    its cost is measured rather than assumed; the host-ids route the engine already has for GB10
-    (`cpu_ngram_ids_fn`) removes it and is the intended follow-up.
+    v2 (a `StepStager`, bound by the prepare_inputs hook): a device-to-device copy of rows staged before
+    replay. This branch is capturable and is the one that keeps FULL cudagraphs, so it deliberately runs
+    BEFORE the capture invariant below.
+
+    v1 (a `RowStager`): host ids via a synchronising D2H, host row gather, one blocking H2D, inside the
+    captured region only as a breakable-graph eager segment. Measured cost on this host: decode -22.2%
+    and prefill -15.5% versus pinned, of which 17.8 points of decode are the cudagraph_mode=PIECEWISE
+    requirement rather than the streaming itself -- the reason v2 exists.
     """
+    if embedding.table is None:
+        raise RuntimeError("PLE streaming storage was not bound after loading")
+    expected = (*input_ids.shape, embedding.embedding_dim)
+    if output is None:
+        output = torch.empty(expected, dtype=embedding.weight.dtype, device=input_ids.device)
+    elif (tuple(output.shape) != expected or output.dtype != embedding.weight.dtype
+          or output.device != input_ids.device):
+        raise ValueError("PLE prefetch output must match the input shape, weight dtype, and "
+                         "input device")
+    stager = getattr(embedding, "_stream_stager", None)
+    # v2 binds a StepStager in prepare_inputs and this becomes a device-only copy. Detecting it by
+    # isinstance rather than by re-reading the env keeps one source of truth: whichever object is bound
+    # is the path that runs, so the environment cannot disagree with the bound state.
+    from vllm.model_executor.layers.qwen_ple_stream2 import StepStager as _V2Stager
+    if isinstance(stager, _V2Stager):
+        rows = output.view(torch.uint8).reshape(-1, embedding.table.row_bytes)
+        stager.lookup(int(input_ids.numel()), rows)
+        return output
+
     # HARD INVARIANT: this function must never run inside a CUDA graph capture.
     #
     # The row copy is host code (ctypes memcpy out of the page cache). torch raises on a CPU<->CUDA
@@ -179,16 +202,6 @@ def stream_lookup(embedding, input_ids: torch.Tensor,
             "the default FULL_AND_PIECEWISE mode captures decode as one FULL graph. --enforce-eager "
             "also works, at the cost of all graphs."
         )
-    if embedding.table is None:
-        raise RuntimeError("PLE streaming storage was not bound after loading")
-    expected = (*input_ids.shape, embedding.embedding_dim)
-    if output is None:
-        output = torch.empty(expected, dtype=embedding.weight.dtype, device=input_ids.device)
-    elif (tuple(output.shape) != expected or output.dtype != embedding.weight.dtype
-          or output.device != input_ids.device):
-        raise ValueError("PLE prefetch output must match the input shape, weight dtype, and "
-                         "input device")
-    stager = getattr(embedding, "_stream_stager", None)
     if stager is None or stager._st.num_shards != len(embedding.table.views):
         stager = make_stager(embedding, embedding.table)
         embedding._stream_stager = stager

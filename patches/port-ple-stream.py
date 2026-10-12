@@ -16,6 +16,7 @@ import sys
 
 root = Path(sys.argv[1])
 NGRAM = root / "models/qwen4_exp/nvidia/ngram_embedding.py"
+MSTATE = root / "models/qwen4_exp/nvidia/model_state.py"
 
 IMPORT_ANCHOR = """from .ple_pageable import (
     MappedTable,
@@ -109,7 +110,7 @@ def apply(path: Path, anchor: str, new: str, what: str, marker: str) -> None:
     print(f"  patched: {what}")
 
 
-for p in (NGRAM,):
+for p in (NGRAM, MSTATE):
     if not p.exists():
         raise SystemExit(f"FATAL: {p} not found; is this an installed vllm tree?")
 
@@ -119,6 +120,50 @@ apply(NGRAM, CLASS_ANCHOR, CLASS_NEW, "streaming embedding subclass",
 apply(NGRAM, SEL_ANCHOR, SEL_NEW, "backend selection branch",
       "checkpoint streaming backend selected")
 
+HOOK_ANCHOR = """        prefetcher = self._get_page_prefetcher()
+        if prefetcher is not None:
+            prefetcher.prepare(
+                input_batch.input_ids,
+                query_start_loc,
+                ngram_context,
+                num_reqs_padded,
+                input_batch.input_ids.shape[0],
+            )
+        return model_inputs
+"""
+HOOK_NEW = """        prefetcher = self._get_page_prefetcher()
+        if prefetcher is not None:
+            prefetcher.prepare(
+                input_batch.input_ids,
+                query_start_loc,
+                ngram_context,
+                num_reqs_padded,
+                input_batch.input_ids.shape[0],
+            )
+        # PLE checkpoint streaming v2: copy this step's rows into a persistent device buffer while this
+        # function is still eager, so _lookup becomes a device-to-device copy and FULL cudagraphs survive.
+        #
+        # prepare_inputs is the right place for a reason worth stating: it is where input_ids themselves
+        # become fresh for the step, so staging here inherits that freshness rather than needing its own
+        # proof of it. The page prefetcher directly above is NOT sufficient for the data path even though
+        # it already has host-side ids -- it treats a skipped step as harmless ("a hint only"), which is
+        # correct for warming a cache and wrong for producing features.
+        #
+        # Gated on the v2 flag specifically, not on PLE_STREAM: building a stager binds it onto the
+        # embedding, which switches _lookup to the v2 read. Staging under a v1 deployment would silently
+        # convert it. Inline imports keep this to one hunk and keep the streaming module out of every
+        # model_state user.
+        from vllm.model_executor.layers.qwen_ple_stream2 import stage_step_rows, v2_enabled
+
+        if v2_enabled():
+            stage_step_rows(self, input_batch.input_ids, query_start_loc, ngram_context,
+                            num_reqs_padded)
+        return model_inputs
+"""
+apply(MSTATE, HOOK_ANCHOR, HOOK_NEW, "pre-replay staging hook in prepare_inputs",
+      "stage_step_rows(self, input_batch.input_ids")
+
 import ast
 ast.parse(NGRAM.read_text())
-print("  result parses cleanly")
+ast.parse(MSTATE.read_text())
+print("  both patched files parse cleanly")
