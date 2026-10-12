@@ -31,7 +31,8 @@ def main():
                     help="row requests per cell; if 0, taken from the receipt's raw_row_requests")
     ap.add_argument("--noise", type=float, default=0.01,
                     help="device-page agreement fraction under which the arms are indistinguishable")
-    a, b = load(ap.dir_a), load(ap.dir_b)
+    args = ap.parse_args()          # the first version used `ap` itself: no such attributes
+    a, b = load(args.dir_a), load(args.dir_b)
     shared = sorted(set(a) & set(b))
     if not shared:
         print("  no cells in common -- nothing to compare"); return 1
@@ -43,7 +44,7 @@ def main():
         da = ja.get("device_pages_net") or ja.get("device_pages_read") or 0
         db = jb.get("device_pages_net") or jb.get("device_pages_read") or 0
         ra, rb = ja.get("pages_per_s_achieved", 0), jb.get("pages_per_s_achieved", 0)
-        n = ap.requests or ja.get("raw_row_requests") or 0
+        n = args.requests or ja.get("raw_row_requests") or 0
         ha = f"{1 - da / n:.3f}" if n else "-"
         hb = f"{1 - db / n:.3f}" if n else "-"
         ddev = abs(da - db) / max(1, da)
@@ -52,7 +53,7 @@ def main():
         print(f"  {tag:20s} {da:12,d} {db:12,d} {ddev:8.4%} {ra:9,.0f} {rb:9,.0f} "
               f"{drate:6.2%} {ha:>7s} {hb:>7s}")
     print(f"\n  worst device-page disagreement: {worst_dev:.4%}   worst rate difference: {worst_rate:.2%}")
-    if worst_dev < ap.noise:
+    if worst_dev < args.noise:
         print(f"  verdict: retention indistinguishable (<{ap.noise:.0%}); the arms do not differ in what")
         print("           the page cache kept. Any surviving rate difference is submit-path, not layout.")
     else:
