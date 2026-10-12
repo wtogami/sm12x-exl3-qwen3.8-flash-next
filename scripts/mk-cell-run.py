@@ -86,7 +86,11 @@ def build(base: list[str], name: str, image: str | None, envs: list[str], args: 
     out = out + ["--name", name]
     for kv in envs:
         out += ["-e", kv]
-    return out + [new_image] + tail + list(args)
+    cmd = out + [new_image] + tail + list(args)
+    # The image position is known here; re-detecting it later is what produced a false alarm, because
+    # the first non-flag token in a podman line is usually a flag's VALUE (nvidia.com/gpu=all for
+    # --device), not the image.
+    return cmd, len(out)
 
 
 def main() -> int:
@@ -103,25 +107,11 @@ def main() -> int:
     ap.add_argument("--emit", choices=("script", "line"), default="script")
     a = ap.parse_args()
 
-    cmd = build(create_command(a.base_container), a.name, a.image, a.env, a.arg, a.drop_env)
+    cmd, img_i = build(create_command(a.base_container), a.name, a.image, a.env, a.arg, a.drop_env)
 
-    # self-check: podman-level flags must never appear after the image
-    image_tok = a.image or None
-    for t in cmd:
-        if t.startswith("-"):
-            continue
-        if t in ("podman", "run"):
-            continue
-        image_tok = t
-        break
-    after = []
-    seen = False
-    for t in cmd:
-        if seen:
-            if t in PODMAN_ONLY:
-                after.append(t)
-        elif t == image_tok:
-            seen = True
+    # self-check: podman-level flags must never appear after the image. Container argv legitimately
+    # starts with flags (--enforce-eager, --max-model-len), so only the podman-only set is a bug.
+    after = [t for t in cmd[img_i + 1:] if t in PODMAN_ONLY]
     if after:
         raise SystemExit(f"BUG: podman flags after the image ({after}); they would become container argv")
 
