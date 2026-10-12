@@ -34,9 +34,12 @@ def config(path: Path, **overrides) -> Path:
     return path
 
 
-def check(cfg: Path, bytes_per_element: int, memtotal_gib: float, memavail_gib: float):
+def check(cfg: Path, bytes_per_element: int, memtotal_gib: float, memavail_gib: float,
+          strategy: str | None = None):
     script = ('source "%s/platform-config.sh" && qwen38_ple_memcheck "%s" %d %d %d'
               % (root, cfg, bytes_per_element, int(memtotal_gib * KIB), int(memavail_gib * KIB)))
+    if strategy is not None:
+        script = 'export PLE_PIN_STRATEGY=%s; ' % strategy + script
     return subprocess.run(['/bin/bash', '-c', script], capture_output=True, text=True)
 
 
@@ -98,6 +101,29 @@ with tempfile.TemporaryDirectory() as folder:
     assert missing.returncode == 0
     absent = check(Path(folder) / 'nope.json', 1, 125.68, 121.0)
     assert absent.returncode == 0 and 'skipping' in absent.stderr
+    # PLE_PIN_STRATEGY has to model what the loader actually does. round2 is torch's
+    # pin_memory path (rounds up); exact page-locks the true size through the driver.
+    bf16_exact = check(cfg, 2, 125.68, 49.0, strategy='exact')
+    assert refused.returncode != 0, 'round2 must still refuse BF16 on gg'
+    assert bf16_exact.returncode == 0, 'exact must flip that same verdict: 95.4+2 fits'
+    assert '%.1f GiB pins %.1f GiB' % (TABLE_BF16_GIB, TABLE_BF16_GIB) in bf16_exact.stderr
+    demand_exact = TABLE_BF16_GIB + EMBED_PIN_GIB
+    assert '%.1f' % demand_exact in bf16_exact.stderr, bf16_exact.stderr
+    assert 'WARNING' in bf16_exact.stderr, 'exact still pins 77.5%% of the host: warn band'
+    assert 'only honoured by a build carrying' in bf16_exact.stderr, \
+        'exact must warn that an image without the port silently ignores the variable'
+    fp8_exact = check(cfg, 1, 125.68, 121.0, strategy='exact')
+    assert fp8_exact.returncode == 0 and 'WARNING' not in fp8_exact.stderr, \
+        'FP8 exact pins 49.7 of 125.68 GiB; neither refusal nor warning'
+    tiny_exact = check(cfg, 2, 64.0, 60.0, strategy='exact')
+    assert tiny_exact.returncode != 0, 'exact must still refuse BF16 on a 64 GiB host'
+    bogus = check(cfg, 1, 125.68, 121.0, strategy='nonsense')
+    assert bogus.returncode == 0 and 'strategy round2' in bogus.stderr, \
+        'an unrecognised strategy falls back to the conservative rounding model'
+    results.append({'pin_strategy_exact_flips_verdict': True,
+                    'pin_strategy_warns_when_unsupported': True,
+                    'pin_strategy_still_refuses_when_genuinely_too_small': True,
+                    'pin_strategy_unknown_value_is_conservative': True})
     results.append({'refuses_bf16_on_small_host': True, 'allows_bf16_on_qualification_host': True,
                     'allows_fp8_where_bf16_refused': True, 'memory_pressure_warns_not_refuses': True,
                     'unparseable_skips': True, 'passed': True})

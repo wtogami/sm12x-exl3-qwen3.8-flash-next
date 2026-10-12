@@ -26,6 +26,7 @@ COPY patches/port-exl3-qwen38.py /tmp/port-exl3-qwen38.py
 COPY patches/qwen_host_embedding.py /usr/local/lib/python3.12/dist-packages/vllm/model_executor/layers/qwen_host_embedding.py
 COPY patches/qwen_vocab_projection.py /usr/local/lib/python3.12/dist-packages/vllm/model_executor/layers/qwen_vocab_projection.py
 COPY patches/qwen_nvfp4_moe.py /usr/local/lib/python3.12/dist-packages/vllm/model_executor/layers/qwen_nvfp4_moe.py
+COPY patches/qwen_pinned_host.py /usr/local/lib/python3.12/dist-packages/vllm/model_executor/layers/qwen_pinned_host.py
 RUN python3 /tmp/port-exl3-qwen38.py /usr/local/lib/python3.12/dist-packages/vllm \
  && python3 -c 'from vllm.model_executor.layers.quantization import get_quantization_config; assert get_quantization_config("exl3").__name__ == "Exl3Config"'
 
@@ -45,11 +46,13 @@ COPY patches/port-vocab-projection.py /tmp/port-vocab-projection.py
 COPY patches/port-nvfp4-moe.py /tmp/port-nvfp4-moe.py
 COPY patches/port-nvfp4-ple-ct.py /tmp/port-nvfp4-ple-ct.py
 COPY patches/port-exl3-ple-fp8.py /tmp/port-exl3-ple-fp8.py
+COPY patches/port-ple-exact-pin.py /tmp/port-ple-exact-pin.py
 RUN python3 /tmp/port-host-embedding.py /usr/local/lib/python3.12/dist-packages/vllm \
  && python3 /tmp/port-vocab-projection.py /usr/local/lib/python3.12/dist-packages/vllm \
  && python3 /tmp/port-nvfp4-moe.py /usr/local/lib/python3.12/dist-packages/vllm \
  && python3 /tmp/port-nvfp4-ple-ct.py /usr/local/lib/python3.12/dist-packages/vllm \
  && python3 /tmp/port-exl3-ple-fp8.py /usr/local/lib/python3.12/dist-packages/vllm \
+ && python3 /tmp/port-ple-exact-pin.py /usr/local/lib/python3.12/dist-packages/vllm \
  && python3 -c 'from vllm.model_executor.layers.quantization import get_quantization_config; assert get_quantization_config("exl3").__name__ == "Exl3Config"' \
  && python3 -c 'import vllm.models.qwen4_exp.nvidia.ple_pageable, vllm.models.qwen4_exp.nvidia.ngram_embedding'
 ENV EXL3_TRELLIS_MIN_M=1 \

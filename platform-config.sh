@@ -224,7 +224,18 @@ print(int(text["ngram_vocab_size_base"]), int(text["ple_embed_dim"]),
   # The token embedding table is pinned in host RAM in both PLE modes.
   embed_kib=$(( vocab * hidden * 2 / 1024 ))
   total_kib=$(( table_kib + embed_kib ))
-  table_pin_kib="$(qwen38_next_pow2 "$table_kib")"
+  # PLE_PIN_STRATEGY must agree with what the image's loader actually does; see
+  # patches/port-ple-exact-pin.py. "exact" page-locks the table at its true size via
+  # cudaHostAlloc, which does not round. "round2" (the default) is torch's pin_memory
+  # path and rounds to a power of two. The token embedding is rounded in BOTH modes --
+  # it still goes through pin_memory -- so only the table rounding is conditional.
+  local ple_pin_strategy="${PLE_PIN_STRATEGY:-round2}"
+  if [[ "$ple_pin_strategy" == "exact" ]]; then
+    table_pin_kib="$table_kib"
+  else
+    ple_pin_strategy="round2"
+    table_pin_kib="$(qwen38_next_pow2 "$table_kib")"
+  fi
   embed_pin_kib="$(qwen38_next_pow2 "$embed_kib")"
   demand_kib=$(( table_pin_kib + embed_pin_kib ))
   reserve_kib=$(( memtotal_kib * 5 / 100 ))
@@ -242,8 +253,9 @@ print(int(text["ngram_vocab_size_base"]), int(text["ple_embed_dim"]),
   if (( demand_kib > limit_kib )); then
     want_gib="$(qwen38_gib "$(( demand_kib + reserve_kib ))")"
     {
-      echo "Refusing to start: the PLE table is ${table_gib} GiB in the checkpoint, but PyTorch"
-      echo "rounds every pinned allocation up to a power of two, so it pins ${table_pin_gib} GiB."
+      echo "Refusing to start: the PLE table is ${table_gib} GiB in the checkpoint, but with"
+      echo "PLE_PIN_STRATEGY=${ple_pin_strategy} it needs ${table_pin_gib} GiB of pinned host memory"
+      echo "(PyTorch's pin_memory path rounds every allocation up to a power of two)."
       echo "With the token embedding pinned at ${embed_pin_gib} GiB the host has to commit"
       echo "${demand_gib} GiB of pinned host memory (${pct}% of the ${mem_gib} GiB installed), and"
       echo "that leaves the kernel and the page cache too little to work with."
@@ -270,7 +282,16 @@ print(int(text["ngram_vocab_size_base"]), int(text["ple_embed_dim"]),
     echo "  GiB host). 77.5% has been pinned by a probe but never served; above 77.5% nothing" >&2
     echo "  has been pinned at all. Expect failure if anything else holds pinned memory." >&2
   fi
-  echo "PLE pinned host memory: table ${table_gib} GiB pins ${table_pin_gib} GiB; with token" \
-     "embeddings ${demand_gib} GiB pinned against ${total_gib} GiB of checkpoint, on" \
-     "${mem_gib} GiB installed (${pct}%)." >&2
+  if [[ "$ple_pin_strategy" == "exact" && "$table_pin_kib" != "$table_kib" ]]; then
+    : # unreachable: exact mode pins the table at its own size
+  fi
+  if [[ "$ple_pin_strategy" == "exact" ]]; then
+    echo "NOTE: PLE_PIN_STRATEGY=exact is only honoured by a build carrying the" >&2
+    echo "  qwen_pinned_host port. On an image without it the variable is ignored and" >&2
+    echo "  the table pins ${table_gib} GiB as ${table_pin_gib} GiB instead -- this preflight" >&2
+    echo "  cannot see inside the image, so confirm the loader logs the exact-size line." >&2
+  fi
+  echo "PLE pinned host memory (strategy ${ple_pin_strategy}): table ${table_gib} GiB pins" \
+     "${table_pin_gib} GiB; with token embeddings ${demand_gib} GiB pinned against" \
+     "${total_gib} GiB of checkpoint, on ${mem_gib} GiB installed (${pct}%)." >&2
 }
