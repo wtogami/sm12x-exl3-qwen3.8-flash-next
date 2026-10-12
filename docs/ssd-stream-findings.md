@@ -815,7 +815,9 @@ Two consequences, one of them a feature idea:
 Boundaries on this result: one drive (PM9A1 on `burst`), one rewrite, one idle window. `gg`'s
 990 PRO measured 19,859 qd1 / 121,243 qd8 in the baselines, close to `burst`'s fast state, but
 **`gg` has not had a placement probe since** and it is the machine everything here is quoted
-against. Also, before anyone rewrites a Hugging Face blob, check its link count: cache blobs are
+against. Also, before rewriting a Hugging Face blob, check its link count -- cache blobs are
+frequently hardlinked, and rewriting through a hardlink silently rewrites every model that shares
+it. **[Later correction: that is the wrong check for a xet cache; see below.]** Also, before anyone rewrites a Hugging Face blob, check its link count: cache blobs are
 frequently hardlinked, and rewriting through a hardlink silently rewrites every model that shares
 it.
 
@@ -1873,15 +1875,65 @@ something to take on faith.
 | fragmentation hypothesis | derived from the above | **withdrawn** | an interpretation of garbage, and the more damaging loss: a confident paragraph built on invalid cells |
 | hardened placement probe (20.1k / 131k) | 02:2x | **stands** | post-restore, `--readonly`, file md5 unchanged before and after |
 
-**One limit stated plainly.** The earliest integrity anchor for the blob is an md5 taken at
-**01:41**. For runs before that, intactness is *inferred* -- no tool in this toolchain writes
+**That limit is now closed, and closed by someone else's numbers rather than mine.** Every shard
+was checked against the LFS `sha256` oids published by the Hub for revision
+`888306bd3996d6317758c07df50622829259ad17`: **22/22 match**, including
+`model-00019-of-00022.safetensors`, the shard I destroyed -- published `64db96ef9410180f...`,
+recomputed on disk `64db96ef9410180f...`, published size 8,594,481,976, restored size identical.
+Those oids were fixed before this machine was involved, so the whole checkpoint -- not just the
+restored shard -- is provably the published bytes. The "inferred, not recorded" caveat attached to
+runs earlier than 01:41 is withdrawn, and with it the last reason to re-run any engine measurement
+on corruption grounds.
+
+Getting there required matching through the cache's actual layout: 16 of 22 blobs are stored under
+their oid name, 6 are stored in the xet CAS under their `xetHash` name with an oid-named symlink
+pointing at them, so a naive name-keyed comparison reports 6 false failures. My first pass made
+exactly that error and printed "22 mismatches" when 16 hashes already agreed.
+
+Earlier still, that comparison was worse than wrong: I hand-transcribed the API listing into the
+script and corrupted the `xetHash` column (one value appeared twice), which manufactured the
+mismatches I then had to chase. **Fetch reference data; do not retype it.**
+
+The old limit read: the earliest integrity anchor for the blob is an md5 taken at **01:41**. For runs before that, intactness is *inferred* -- no tool in this toolchain writes
 except the one that did this, and engine output is bit-identical across the incident -- rather
 than recorded. A sha256 baseline for all 22 blobs has now been captured so the next claim rests
 on a hash and not an inference.
 
-**Mechanism worth keeping: writing to an mmap'd checkpoint is silent.** The engine had this blob
-mmapped. Writes through the page cache into that file replace pages the engine has not yet faulted
-in, which changes model weights with no error, no crash, and nothing in the log. Exposure here was
-zero by luck -- the engine served no requests during the window, and the restart re-read
-everything -- but the operating rule is not about `--readonly` alone: **never write to a
-checkpoint file while an engine has it mapped.** The failure mode is wrong tokens, not an outage.
+**A mechanism I claimed and then disproved.** I wrote that the engine had this blob mmapped, so
+writes through the page cache could have silently replaced weight pages it had not faulted in --
+"wrong tokens, not an outage", complete with a plausible-sounding mechanism. Checked properly, it is
+**false for a loaded engine**. `/proc/<worker>/maps` contains exactly two paths matching
+"safetensors", and both are shared libraries (`_safetensors_rust.abi3.so`,
+`fastsafetensors/...so`); zero mappings reference the checkpoint by either hash. vLLM streams
+weights into GPU memory at load and holds no file mapping afterwards. So the damage window had no
+path to silent weight corruption at all, and the failure mode was always the honest kind: the next
+load would fail outright.
+
+The residual truth is narrower: the risk exists **during** a load, between `safe_open` and the
+transfer to device memory, not for a model that has finished loading. Worth keeping as a caution,
+worth not repeating as a discovery. The general lesson is the one I keep failing to apply -- the
+confident mechanism story is exactly when to go look.
+
+
+## Two checks I praised tonight that were checking the wrong thing
+
+**"The blob's link count is 1, so there is no shared-hardlink hazard."** In a xet-backed HF cache
+nothing is hardlinked, so link count is one for every blob and the check passes vacuously. The
+sharing is done by **symlink indirection**: `models--<repo>/blobs/<sha256-oid>` is a symlink to
+`hub/blobs/<xx>/<xetHash>`, and a sidecar `<xetHash>.refs` lists who depends on it. Reading that
+file for the blob I damaged shows **two** dependent models:
+
+```
+  models--...--Qwen3.8-Flash-Next-EXL3-K4.25-v1/blobs/64db96ef9410...
+  models--...--Qwen3.8-Flash-Next-EXL3-K4.25-PLE-FP8-v1/blobs/64db96ef9410...
+```
+
+So the blast radius of the `fio --size` damage was **two checkpoints, not one** -- the BF16 variant
+shares the same CAS blob -- and my reassurance to the contrary was produced by a check that could
+not have failed. A check that cannot fail is not a check.
+
+**"Read the file to see what it is."** `cat` on a cache path follows the symlink, and the thing I
+believed was a 79-byte pointer file was a 79-character *symlink target* into 8.6 GB of weight
+bytes, which I duly streamed through a text filter into my own context. Check `stat -Lc %s` or
+`file` before printing anything from a cache directory; the 79 bytes that looked like a file size
+was a path length.
