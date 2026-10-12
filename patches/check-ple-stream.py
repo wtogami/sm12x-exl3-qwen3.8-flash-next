@@ -60,5 +60,16 @@ if VLLM is not None:
           ng.index("if stream_enabled():") < ng.index("elif engram_config is not None and "
                                                      "engram_config.checkpoint_mapped:"))
 
+# Static sweep: a wrong module prefix inside a function body is not importable at build time, so it hides
+# until the first engine start -- which is exactly how this repo has already wasted two boots.
+BAD_PREFIX = "vllm.model_executor.models.qwen4_exp"
+here = Path(__file__).resolve().parent
+offenders = []
+for f in sorted(here.glob("qwen_*.py")):
+    if BAD_PREFIX in f.read_text():
+        offenders.append(f.name)
+check("no overlay uses the non-existent vllm.model_executor.models.qwen4_exp path",
+      not offenders, ", ".join(offenders))
+
 print(f"  {'OK' if not fails else str(len(fails)) + ' FAILURE(S)'}")
 sys.exit(1 if fails else 0)
