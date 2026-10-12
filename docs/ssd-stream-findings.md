@@ -2149,6 +2149,36 @@ path, the boundary, the fan-out path, the whole table, and scattered non-monoton
 what let the earlier 24x-underfilled buffer look plausible: `0 of 4000 sampled` passes on a build
 that copies 1/24 of a batch if the sample lands in the copied part.
 
+## The BF16 checkpoint is already on disk, and it is the pathological case in its entirety
+
+Answering "does the NOCOW tree contain BF16 as well as FP8" turned up something I had been treating as
+hypothetical for hours. Both cache trees hold two checkpoints:
+
+| repo | n-gram table | where the bytes live |
+|---|---|---|
+| `EXL3-K4.25-PLE-FP8-v1` | 128 shards, `F8_E4M3`, 47.68 GiB | inside `models--…-PLE-FP8-v1/blobs/`, 74 GiB |
+| `EXL3-K4.25-v1` | 128 shards, **`BF16`, 95.37 GiB** | shared `hub/blobs/`, 174 GiB -- the model directory is 10 MiB of symlinks |
+
+The 174 + 74 = 247 GiB identity is what confirms nothing is double-counted, and it explains why the
+BF16 directory looked empty at a glance. Checking extent layout on the blobs that hold the BF16 table:
+
+| blob | original tree | NOCOW copy |
+|---|---|---|
+| `4abae2f51a5f45…` | 39,290 extents, 39,257 encoded | 2 extents, 0 encoded |
+| `32e7cfaa8ade48…` | 61,043 extents, 61,039 encoded | 1 extent, 0 encoded |
+| `bc2fe48ffe5df4…` | 61,043 extents, 61,035 encoded | 1 extent, 0 encoded |
+
+So where the FP8 table's own byte ranges measured 0.0% encoded, the BF16 table is ~100% encoded and
+shattered into sixty thousand fragments per 7.45 GiB file. Everything I had been arguing for BF16 by
+inference -- from `embed_tokens` and `lm_head` measuring 100% inside encoded extents -- is directly
+visible in the payload that would actually be served.
+
+Scope note that keeps this from becoming an argument for restarting something tonight: nothing on `gg`
+serves the BF16 variant. `gg` serves the FP8 PLE model, and the `K4.25-v1` weights in this cache are
+what the `burst` engine runs -- its own tree, which is not in scope because that engine is this
+session's reasoning backend. The NOCOW subvolume therefore already repairs 105 GiB of data that exists
+and would be served badly, but it still does not justify touching the running service.
+
 ## The checkpoint tree is 707,486 extents; the NOCOW copy is 132 -- and the reason is one mechanism, not two
 
 A second copy of the cache was made into a `chattr +C` subvolume on the same volume, content-verified
