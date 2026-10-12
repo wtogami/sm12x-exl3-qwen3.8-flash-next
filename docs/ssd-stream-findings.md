@@ -459,6 +459,52 @@ it must be verified as native GDS or not claimed at all.
   when addresses genuinely share a page, so the amplification figure stands as
   designed, not as measured-then-removed.
 
+### The table layout is prime-separated, which settles pages-per-token exactly
+
+`_make_vocab_layout` (`vllm/models/qwen4_exp/nvidia/ngram_embedding.py`) sizes each
+n-gram head with `_nth_prime_after(ngram_vocab_size_base - 1, global_head + 1)`, and
+each head's block starts where the previous one ended. For this model
+(`ngram_vocab_size_base = 20,000,000`, `ngram_heads = (ngram_size - 1) *
+heads_per_ngram = 16`) the sizes are the 16 successive primes 20,000,003 ..
+20,000,171, summing to 320,001,446, which `split_ngram_parts = 128` rounds up to
+320,001,536 = 128 x 2,500,012. That reproduces the checkpoint exactly: 128 shards
+contiguous 0..127, every one `[2500012, 160]`, and `ceil(320,001,446 / 128) =
+2,500,012` is the observed rows-per-shard. The padding rule was inferred from the
+arithmetic and the `make_ngram_vocab_size_divisible_by: 128` config key rather than
+read from code; the 90 dead rows are never addressed, so nothing downstream depends
+on that inference.
+
+Two consequences, both better than an estimate:
+
+* **The 16 rows of one token can never share a page, and the reason is now proven
+  rather than asserted.** Prime block sizes put every head start at an unrelated
+  residue mod 4096 -- measured 0, 960, 128, 2496, 1152, 3648 for the first six heads
+  in BF16. The bullet immediately above says nothing in the survey establishes a
+  layout that co-locates them; the layout itself forbids it, and padding each block
+  to a page multiple would change the prime arithmetic and the checkpoint bytes to
+  buy 3.0% of the pages for 1.6x the disk, which section 6 already measured and
+  rejected.
+* **Pages per token is 17.00, not the 16 this write-up had been using.** A row
+  touches one page unless it straddles, and the straddle rate is exact rather than
+  random: starts live at `head_start + local * ROW_BYTES`, so mod 4096 they occupy
+  only `4096 / gcd(ROW_BYTES, 4096)` residues. BF16 rows are 320 B,
+  `gcd(320, 4096) = 64`, giving 64 residues of which 4 (3840, 3904, 3968, 4032)
+  straddle, so 4/64 = 6.25% and `16 x 1.0625 = 17.00` pages/token. FP8 rows are
+  160 B, `gcd = 32`, 128 residues, 4 straddle, so 3.125% and 16.50. A 200,000-token
+  Monte Carlo over the real offsets returned 17.00 and 16.50 with 6.25% and 3.11%
+  straddling: the closed form, confirmed rather than approximated.
+
+The `12.8 rows per page` figure quoted from arXiv 2603.10087 is the *within-head*
+density (`4096 / 320`), not a divisor for pages-per-token. The two must not be
+conflated: 16 rows drawn from 16 separate blocks cost 17 pages however dense each
+block is. A 2048-token chunk therefore touches about 34,800 pages, and covering
+that inside a 3.6 s compute budget needs about 9,700 pages/s.
+
+A row also never crosses a shard *file*, structurally rather than rarely:
+`discover_table_layout` partitions rows, not bytes -- shard i owns rows
+`[i * S, min((i+1) * S, num_rows))` -- so a streaming resolver needs no cross-file
+logic at all.
+
 The plan's section 8 question 5 -- "SSD Stream used only 10 GB RAM resident,
 plausible?" -- is answered by its own repo: a 32 MiB page pool plus two 16 MiB
 staging buffers replaces a 47.68 GiB table. ~10 GiB of residue is ordinary
