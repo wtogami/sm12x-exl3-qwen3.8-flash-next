@@ -2195,6 +2195,39 @@ tokenizer -- no proxy in front of the thing doing this reasoning, no restart, no
 It records conversation content, so it is the user's call, and it should be time-boxed because agentic
 traffic re-sends whole contexts and fills disks quickly.
 
+### With the synthetic trace the ratio holds at 15.6x, and only the amplification changed
+
+Same blob pair, driven by `synth-session.rows.bin` with 320-byte rows, cold-started per cell.
+`dedup_saving_frac` 0.444 confirms locality was actually present, so the cells are meaningful; device
+volume fell in both arms, which was the pre-registered falsification check.
+
+| 4 GiB cache | encoded original | plain NOCOW copy |
+|---|---|---|
+| device reads | **149.53 GiB** | **9.61 GiB** |
+| amplification | 3.44x | 0.22x |
+| pages/s | 117,964 -- **11% below** the 132,734 prefill target | **187,537 -- 41% above** target |
+| hit rate | not meaningful (amplification > 1) | 0.779 |
+
+Three of four predictions held: amplification fell from 8.13x toward 3.44x as locality reduced misses;
+the plain arm's hit rate rose from 0.458 under uniform to 0.779; and the encoded arm remained far worse
+per byte served. The fourth failed and it was the load-bearing one -- I predicted the 15x device-volume
+ratio would narrow to 4-8x. It became 15.6x. The reasoning error was treating amplification and miss
+rate as independent: locality shrinks the miss count in *both* arms by roughly the same factor, so the
+per-miss cluster cost survives the change in traffic pattern. Amplification is a property of the extent
+encoding, not of the access model.
+
+The deployment statement is now sharper than the uniform result. Under a realistic reuse pattern at a
+4 GiB cache, the plain-extent BF16 table **meets** the prefill read rate with 41% headroom and the
+encoded one **misses it by 11%** -- the first cells all night where layout decides whether the
+requirement is met at all rather than by how much. `O_DIRECT` over the encoded file was still charged
+2.48x amplification, and over plain extents it was exactly 1.00x with zero cache growth, both below
+target as before.
+
+Caveats unchanged and inherited from the corpora: synthetic traffic, ids folded 12.8x into the blob's
+row space, uniform in the ratio sense but not from a real workload. The synthetic basis inflates
+locality, which if anything understates the encoded arm's disadvantage, since fewer real hits means more
+misses at 3.44x each.
+
 ## The BF16 table on encoded extents costs 15x the device traffic, and my prediction was wrong in kind
 
 Same bytes (`cmp`-verified, 8,013,268,456 both), same host, cold start enforced by `drop_caches` plus
