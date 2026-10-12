@@ -1747,6 +1747,8 @@ verify the reference, stage a copy, verify the staged copy's md5, `mv` it into p
   all 22 blobs: file size agrees with its own safetensors header   (0 mismatches)
   all 22 shards open via safetensors.safe_open the way the loader does  (0 failures)
   hardened probe re-run: size and md5 identical before and after
+  sha256 baseline captured for all 50 blobs on the volume, all 22 checkpoint shards covered;
+      the restored blob: sha256 64db96ef9410180f...  md5 05d83cc951f8b7b6...  size 8,594,481,976
   engine restarted from the restored checkpoint:
       SERVING after 120s   Model loading took 72.24 GiB and 191.96 s
       max-model-len 524288   checkpoint_mapped false   num_speculative_tokens 3
@@ -1770,13 +1772,23 @@ safetensors header.
 * **Record an md5 of any artifact before measuring against it.** The recovery worked because one
   existed for an unrelated reason; that is luck, not process.
 * **A verification script is itself a script, and needs the same care as the thing it checks.**
-  Four of them failed tonight while checking my own repair: `fio --size=20g` extended the file it
-  was meant to observe; `podman inspect -q -f` suppressed the format output so a readiness guard
-  could only ever report "not running"; a nested-quote syntax error killed the determinism check
-  *after* the script had printed a confident-looking config block; and `podman events` streams by
-  default, hanging a diagnostic. Two of those produced output that looked like a passed check
-  while checking nothing. When the tool is the thing standing between you and a corrupt
-  checkpoint, a broken check is not a cosmetic problem.
+  **Seven** of them failed tonight, and all seven were in the tooling I wrote to check my own
+  mistake: `fio --size=20g` extended the file it was meant to observe; `podman inspect -q -f`
+  suppressed format output so a readiness guard could only ever report "not running"; a
+  nested-quote syntax error killed the determinism check *after* the script had printed a
+  confident-looking config block; `podman events` streams by default and hung a diagnostic; a
+  redirect pointed at a local-only path that does not exist on the remote; `find -name "23224da14*"`
+  matched `*.lock` and then `*.refs` so two consecutive "verify the blob" steps hashed a 0-byte
+  and a 266-byte file instead of an 8 GiB one; and `date -ud "2026-10-12 01:41:29"` silently
+  treated a host-local timestamp as UTC, which would have told me the host runs UTC when it runs
+  CDT.
+  The pattern across all seven: **each one produced output that looked like an answer.** A guard
+  that can only read "not running", a hash of an empty file, and a timezone conversion that
+  returns the input digits are all indistinguishable from success unless the check asserts
+  something about its own inputs -- expected size, expected hash, expected offset. Every check in
+  this document that survived the night had a written-down expectation; every one that failed had
+  a plausible-looking output instead. When the tool is the only thing between you and a corrupt
+  checkpoint, a broken check is not cosmetic -- it is the failure.
 * **Verify a fixture's identity at every step that consumes it.** Two of tonight's three runs are
   valid only because the copies were md5-checked as they were built.
 
@@ -1808,7 +1820,12 @@ costs 8 GiB on a volume with 3.3 TB free.
 
 ## Trust table: which of tonight's measurements survived the file damage
 
-Damage window **01:56 -> 02:1x**, caused by `fio --size=20g` extending the production blob.
+**All times in this section are host-local `CDT` (`America/Chicago`, UTC-5), the clock `stat` and
+`podman inspect` report.** In UTC: the damage ran **06:56 -> 07:15 UTC**, and the 01:41 integrity
+anchor is **06:41 UTC**. This is stated because vLLM's own container logs run **UTC** -- the same
+instant appears as `07:18:03` in a log line and `02:18` on the host -- so cross-referencing this
+table against engine logs without the offset makes the incident look five and a half hours away
+from the measurements it invalidated.
 Everything below is classified against that timestamp, so the boundary is checkable rather than
 something to take on faith.
 

@@ -310,6 +310,12 @@ B comparison is the cheap and decision-relevant half -- one build, one env var, 
 claim about pinned bytes that is already provable from `/proc` in seconds.
 
 ## Steady-state scorecard: resolved in favour of layout -- NOCOW is a prerequisite
+> **Clock note for every timestamp in these docs:** host-local `CDT`, UTC-5 (`America/Chicago`),
+> which is what `stat`, `date` and `podman inspect` report. vLLM container logs are **UTC** and read
+> five hours ahead of the host for the same instant. `date -d` assumes UTC for an offset-less
+> string, so converting requires an explicit `TZ=` or offset -- a trap that produced one of seven
+> broken checks during the incident. See the incident section of `docs/ssd-stream-findings.md`.
+
 ### 10-pass resolution (same night, so the prediction and the answer sit together)
 
 NOCOW landed **inside** the pre-registered bands -- 42.9% at cap4 against 40-46%, 31.1% at cap3
