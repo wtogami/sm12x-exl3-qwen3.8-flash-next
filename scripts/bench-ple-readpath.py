@@ -408,8 +408,8 @@ def main():
     ap.add_argument("--evict-first", action="store_true",
                     help="fadvise DONTNEED the region before timing (whole range: proven effective)")
     ap.add_argument("--expect-access-model", choices=["uniform", "real-trace"], default="",
-                    help="fail the cell unless the realized traffic model matches; a missing
-                         --trace-file otherwise degrades a trace cell to uniform silently")
+                    help="fail the cell unless the realized traffic model matches; a missing "
+                         "--trace-file otherwise degrades a trace cell to uniform silently")
     ap.add_argument("--allow-mapped", action="store_true",
                     help="proceed even though a process maps the blob (warm-start cells)")
     ap.add_argument("--evict-lag-pages", type=int, default=0,
