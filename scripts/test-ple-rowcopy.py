@@ -87,8 +87,8 @@ def shard_test(args, sg, np):
             f = tempfile.NamedTemporaryFile(delete=False)
             f.write(data); f.close()
             paths.append(f.name); blobs.append(data)
-        st = sg.StreamTable(paths, rows_per_shard=rps, row_bytes=rb, threads=8,
-                            rowcopy_so=args.rowcopy or None)
+        st = sg.StreamTable.from_paths(paths, rows_per_shard=rps, row_bytes=rb, threads=8,
+                                       rowcopy_so=args.rowcopy or None)
         assert st.num_rows == nshard * rps, "row count must be shards x rows_per_shard"
 
         # split(): exact shard/local arithmetic, including boundaries
@@ -116,6 +116,28 @@ def shard_test(args, sg, np):
                 bad += 1
         print(f"  {'sharded gather':24s} rows={ids.size:6,d}  wrong={bad:6,d}  "
               f"{'PASS' if bad == 0 else 'FAIL'}")
+
+        # ownership rule, mirroring _gather_mapped_rows_kernel: unowned rows are ZERO, and the
+        # destination starts dirty so "skipped" would be visible as residue.
+        dirty = (ctypes.c_ubyte * (ids.size * rb))()
+        ctypes.memset(ctypes.addressof(dirty), 0xAB, ctypes.sizeof(dirty))
+        owned = np.ones(ids.size, dtype=bool)
+        owned[::3] = False                       # every third row belongs to another rank
+        st.gather_to(ids, dirty, owned=owned)
+        view = bytes(bytearray(dirty))
+        bad_o = 0
+        for i, r in enumerate(ids):
+            slot = view[i * rb:(i + 1) * rb]
+            if not owned[i]:
+                if slot != bytes(rb):
+                    bad_o += 1
+            else:
+                s, local = int(r) // rps, int(r) % rps
+                if blobs[s][local * rb:(local + 1) * rb] != slot:
+                    bad_o += 1
+        print(f"  {'ownership zeroing':24s} rows={ids.size:6,d}  wrong={bad_o:6,d}  "
+              f"{'PASS' if bad_o == 0 else 'FAIL (residue or wrong shard)'}")
+        bad += bad_o
 
         # out-of-range must raise, not clamp
         try:
