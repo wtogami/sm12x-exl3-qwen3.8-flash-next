@@ -2114,6 +2114,47 @@ measuring stick rather than the thing measured -- after `diskstats` field indice
 `du`-derived compression claim. The pattern is consistent enough to be a rule: when two of my
 instruments disagree, one of them is lying, and the one I notice is not necessarily the culprit.
 
+## The table is not compressed at all, so the layout thread was aimed at the wrong file
+
+With working controls, the question the last three sections circle resolves simply. Extent coverage
+measured against named tensor ranges inside the shards that hold the table:
+
+| file | range | dtype | size | in encoded extents |
+|---|---|---|---|---|
+| model-00001 | `ngram_embedding.shard_0.weight` | F8_E4M3 | 381.5 MiB | **0.0%** |
+| model-00001 | `ngram_embedding.shard_1.weight` | F8_E4M3 | 381.5 MiB | **0.0%** |
+| model-00001 | `embed_tokens.weight` | BF16 | 1,212.5 MiB | **100.0%** |
+| model-00001 | `lm_head.weight` | BF16 | 1,212.5 MiB | **100.0%** |
+| model-00002 | `ngram_embedding.shard_100/101.weight` | F8_E4M3 | 381.5 MiB each | **0.0%** |
+
+The BF16 rows are the positive control -- they prove the method detects compression -- and they sit
+entirely inside encoded extents. The FP8 table rows sit entirely outside them. Combined with
+compsize showing 13 of the 14 table-bearing files at `TOTAL 100%`, and with `model-00002` holding its
+3.73 GiB in a **single contiguous extent**, the conclusion is that btrfs declines to compress FP8
+weight bytes and the PLE table is already stored in the ideal layout: plain, uncompressed,
+contiguous.
+
+Three consequences, each of which undoes something I argued earlier.
+
+* **`compress=no` and `chattr +C` buy the FP8 table nothing today.** There are no encoded extents
+  over it to penalise. The controlled D-versus-E result (42.9% against 2.7% hits) is real, but it was
+  measured on `model-00019`, which contains no n-gram tensors at all, and whose own layout is 7%
+  encoded. The whole layout investigation has been about a penalty this payload does not carry.
+* **The BF16 case is where the advice actually applies, and it is now predicted rather than
+  guessed.** BF16 tensors demonstrably compress (embed_tokens and lm_head to ~79-86%) and land fully
+  inside encoded extents. A BF16 PLE table would therefore hit the retention penalty for real, which
+  is the opposite of what I wrote when I called the BF16 trade "flagged rather than guessed".
+* **Extent geometry is now the leading hypothesis for the D-versus-E gap**, not compression, because
+  the arms differed in CoW, extent count (5,337 against 65) and encoded-ness simultaneously. The
+  incompressible-payload pair isolates exactly that, and since the table files are already one or a
+  handful of contiguous extents, the practical exposure is small either way.
+
+Method note, because this is how the contradiction got published in the first place: my earlier
+"positive control" printed the *smallest* tensor -- the list was sorted ascending and I labelled
+element zero "largest" -- so it read "largest n-gram tensor: 0 MiB" from a 2-byte `weight_scale`
+entry and I concluded the mapping was broken when the data was fine. A control that is not checked
+for being capable of passing is not a control.
+
 ## The streaming gather prototype: the design I was building was 143x more expensive than it needed to be
 
 Built on `burst` (RTX PRO 6000 Blackwell, 96 GiB VRAM, 995 GiB RAM) against a 47.684 GiB fixture
