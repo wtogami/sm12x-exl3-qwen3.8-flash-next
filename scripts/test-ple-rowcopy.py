@@ -36,7 +36,9 @@ def main(argv=None):
     g._copy = sg._load_rowcopy(a.rowcopy or None)
     g._fan = cf.ThreadPoolExecutor(max_workers=g.threads)
     arena = (ctypes.c_ubyte * (a.rows * 160))()
-    g._arena_base = [ctypes.addressof(arena), ctypes.addressof(arena)]
+    g._nbuf = 4
+    g._arena_base = [ctypes.addressof(arena)] * g._nbuf
+    g._ev_armed = [False] * g._nbuf          # no CUDA here: buffers are always "free"
 
     failures = 0
     for n, label in ((16, "inline (decode-size)"), (4096, "inline boundary"),
