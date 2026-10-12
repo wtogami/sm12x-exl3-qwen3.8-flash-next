@@ -242,6 +242,8 @@ class TraceSource:
         self.pos = 0
 
     def take(self, count):
+        np = self.np  # numpy is imported lazily in __init__; a bare np here was a NameError that
+                      # meant every trace-driven cell died before issuing a single read.
         out = np.empty(count, dtype=np.int64)
         filled = 0
         while filled < count:
@@ -264,6 +266,62 @@ def id_stream(rng, count, n_rows, hot_fraction, hot_share, lo=0, span=None):
     hot_n = max(1, int(n_rows * hot_fraction))
     hot = [rng.randrange(hot_n) for _ in range(count)]
     return [h if rng.random() < hot_share else rng.randrange(n_rows) for h in hot]
+
+
+def parent_disk(name):
+    """nvme0n1p3 -> nvme0n1, sda2 -> sda. diskstats counters live on the parent, not the partition."""
+    if name.startswith(("nvme", "mmcblk", "loop")):
+        i = name.rfind("p")
+        return name[:i] if i > 0 and name[i + 1:].isdigit() else name
+    stripped = name.rstrip("0123456789")
+    return stripped or name
+
+
+def disk_for_path(path):
+    """Parent block device backing `path`, from the kernel's mount table, or "" if undetermined.
+
+    Device counters are the only evidence separating a page-cache hit from a disk read, and
+    pointing them at the wrong disk fails *silently*: it yields a confident, wrong hit rate. So
+    resolve the blob's real backing device and refuse the cell when --dev disagrees.
+
+    This goes through /proc/self/mountinfo, not st_dev: btrfs reports an anonymous device number
+    with no /sys/dev/block entry, so the st_dev route -- which looks principled -- returns junk
+    on exactly the filesystem holding the checkpoint. Callers must treat "" as "cannot verify",
+    not as "no device".
+    """
+    try:
+        real = os.path.realpath(path)
+    except OSError:
+        return ""
+    best_mp, best_majmin, best_src = "", "", ""
+    try:
+        with open("/proc/self/mountinfo") as fh:
+            for line in fh:
+                parts = line.rstrip("\n").split(" - ")
+                if len(parts) < 2:
+                    continue
+                left, right = parts[0].split(), parts[1].split()
+                if len(left) < 5:
+                    continue
+                majmin, mp = left[2], left[4]  # NOT left[3]: that is the root-within-device
+                src = right[1] if len(right) > 1 else ""  # index 2 is super-options
+                if mp == "/" or real == mp or real.startswith(mp.rstrip("/") + "/"):
+                    if len(mp) >= len(best_mp):
+                        best_mp, best_majmin, best_src = mp, majmin, src
+    except OSError:
+        return ""
+    name = ""
+    probe = f"/sys/dev/block/{best_majmin}"
+    if best_majmin and os.path.exists(probe):
+        name = os.path.basename(os.path.realpath(probe))
+    if not name and best_src.startswith("/dev/"):
+        try:
+            name = os.path.basename(os.path.realpath(best_src))
+        except OSError:
+            name = ""
+    if not name or ":" in name:
+        return ""
+    return parent_disk(name)
 
 
 def main():
@@ -314,6 +372,18 @@ def main():
     ap.add_argument("--min-working-set", type=int, default=8 * 2**30,
                     help="warn below this many touched bytes (drive DRAM cache)")
     args = ap.parse_args(a)
+
+    if getattr(args, "dev", "") and getattr(args, "blob", ""):
+        backing = disk_for_path(args.blob)
+        if backing and backing != args.dev:
+            raise SystemExit(
+                f"--dev {args.dev} does not back {args.blob}: the kernel says {backing}. Device "
+                "counters would measure a different disk than the one serving these reads, which "
+                "would make the reported hit rate meaningless.")
+        elif backing:
+            print(f"  device check: {args.blob} is on {backing}; counters attributed there",
+                  file=sys.stderr)
+
 
     bs = page_index(args.blob)
     size = os.stat(args.blob).st_size
@@ -413,7 +483,7 @@ def main():
                 job["done"] += 1
                 cv.notify_all()
 
-    pool = [threading.Thread(target=worker, args=(i,)) for i in range(args.threads)]
+    pool = [threading.Thread(target=worker, args=(i,), daemon=True) for i in range(args.threads)]
     for th in pool:
         th.start()
 
@@ -549,8 +619,11 @@ def main():
         # amplification is the separate and much larger number: bytes fetched per byte used.
         "pages_per_row": round(requested / max(1, rows_total), 4),
         "pages_per_token": round(requested / max(1, rows_total / args.rows_per_token), 4),
-        "raw_row_requests": rows_total * args.rows_per_token,
-        "dedup_saving_frac": round(1 - requested / max(1, rows_total * args.rows_per_token), 4),
+        # rows_total ALREADY counts token x head (take() is handed tokens_per_step * rows_per_token),
+        # so multiplying by rows_per_token again inflated the request count 16x and made the dedup
+        # saving read 96.7% where brute-force reuse counting says 47.5%.
+        "raw_row_requests": rows_total,
+        "dedup_saving_frac": round(1 - requested / max(1, rows_total), 4),
         "access_model": "real-trace" if args.trace_file else "uniform",
         "tokens_per_step": args.tokens_per_step,
         "byte_amplification": round(bs / args.row_bytes, 2),
