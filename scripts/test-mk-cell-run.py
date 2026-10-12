@@ -29,19 +29,28 @@ def gen(base, *extra):
     return shlex.split(line[len("exec "):])
 
 
-def image_index(toks):
-    seen_pod = False
-    for i, t in enumerate(toks):
-        if t in ("run", "create"):
-            seen_pod = True
-            continue
-        if not seen_pod or t.startswith("-"):
-            continue
-        # skip flag values by relying on the generator's own invariant: the first non-flag after the
-        # subcommand that looks like an image reference
-        if "/" in t or ":" in t:
-            return i
-    raise AssertionError("no image token found in generated line")
+def base_image(container: str) -> str:
+    r = subprocess.run(["podman", "inspect", container, "--format", "{{.Config.Image}}"],
+                       capture_output=True, text=True)
+    if r.returncode != 0:
+        raise AssertionError(f"cannot read image of {container}: {r.stderr.strip()[:120]}")
+    return r.stdout.strip()
+
+
+def image_index(toks, expected):
+    """Locate the image by exact string, not by heuristic.
+
+    "First non-flag token containing a slash" matched `nvidia.com/gpu=all`, the value of --device, and
+    made this test report a correct generated line as broken. We always know the exact image string, so
+    there is nothing to infer.
+    """
+    if expected not in toks:
+        raise AssertionError(f"image {expected!r} absent from generated line")
+    i = toks.index(expected)
+    if toks[i - 1].startswith("-") and toks[i - 1] in ("-e", "--env", "-v", "--volume", "--device",
+                                                       "--name", "--network", "--ipc"):
+        raise AssertionError(f"{expected!r} matched a flag's value, not the image position")
+    return i
 
 
 def main():
@@ -57,10 +66,11 @@ def main():
         if not cond:
             fails += 1
 
+    bimg = base_image(a.base_container)
     toks = gen(a.base_container, "--name", "ple-bench", "--image", a.image,
                "--env", "PLE_STREAM=1", "--env", "VLLM_USE_BREAKABLE_CUDAGRAPH=1",
                "--drop-env", "PLE_PIN_STRATEGY", "--arg=--enforce-eager")
-    img = image_index(toks)
+    img = image_index(toks, a.image)
     pre, post = toks[:img], toks[img + 1:]
 
     check("image replaced with the requested one", toks[img] == a.image)
@@ -76,14 +86,14 @@ def main():
 
     # things the original container needs that a reconstruction tends to forget
     base_line = gen(a.base_container, "--name", "ple-bench")
-    bi = image_index(base_line)
+    bi = image_index(base_line, bimg)
     bpre = base_line[:bi]
     flagbag = " ".join(bpre)
     check("--network preserved", "--network" in flagbag or "--network=" in flagbag)
     check("--ipc preserved", "--ipc" in flagbag)
     check("--device preserved", "--device" in flagbag)
     check("volumes preserved", "-v" in bpre or "--volume" in bpre)
-    check("omitting --image keeps the base image", base_line[bi] != a.image)
+    check("omitting --image keeps the base image", base_line[bi] == bimg and bimg != a.image)
 
     print(f"  {'ALL PASS' if fails == 0 else str(fails) + ' FAILURE(S)'}")
     return 1 if fails else 0
