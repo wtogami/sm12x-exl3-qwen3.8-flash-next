@@ -73,15 +73,18 @@ run_capped() {  # $1 mode $2 threads $3 gib $4 tag
   wait_idle || return 1
   timeout 2400 podman run --rm --memory "${3}g" --memory-swap "${3}g" \
     -v "$PWD/scripts/bench-ple-readpath.py:/work/bench.py:ro,Z" \
+    # /proc/diskstats is not namespaced, so device counters inside the container are the
+    # host's -- which is what we want here, but only because wait_idle() ran first.
     -v "$BLOB:/work/blob:ro,Z" \
     "$IMG" python3 /work/bench.py --blob /work/blob --tensor "$TENSOR" \
       --mode "$1" --threads "$2" --tokens-per-step "${TOKS:-2048}" --steps "${STEPS:-150}" \
       --evict-first --residency --residency-gib 8 --dev "${DEV:-nvme0n1}" \
       --target-pages-per-s "${TARGET:-115700}" --min-working-set "$((16*2**30))" \
       --output /work/out.json >"$OUT/$3.log" 2>&1
-  # the container's --output is inside its own filesystem, so copy it out
-  timeout 60 podman run --rm --entrypoint cat -v "$PWD:/work" "$IMG" true >/dev/null 2>&1
-  sed -n '/^{/,$p' "$OUT/$3.log" > "$OUT/$3.json" || true
+  # The instrument writes its receipt into the container, where nothing is mounted
+  # writable (SELinux refuses directory bind-mounts on gg), so the receipt is taken from
+  # stdout -- the script prints the same JSON it writes. No stray second container run.
+  sed -n '/^{$/,/^}$/p' "$OUT/$3.log" > "$OUT/$3.json" || true
   echo "    rc=$?  (parsed $(wc -c < "$OUT/$3.json" 2>/dev/null) bytes of json)"
 }
 
