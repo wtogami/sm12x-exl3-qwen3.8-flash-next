@@ -296,11 +296,11 @@ print(int(text["ngram_vocab_size_base"]), int(text["ple_embed_dim"]),
 
   if (( avail_kib < embed_pin_kib + cache_min_kib )); then
     {
-      echo "Refusing to start with PLE_STREAM=1: the token embedding alone pins"
-      echo "$(qwen38_gib "$embed_pin_kib") GiB, and only $(qwen38_gib "$avail_kib") GiB of headroom is"
-      echo "left -- less than the $(qwen38_gib "$cache_min_kib") GiB floor below which the page cache"
-      echo "cannot hold a useful fraction of the working set. Streaming moves the table out of pinned"
-      echo "RAM into page cache; with no cache to speak of it does the worst of both."
+      echo "Refusing to start with PLE_STREAM=1: only $(qwen38_gib "$avail_kib") GiB of memory headroom,"
+      echo "which has to cover both the $(qwen38_gib "$embed_pin_kib") GiB pinned token embedding and the"
+      echo "$(qwen38_gib "$cache_min_kib") GiB page-cache floor -- $(qwen38_gib "$(( embed_pin_kib + cache_min_kib ))") GiB"
+      echo "together. Streaming moves the table out of pinned RAM into page cache; with barely any"
+      echo "cache to speak of it pays the disk cost without the RAM saving it exists to provide."
       echo "Raise the cgroup limit / free RAM, or set PLE_STREAM_CACHE_GIB to state a smaller floor"
       echo "deliberately, or QWEN38_SKIP_MEMCHECK=1 to override without saying why."
     } >&2
