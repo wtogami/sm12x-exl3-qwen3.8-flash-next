@@ -484,6 +484,47 @@ issued. Sizing comes from measured request throughput instead: 177,409 pages/s a
 At 64 GiB the table simply lives in RAM -- as page cache, not pinned.
 Warm-up cost is one full pass: 12.5M pages at ~130k pages/s is about 96 s of background reading.
 
+## Revised target-host verdict after the traces and the prototype (this supersedes the table above)
+
+The table above sizes hosts from `C/N`, which assumes uniform random access. That assumption is
+wrong by a factor of ~2.5, and the streaming gather is far cheaper than the same assumption implied.
+Both were measured since.
+
+| quantity | assumed | measured | source |
+|---|---|---|---|
+| hit rate, 32 GiB host (19.4 GiB cache) | ~41% | **86-91%** | exact reuse distances on a serving-shaped token trace |
+| hit rate, 6.2 GiB cache | ~13% | **86.4%** | same |
+| working set, 2.28M-token session | -- | **14.7 GiB** | distinct pages touched |
+| gather requests per token | 16 | **16 -> 8.4 after within-batch dedup (47.5% removed)** | same trace |
+| exposed gather cost, prefill | unknown | **0.22% p50 / 0.39% p99**, cold, 24 threads, pipelined | burst, 20 GiB cgroup cap |
+| exposed gather cost, decode | unknown | **16.6 us p50**; 1.4 ms p99 when cache < working set | burst |
+| device load at 32 GiB | 76-100k pages/s | **~15-24k page misses/s** against 177-227k measured capability | trace + matrix |
+
+Consequences, in order of importance:
+
+* **32 GiB is not marginal; it has roughly an order of magnitude of I/O headroom.** The binding
+  constraint is the submit path's request rate, and that is nearly free once the fill is a C call
+  per thread slice rather than a Python loop.
+* **~20 GiB of RAM is a plausible target**, since ~6.2 GiB of cache already measured 86.4%. Below
+  the working set the cost shows up as decode tail latency (p99 1.4 ms), not throughput collapse.
+* **The hot list stays cancelled and warm-up stays optional.** LRU is within a few points of the
+  achievable ceiling at matched capacity, and the page cache survives engine restarts.
+* **`chattr +C` before download is still required**, now with a control: identical bytes written in
+  the same minute gave 42.9% hits plain versus 2.7% encoded, and 0.00 versus +0.58 GiB of
+  `O_DIRECT` cache pollution.
+* **The staging fill must be native code.** Per-row `pread` from Python was GIL-bound and got
+  *slower* with more threads; one `memcpy` call per slice released the GIL and scaled 2,800x better
+  in aggregate throughput.
+
+What is still assumed rather than measured, and therefore gates any recommendation: the exposed-cost
+ratio uses `gg`'s prefill rate as the denominator while the pipeline ran on `burst`; hit rates come
+from one-shot corpora of available text rather than logged traffic; the engine has never actually
+run this path, so output identity against the pinned arm is unverified; and the in-cgroup share of
+the engine's ~12.6 GiB resident floor is unmeasured with a GPU attached, which moves the cache
+budget the sizing depends on.
+
+### Superseded sizing table
+
 ### Retraction two: "the cache bonus costs the RAM you came to save" is wrong for page cache
 
 I argued that a large cache benefit requires spending the memory streaming exists to free. That
