@@ -3019,3 +3019,59 @@ Smaller notes: an argparse help string containing a bare `%` raises at `add_argu
 `py_compile` cannot see; and my habit of piping runs through `grep '^prefill'` hid that traceback entirely,
 making a crashed probe look like a silent one — the same shape as the "failed cell looked like a running
 one" defect from the read-path instrument. Both now checked by importing the module and reading `tail`.
+
+# The 2×2 result: v1 costs 22% of decode, and most of it is the graphs, not the streaming
+
+Eight cells, two repeats, every cell correctness-clean — `strict a6cc8fed286b7071` in all eight, including
+both streaming cells and both graph regimes, so five single-chunk greedy completions are byte-identical
+between the pinned backend and the streaming backend. Medians, with each cell's own spread:
+
+| cell | prefill tok/s (spread) | decode tok/s (spread) | Shmem | device reads, ~16 reqs |
+|---|---|---|---|---|
+| `pinned-default` | 18,211 (0.1%) | **162.8** (1.1%) | 66.18 GiB | 3.5 MiB |
+| `pinned-breakable-pw` | 17,517 (0.1%) | **133.9** (1.6%) | 68.43 GiB | 3.3 MiB |
+| `stream-breakable-pw` | 15,382 (0.7%) | 126.7 (3.5%) | **4.44 GiB** | **46.7 MiB** |
+| `stream-eager` | 15,694 (0.9%) | **26.0** (2.7%) | 4.44 GiB | 3.4 MiB |
+
+**Pair 1 — the graph regime alone, with streaming OFF.** Decode 162.8 → 133.9 = **−17.8%**, against
+spreads of 1.1% and 1.6%. Prefill −3.8% against spreads of 0.1%. This cell was the pre-registered decision
+test and it is unambiguous: giving up FULL cudagraphs costs ~18% of decode by itself, before any streaming
+work happens at all. The rule I wrote before the run — *material delta means v1 is the wrong architecture
+however well it passes* — therefore fires. The plan document said so at 00:49 and I did not listen.
+
+**Pair 2 — streaming's own cost at matched graph mode.** Decode −5.4% (1.6%/3.5% spreads: borderline, the
+only number in this table I would not quote alone) and prefill **−12.2%** (0.1%/0.7%: solid). That −12.2% is
+far more than the prototype's ~0.5% exposed fill, and the reason is v1's shape rather than the I/O: ids go
+to the host synchronously, the gather runs inline in the model forward, and the H2D is `non_blocking=False`.
+Serialized, not overlapped. Both problems disappear in the pre-replay design.
+
+**Total as built**: decode −22.2%, prefill −15.5%, in exchange for 61.7 GiB of pinned host memory. Note the
+prefill comparison is streaming's *best case*: page cache held 82–84 GiB here, so nearly every row was a
+cache hit and the device saw 46.7 MiB across the probe. On a 32 GiB host the same table gets 0.744–0.797
+hits, so this −12.2% is a floor, not an estimate.
+
+## A three-cell coincidence that explains an anomaly I had filed as unexplained
+
+Decomposing `Shmem` against known pins (table `PowerOf2Ceil(47.684) = 64.000`, token embedding `2.000`):
+
+| cell | Shmem | table | embed | other |
+|---|---|---|---|---|
+| pinned-default (FULL graphs) | 66.18 | 64.00 | 2.00 | **0.18** |
+| pinned-breakable-pw | 68.43 | 64.00 | 2.00 | **2.43** |
+| stream-breakable-pw | 4.44 | 0.00 | 2.00 | **2.44** |
+| stream-eager | 4.44 | 0.00 | 2.00 | **2.44** |
+
+`other` is 0.18 GiB with FULL graphs and 2.43–2.44 GiB in *both* non-FULL modes, across two different
+backends. That is the +2.25 GiB I saw under `ENFORCE_EAGER` earlier and could not account for — now
+reproduced independently, in breakable mode, on the pinned backend too. So the streaming Shmem of 4.44 is
+not mysterious: 2.00 embed + ~2.25 non-FULL-graph surcharge + 0.18 ordinary. It also yields a falsifiable
+prediction for the pre-replay design, which keeps FULL graphs: **streaming should land at ~2.18 GiB, not
+4.44**. Correlation across three cells and two backends is not a mechanism, so I am not claiming one.
+
+## Ordering effect I should have expected
+
+`stream-eager` did 3.4 MiB of device reads while `stream-breakable-pw` did 46.7 MiB, both streaming, both
+with the table unpinned. The eager cell ran after the breakable cell, so the table was already resident from
+its predecessor's faults. Cells are not I/O-independent when they share a page cache; the first streaming
+cell pays for everyone. Reading those two numbers as a pair would have produced a 14x "eager reads less"
+result that is pure sequencing.
