@@ -2149,6 +2149,51 @@ path, the boundary, the fan-out path, the whole table, and scattered non-monoton
 what let the earlier 24x-underfilled buffer look plausible: `0 of 4000 sampled` passes on a build
 that copies 1/24 of a batch if the sample lands in the copied part.
 
+## The checkpoint tree is 707,486 extents; the NOCOW copy is 132 -- and the reason is one mechanism, not two
+
+A second copy of the cache was made into a `chattr +C` subvolume on the same volume, content-verified
+against the baseline (50/50 sha256, plus a full byte comparison of a 6.35 GiB blob). Measuring the
+layout with `filefrag` field accounting rather than a regex:
+
+| tree | extents across shard blobs | of which encoded |
+|---|---|---|
+| original | 707,486 | 706,770 |
+| NOCOW copy | **132** | **0** |
+
+`model-00001`, which holds n-gram shards 0, 1 and 10, goes from 21,777 extents (21,745 encoded) to 4.
+The blobs that never compressed were already at 4-6 extents. I initially called this two independent
+benefits -- encoded extents plus fragmentation -- and that was wrong: 99.9% of the extents were
+encoded, so the fragmentation is compression's symptom rather than a second cost. The 256 MiB test
+said so at the time: the compressing file shattered into 2,048 extents, the NOCOW file wrote in two.
+
+Extent count versus bytes is also worth pinning, because both statements are true and they sound like
+contradictions. In `model-00001` 21,745 of 21,777 extents are encoded, but those encoded extents carry
+2.65 GiB of the file's 6.35 GiB; the n-gram shard ranges specifically measure 0.0% encoded because
+FP8 bytes do not compress. So "almost every extent is encoded" and "the table's bytes are not in
+encoded extents" describe different units of the same file.
+
+**Retraction, instrument kind:** the "1000 extents" I reported earlier was not GNU grep lacking `\s`
+-- `\s` works fine -- but `filefrag` right-aligning its extent index and emitting *no leading space*
+from extent 1000 onward, so `^\s+[0-9]+:` silently matched only the first thousand. A round number
+that equals a suspiciously familiar constant is a formatting boundary until proven otherwise.
+
+## O_DIRECT over compressed extents is not O_DIRECT
+
+The same comparison produced this in the original (compressed) arm:
+
+    odirect-t8-host   117,775 pages/s  device 8,300,611  fs amp 0.75x  cache grew 2.66 GiB  !direct-populated-cache
+    odirect-t8-host   (NOCOW copy) 97,736 pages/s  device 11,072,382  fs amp 1.00x  cache grew 0.00 GiB
+
+The compressed file's "O_DIRECT" run *grew the page cache* and read fewer pages from the device than
+were requested -- btrfs cannot service direct I/O over encoded extents and quietly routes those reads
+through the buffered path. So yesterday's flat statement that O_DIRECT tops out at 85.6k pages/s needs
+a qualifier: over a compressed file it looked *faster* (117.8k against 97.7k) precisely because it was
+not doing what it was asked. Any O_DIRECT measurement on btrfs has to assert zero cache growth, which
+is why the instrument flags it rather than reporting a rate.
+
+**Retraction, conclusion kind:** "O_DIRECT cannot sustain the prefill page rate" survives only for
+uncompressed data. Over compressed extents the number is not an O_DIRECT measurement at all.
+
 ## Levelling the page cache changes nothing, and that result costs me a claim I made yesterday
 
 The `drop_caches` grant exists now (`/usr/local/bin/ple-drop-caches`, granted NOPASSWD to `rtx`,
