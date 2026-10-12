@@ -309,6 +309,33 @@ design, roughly **half a day** including both builds and the C-only instrumentat
 B comparison is the cheap and decision-relevant half -- one build, one env var, and a
 claim about pinned bytes that is already provable from `/proc` in seconds.
 
+## Pre-registered: the concentration-curve gate (written before any trace exists)
+
+This is the only remaining measurement that can beat the `C/N` ceiling, so its decision rule goes
+down first. Method: port `compute_ngram_ids` to numpy, validate it against the engine's own CPU
+path (`cpu_ngram_ids_fn`) for **exact id equality** on a fixed prompt batch -- a hash-level fixture
+gate, not a visual check -- then histogram ids into pages on real text (the receipts' prompts plus
+a code and a prose corpus).
+
+The uniform-access null is the thing being tested: if access is uniform, the top-41% of pages by
+frequency carry exactly 41% of accesses and a hot list is worthless. So:
+
+| result at 32 GiB (41% of pages cached) | verdict |
+|---|---|
+| hot 41% of pages carry **>= 55%** of accesses | build hot-list warm-up; expected ~14pp over `C/N` |
+| hot 41% carry **48-55%** | build it only if it is nearly free; document as marginal |
+| hot 41% carry **< 48%** | **kill the feature.** Warm-up stays a strided sample; `C/N` is the law |
+
+Secondary pre-registered reads, same trace: cold fraction over the first 1k / 10k / 100k gathered
+ids (this is what warm-up actually removes, and under uniformity it is the *only* thing it removes);
+and whether the curve survives a domain switch from code to prose, since a popularity list that
+does not transfer between workloads is a per-deployment artefact, not a feature. Granularity is
+reported at both 4 KiB and 2 MiB, because the warm-up I/O cost differs by ~23% between them via
+metadata amplification.
+
+If any of these bands is missed, the honest output is "warm-up does not pay" and the design gets
+simpler, not more elaborate.
+
 ## Steady-state scorecard: resolved in favour of layout -- NOCOW is a prerequisite
 > **Clock note for every timestamp in these docs:** host-local `CDT`, UTC-5 (`America/Chicago`),
 > which is what `stat`, `date` and `podman inspect` report. vLLM container logs are **UTC** and read
@@ -444,11 +471,17 @@ different figure at these host sizes:
 | host | minus 12.6 GiB floor | page cache for the table | steady-state hit | device load (of 128k-170k pages/s) | threads / cores |
 |---|---|---|---|---|---|
 | 16 GiB | ~3.4 GiB, less the OS | 3.4 GiB of 47.68 | **~7%** | 119k-158k | ~8-10 / ~2.5 |
-| 32 GiB | ~19.4 GiB | 19.4 GiB | **~41%** | 76k-100k | ~5-6 / ~1.2-1.6 |
+| 32 GiB | ~19.4 GiB | 19.4 GiB | **~41%** | 76k-100k | **~8-12 / ~2.4** (see note) |
 | 64 GiB | ~51.4 GiB | whole table | **approaches 100%** | near zero once warm | warm-up only |
 
 At 32 GiB the device carries 60% of the requirement, which the measured 163,834 pages/s at 8
-threads covers with room. At 64 GiB the table simply lives in RAM -- as page cache, not pinned.
+threads covers with room. **Correction to the threads column, from the layout findings.** The ~5-6 threads / ~1.2-1.6 cores
+figure was derived from the *device* load, which is the wrong driver: the gather must issue the full
+request rate whatever the hit rate is -- hits make requests cheap, they do not reduce how many are
+issued. Sizing comes from measured request throughput instead: 177,409 pages/s at 8 threads cost
+~2.4 cores on the NOCOW layout, against a 170,126 pages/s hard end, so 12 threads for margin.
+
+At 64 GiB the table simply lives in RAM -- as page cache, not pinned.
 Warm-up cost is one full pass: 12.5M pages at ~130k pages/s is about 96 s of background reading.
 
 ### Retraction two: "the cache bonus costs the RAM you came to save" is wrong for page cache
