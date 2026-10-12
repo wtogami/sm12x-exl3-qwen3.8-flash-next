@@ -9,6 +9,7 @@ image (they become container argv), env not reaching the worker, --enforce-eager
 command line instead of vllm's, and the image silently not being replaced.
 """
 import argparse
+import json
 import os
 import shlex
 import subprocess
@@ -18,6 +19,14 @@ PODMAN_ONLY = {"-e", "--env", "-d", "--detach", "--name", "-v", "--volume", "--d
                "--network", "--ipc", "--security-opt", "--annotation", "-p", "--publish"}
 HERE = os.path.dirname(os.path.abspath(__file__))
 GEN = os.path.join(HERE, "mk-cell-run.py")
+
+
+def _is_json(s):
+    try:
+        json.loads(s)
+        return True
+    except Exception:
+        return False
 
 
 def gen(base, *extra):
@@ -110,6 +119,20 @@ def main():
     same = norm_ref(base_line[bi]) == norm_ref(bimg)
     swapped = norm_ref(base_line[bi]) != norm_ref(a.image)
     check("omitting --image keeps the base image", same and swapped)
+
+    # Argument fidelity. The generator once round-tripped CreateCommand through a joined string and
+    # shlex.split, which silently deleted the double quotes inside --hf-overrides' JSON value; the
+    # container then died on its own argv. Flag positions were perfect, so no positional check could see
+    # it. Assert the JSON survives with its quotes, on a container that actually carries one.
+    full = gen(a.base_container, "--name", "ple-bench")
+    joined = " ".join(full)
+    if "--hf-overrides" in joined:
+        i = full.index("--hf-overrides")
+        val = full[i + 1]
+        check("JSON-valued arg survives with quotes", '\"' in val and val.startswith("{"))
+        check("JSON-valued arg still parses as JSON", _is_json(val))
+    else:
+        print("  SKIP  no JSON-valued arg on this container to check")
 
     print(f"  {'ALL PASS' if fails == 0 else str(fails) + ' FAILURE(S)'}")
     return 1 if fails else 0
