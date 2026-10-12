@@ -1805,3 +1805,35 @@ first start after this may simply be slower until the page cache refills.
 The `chattr +C` reference copy is **kept deliberately** -- it is a verified, byte-identical,
 NOCOW-laid-out 8 GiB fixture, which is precisely what the layout-vs-placement redo needs, and it
 costs 8 GiB on a volume with 3.3 TB free.
+
+## Trust table: which of tonight's measurements survived the file damage
+
+Damage window **01:56 -> 02:1x**, caused by `fio --size=20g` extending the production blob.
+Everything below is classified against that timestamp, so the boundary is checkable rather than
+something to take on faith.
+
+| measurement | when | status | why |
+|---|---|---|---|
+| pinned vs exact-size pair (A1/B1/A2/B2) | 23:19-01:00 | **stands** | completed long before; read-only access |
+| 24-cell read-path matrix | 00:05-01:05 | **stands** | pre-damage; `preadv`/`O_DIRECT`/`fadvise` only |
+| 3.2-pass steady-state run | 01:21-01:40 (RUN 1 of that job) | **stands** | pre-damage |
+| eager / CUDA-graph cost | 00:49 | **stands** | pre-damage; engine-side, no file writes |
+| 10-pass encoded run (RUN 1) | 01:21-01:40 | **stands** | pre-damage |
+| 10-pass NOCOW run (RUN 2) | 01:41-01:53 | **stands** | reads the separate `chattr +C` copy, made 01:41 and md5-verified against the pristine original |
+| first placement probe (20.6k / 154k) | 01:56 | **void** | measured the file *as it was being extended* |
+| `fresh-encoded` control, 6 cells | 01:57-02:0x | **void** | the 20 GiB file was mostly not checkpoint data |
+| fragmentation hypothesis | derived from the above | **withdrawn** | an interpretation of garbage, and the more damaging loss: a confident paragraph built on invalid cells |
+| hardened placement probe (20.1k / 131k) | 02:2x | **stands** | post-restore, `--readonly`, file md5 unchanged before and after |
+
+**One limit stated plainly.** The earliest integrity anchor for the blob is an md5 taken at
+**01:41**. For runs before that, intactness is *inferred* -- no tool in this toolchain writes
+except the one that did this, and engine output is bit-identical across the incident -- rather
+than recorded. A sha256 baseline for all 22 blobs has now been captured so the next claim rests
+on a hash and not an inference.
+
+**Mechanism worth keeping: writing to an mmap'd checkpoint is silent.** The engine had this blob
+mmapped. Writes through the page cache into that file replace pages the engine has not yet faulted
+in, which changes model weights with no error, no crash, and nothing in the log. Exposure here was
+zero by luck -- the engine served no requests during the window, and the restart re-read
+everything -- but the operating rule is not about `--readonly` alone: **never write to a
+checkpoint file while an engine has it mapped.** The failure mode is wrong tokens, not an outage.
