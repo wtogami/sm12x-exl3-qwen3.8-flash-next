@@ -159,16 +159,21 @@ PY
   exit 0
 fi
 
+# CELLS=<comma list> runs a subset. The full matrix is five cells x two repeats of ~4-minute engine
+# cycles; after a cell has been measured under a configuration that has not changed, re-running it is
+# not rigour, it is downtime.
+want() { [[ -z "${CELLS:-}" ]] || [[ ",${CELLS}," == *",$1,"* ]]; }
+
 for rep in $(seq 1 "$REPEATS"); do
   #                                                       ple_stream breakable eager  cudagraph_mode
-  cell pinned-default        "$IMAGE_PIN"     0 0 0 ""          $rep   # deployed baseline
-  cell pinned-breakable-pw   "$IMAGE_PIN"     0 1 0 "PIECEWISE" $rep   # graph-mode cost alone
-  cell stream-breakable-pw   "$IMAGE_STREAM"  1 1 0 "PIECEWISE" $rep   # the feature, legal config
-  cell stream-eager          "$IMAGE_STREAM"  1 0 1 ""          $rep   # fallback, no graphs at all
+  want pinned-default && cell pinned-default        "$IMAGE_PIN"     0 0 0 ""          $rep   # deployed baseline
+  want pinned-breakable-pw && cell pinned-breakable-pw   "$IMAGE_PIN"     0 1 0 "PIECEWISE" $rep   # graph-mode cost alone
+  want stream-breakable-pw && cell stream-breakable-pw   "$IMAGE_STREAM"  1 1 0 "PIECEWISE" $rep   # the feature, legal config
+  want stream-eager && cell stream-eager          "$IMAGE_STREAM"  1 0 1 ""          $rep   # fallback, no graphs at all
   # v2: staging before replay, so the graph regime is left exactly as the deployment runs it.
   # Predictions written before the first run: decode back to ~160 tok/s (v1 measured 126.7) and
   # Shmem ~2.18 GiB (v1 measured 4.44; the gap is the ~2.25 GiB non-FULL-graph surcharge).
-  cell stream-v2-sync        "$IMAGE_STREAM"  1 0 0 ""          $rep   1
+  want stream-v2-sync && cell stream-v2-sync        "$IMAGE_STREAM"  1 0 0 ""          $rep   1
 done
 
 echo
