@@ -135,8 +135,11 @@ class StreamGather:
 
         t0 = time.perf_counter()
         if n <= self._small_copy_rows or k <= 1:
-            work(0)          # inline: pool dispatch costs more than the copy for small n
+            # Rebind the slice BEFORE copying: work(0) reads bounds[0]:bounds[1], and the
+            # linspace bounds from above would hand it a 1/k slice. Written the other way round
+            # this copies a fraction of the batch and every gate downstream reads stale bytes.
             bounds = [0, n]
+            work(0)          # inline: pool dispatch costs more than the copy for small n
         else:
             list(self._fan.map(work, range(k)))
         return time.perf_counter() - t0
