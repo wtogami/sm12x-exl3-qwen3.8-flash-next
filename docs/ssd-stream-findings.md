@@ -2200,7 +2200,15 @@ were written into the log before the first cell ran.
 | pcache cap 16 | 0.80 +-0.03 | **0.797** | 15-17 | **15.08** | 166,659 |
 | odirect cap 8 | ~74 (all misses) | 0.000 | ~74 | **74.22** | 85,624 |
 | odirect cap 16 | ~74 | 0.000 | ~74 | **74.22** | 85,583 |
-| pcache / odirect, uncapped | 0.80 / 0.000 | *failed: host python had no numpy; re-running* | | | |
+| pcache, uncapped host | 0.80 +-0.03 | **0.797** | ~14.7 | **15.07** | 168,484 |
+| odirect, uncapped host | 0.000 | **0.000** | ~74 | **74.22** | 85,834 |
+
+All six cells landed inside their pre-registered bands. The comparison that matters for the design is
+the first and fourth rows: **a 16 GiB cgroup cap measures the same hit rate as a 995 GiB host**
+(0.797 both), and an 8 GiB cap is 5.3 points lower (0.744). Working-set size, not memory capacity,
+is what governs this table -- which is the entire premise of serving a 47.684 GiB n-gram table on a
+small-RAM machine. `O_DIRECT` reproduced its 74.22 GiB and 85.8k pages/s uncapped, confirming the
+capped `O_DIRECT` numbers were the device and submit path, not the cgroup.
 
 Every capped cell landed inside its predicted band, and `dedup_saving_frac` read 0.467 against the
 0.475 measured independently by brute-force reuse counting. This is the first end-to-end
