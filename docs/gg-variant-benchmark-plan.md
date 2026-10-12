@@ -308,3 +308,41 @@ prefill ladder ~25 min with the long-context points. With N=9 decode and the pai
 design, roughly **half a day** including both builds and the C-only instrumentation. The
 B comparison is the cheap and decision-relevant half -- one build, one env var, and a
 claim about pinned bytes that is already provable from `/proc` in seconds.
+
+## CUDA graph cost, and why it did not gate streaming (measured 2026-10-12 00:49 CDT)
+
+Step 1 of the streaming path was to bound the CUDA-graph unknown: a CPU gather cannot live
+inside a captured graph, so `ENFORCE_EAGER=1` measured the worst case of running without them.
+
+| concurrency | graphs on (B2) | eager | change |
+|---|---|---|---|
+| 1 | 128.99 | 18.31 | −85.8% |
+| 4 | 370.86 | 70.96 | −80.9% |
+| 8 | 587.06 | 138.16 | −76.5% |
+| 16 | 786.38 | 264.54 | −66.4% |
+
+The cell is internally valid -- nine runs spanning 17.3-19.2 tok/s at c1, receipt records
+`mtp_tokens: 3` and `kv_cache_dtype: fp8`, same image and `max-model-len 262144` as the
+graphs-on comparison. **Attribution is not resolved**: eager in this stack may also change
+kernel selection (the engine logs FlashInfer GDN kernel choices at boot), so −86% must not be
+quoted as "the value of CUDA graphs". One unexplained detail: `Shmem` read 52.03 GiB under
+eager against 49.78 for the same exact-size config, ~2.25 GiB matching the transient
+page-lock normally released after load.
+
+**It does not gate the design, because the design should not split the graph.** The gather's
+inputs are `input_ids`, `query_start_loc` and `ngram_context` (`compute_ngram_ids`,
+ngram_embedding.py:539-562) -- all three are known on the host *before* the step replays,
+including MTP drafts, which are produced by the previous step and copied out before the next
+one. So the gather belongs before replay, writing into a fixed-capacity pinned staging buffer
+backed by a persistent device buffer, exactly the pattern `PagePrefetcher` already uses for
+its own inputs (`self.capacity = (max_num_tokens, max_num_reqs, ngram_context_len)`,
+`pin_memory()` slots at :471-474, `copy_(..., non_blocking=True)` at :485-488). The graph stays
+whole and the gather overlaps the GPU executing the previous step.
+
+Corollary on CPU budget: eager spends ~47 ms/step of host time on kernel-launch work that
+graphs eliminate. With graphs on, that capacity is free, and the gather needs at most 2.7 ms
+per step cold, 0.17 ms warm. Piecewise graphs, the thing vLLM #54129 needed, may not be
+necessary here at all -- which removes the largest implementation risk identified earlier.
+
+What is left, in order: measure real reuse statistics (the cold fraction is worth 16x per
+page), then the prototype.
