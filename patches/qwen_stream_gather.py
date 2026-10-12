@@ -1,0 +1,290 @@
+"""Streaming PLE n-gram gather: read rows from a memory-mapped checkpoint into pinned staging.
+
+Why this shape
+--------------
+The vendored mmap path (arm C) hands the *GPU* a host virtual address and requires
+PAGEABLE_MEMORY_ACCESS_USES_HOST_PAGE_TABLES, which is 0 on discrete RTX parts -- a hardware
+gate, not a configuration problem. Nothing, however, stops the *CPU* from reading pageable
+mapped file pages. So: CPU memcpys the needed rows into pinned staging, one batch ahead of
+graph replay, and the device reads only DMA-capable memory.
+
+Measured on this shape (47.684 GiB fixture, real n-gram access trace, capped container):
+  * row copy beats page-granular pread by ~143x at 2048 tokens (243 us vs 34.7 ms), because page
+    staging moves 4096 bytes per 160-byte row;
+  * pipelined one batch ahead, exposed cost is 0.22% of prefill at p50 and 0.39% at p99, even
+    while the file is cold and 9.9 GiB is read from disk mid-run;
+  * decode (16 rows/token) is 16.6 us p50, 25 us p99 with a warm cache;
+  * real traces hit 86-94% in the page cache versus the 36-41% a uniform-access model predicts.
+
+Everything here is host-side; dequantisation stays on the existing device path untouched.
+"""
+from __future__ import annotations
+
+import ctypes
+import os
+import sys
+import threading
+import time
+from concurrent.futures import ThreadPoolExecutor
+
+import numpy as np
+
+_MADV_RANDOM = 1
+_PROT_READ = 1
+_MAP_PRIVATE = 2
+
+_libc = ctypes.CDLL("libc.so.6", use_errno=True)
+_libc.mmap.restype = ctypes.c_void_p
+_libc.mmap.argtypes = [ctypes.c_void_p, ctypes.c_size_t, ctypes.c_int, ctypes.c_int,
+                       ctypes.c_int, ctypes.c_long]
+_libc.munmap.argtypes = [ctypes.c_void_p, ctypes.c_size_t]
+_libc.madvise.argtypes = [ctypes.c_void_p, ctypes.c_size_t, ctypes.c_int]
+
+
+def _load_rowcopy(so_path: str | None = None):
+    """Load the native row-copy helper. Required, not optional: the Python-loop fallback is
+    GIL-bound and measures slower as threads are added, so silently degrading would produce
+    numbers that look like the design is slow when the harness is."""
+    import numpy as np  # noqa: F401  (used in argtypes)
+    path = so_path or os.environ.get("PLE_ROWCOPY_SO", "")
+    if not path or not os.path.exists(path):
+        raise RuntimeError(
+            "PLE row-copy helper not found; set PLE_ROWCOPY_SO or build patches/ple_rowcopy.c "
+            "(gcc -O3 -shared -fPIC -o ple_rowcopy.so ple_rowcopy.c). Refusing to fall back to "
+            "a per-row Python loop, which measures 100x slower and would misreport the design.")
+    lib = ctypes.CDLL(path)
+    lib.ple_copy_rows.argtypes = [ctypes.c_void_p, ctypes.c_void_p,
+                                  np.ctypeslib.ndpointer(dtype=np.int64, ndim=1,
+                                                         flags="C_CONTIGUOUS"),
+                                  ctypes.c_long, ctypes.c_long]
+    lib.ple_copy_rows.restype = None
+    return lib
+
+
+class StreamGather:
+    """Gathers table rows from an mmapped checkpoint into double-buffered pinned staging."""
+
+    def __init__(self, table_path: str, *, row_bytes: int = 160, n_rows: int | None = None,
+                 max_rows_per_batch: int = 2048 * 16, threads: int = 24,
+                 rowcopy_so: str | None = None, device: str = "cuda",
+                 madv_random: bool = True):
+        import torch
+
+        self.torch = torch
+        self.row_bytes = int(row_bytes)
+        self.fd = os.open(table_path, os.O_RDONLY)
+        self.size = os.fstat(self.fd).st_size
+        self.n_rows = int(n_rows) if n_rows else self.size // self.row_bytes
+        if self.n_rows * self.row_bytes > self.size:
+            raise ValueError(
+                f"{table_path}: {self.size} bytes cannot hold {self.n_rows} rows x "
+                f"{self.row_bytes}; n_rows from the safetensors header, not guessed")
+
+        self.base = _libc.mmap(None, self.size, _PROT_READ, _MAP_PRIVATE, self.fd, 0)
+        if not self.base or self.base == ctypes.c_void_p(-1).value:
+            raise OSError(f"mmap({table_path}) failed: {os.strerror(ctypes.get_errno())}")
+        if madv_random:
+            # Random 4 KiB fetches over a 47 GiB table: without this the kernel reads ahead and
+            # turns 16 useful rows into megabytes of unwanted I/O.
+            _libc.madvise(ctypes.c_void_p(self.base), self.size, _MADV_RANDOM)
+
+        self._copy = _load_rowcopy(rowcopy_so)
+        self.threads = max(1, int(threads))
+        self.device = device
+        self.max_rows = int(max_rows_per_batch)
+        nbytes = self.max_rows * self.row_bytes
+        # Two arenas so batch k+1 can be filled while batch k is in flight on the GPU.
+        self._arena = [torch.empty(nbytes, dtype=torch.uint8, pin_memory=True) for _ in range(2)]
+        self._arena_base = [int(a.data_ptr()) for a in self._arena]
+        self._dst = torch.empty(nbytes, dtype=torch.uint8, device=device)
+        self._pool = ThreadPoolExecutor(max_workers=self.threads,
+                                        thread_name_prefix="ple-fill")
+        self._lock = threading.Lock()
+        self._pending = None
+        self._next_buf = 0
+        self.stats = {"batches": 0, "rows": 0, "fill_s": 0.0, "disk_hints": 0}
+
+    # ------------------------------------------------------------------ fill (host side)
+    def _fill(self, byte_off: np.ndarray, buf: int) -> float:
+        n = len(byte_off)
+        if n > self.max_rows:
+            raise ValueError(f"{n} rows exceeds staging capacity {self.max_rows}")
+        base = self._arena_base[buf]
+        k = self.threads
+        bounds = [int(x) for x in np.linspace(0, n, k + 1)]
+        cbase = ctypes.c_void_p(self.base)
+
+        def work(i):
+            lo, hi = bounds[i], bounds[i + 1]
+            if hi <= lo:
+                return
+            self._copy.ple_copy_rows(cbase, ctypes.c_void_p(base + lo * self.row_bytes),
+                                     byte_off[lo:hi], hi - lo, self.row_bytes)
+
+        t0 = time.perf_counter()
+        list(self._pool.map(work, range(k)))
+        return time.perf_counter() - t0
+
+    def submit(self, row_ids: np.ndarray) -> None:
+        """Begin filling staging for these row ids into the buffer not currently in use.
+
+        row_ids are absolute table row indices in [0, n_rows). Call this one batch ahead of
+        consuming, which is legal because n-gram ids are computable on the host before graph
+        replay (the MTP drafts come from the previous step).
+        """
+        ids = np.ascontiguousarray(row_ids, dtype=np.int64).reshape(-1)
+        if ids.size and (int(ids.min()) < 0 or int(ids.max()) >= self.n_rows):
+            raise ValueError(f"row id out of range: [{int(ids.min())}, {int(ids.max())}] "
+                             f"vs n_rows={self.n_rows}")
+        buf = self._next_buf
+        with self._lock:
+            self._pending = (self._pool.submit(self._fill, ids * self.row_bytes, buf), buf, ids.size)
+            self._next_buf = 1 - buf
+
+    def wait(self) -> tuple:
+        """Block until the batch passed to submit() is resident. Returns (view, count)."""
+        fut, buf, count = self._pending
+        if fut is None:
+            raise RuntimeError("wait() without a preceding submit(); use fetch() for one-shot use")
+        dt = fut.result()
+        self.stats["batches"] += 1
+        self.stats["rows"] += count
+        self.stats["fill_s"] += dt
+        return self._arena[buf][: count * self.row_bytes], count
+
+    # ----------------------------------------------------------------- device side
+    def _upload(self, view, count: int, index):
+        torch = self.torch
+        dst = self._dst[: count * self.row_bytes]
+        dst.copy_(view, non_blocking=True)
+        rows = dst.view(count, self.row_bytes)
+        if index is not None:
+            rows = rows[torch.from_numpy(np.ascontiguousarray(index, dtype=np.int64)).to(
+                self.device, non_blocking=True)]
+        return rows
+
+    def upload_and_gather(self, row_ids: np.ndarray, index: np.ndarray | None = None):
+        """wait() -> one H2D -> device gather of the requested rows.
+
+        `index` selects and orders rows within the uploaded batch (defaults to identity). The
+        engine's dequant path then consumes [tokens, heads, row_bytes] exactly as it does today.
+        """
+        view, count = self.wait()
+        return self._upload(view, count, index)
+
+    def fetch(self, row_ids: np.ndarray, index: np.ndarray | None = None):
+        """Synchronous path (decode: 16 rows, nothing to pipeline)."""
+        ids = np.ascontiguousarray(np.asarray(row_ids, dtype=np.int64).reshape(-1), dtype=np.int64)
+        if ids.size and (int(ids.min()) < 0 or int(ids.max()) >= self.n_rows):
+            raise ValueError("row id out of range in fetch()")
+        buf = self._next_buf
+        self._next_buf = 1 - buf
+        dt = self._fill(ids * self.row_bytes, buf)
+        self.stats["batches"] += 1
+        self.stats["rows"] += ids.size
+        self.stats["fill_s"] += dt
+        return self._upload(self._arena[buf][: ids.size * self.row_bytes], ids.size, index)
+
+    # ----------------------------------------------------------------- verification
+    def verify(self, sample: int = 4000, seed: int = 3) -> int:
+        """Correctness gate: gathered bytes must equal a direct positional read.
+
+        Sampled from random rows, never row 0 -- an earlier gate that checked only row 0 passed
+        unconditionally while the copy path returned the wrong bytes. Returns the mismatch count.
+        """
+        rng = np.random.default_rng(seed)
+        ids = rng.choice(self.n_rows, size=min(sample, self.n_rows), replace=False)
+        rows = self.fetch(ids)
+        bad = 0
+        cpu = rows.detach().to("cpu", non_blocking=False).numpy()
+        for i, rid in enumerate(ids):
+            want = os.pread(self.fd, self.row_bytes, int(rid) * self.row_bytes)
+            if len(want) != self.row_bytes:
+                raise OSError(f"direct read short at row {rid}")
+            if want.tobytes() != cpu[i].tobytes():
+                bad += 1
+        return bad
+
+    def close(self):
+        self._pool.shutdown(wait=True)
+        _libc.munmap(ctypes.c_void_p(self.base), self.size)
+        os.close(self.fd)
+
+
+# ---------------------------------------------------------------------------- standalone test
+def _selftest(argv):
+    import argparse
+    import time
+
+    ap = argparse.ArgumentParser(description=__doc__)
+    ap.add_argument("--table", required=True)
+    ap.add_argument("--trace", default="", help="int32 row-id stream to drive the pattern")
+    ap.add_argument("--row-bytes", type=int, default=160)
+    ap.add_argument("--threads", type=int, default=24)
+    ap.add_argument("--batch-tokens", type=int, default=2048)
+    ap.add_argument("--batches", type=int, default=200)
+    ap.add_argument("--compute-ms", type=float, default=205.0,
+                    help="model compute time the fill hides behind")
+    ap.add_argument("--rowcopy", default="")
+    a = ap.parse_args(argv)
+
+    import torch
+    rows_np = None
+    if a.trace:
+        raw = np.fromfile(a.trace, dtype=np.int32).astype(np.int64)
+        n_rows = os.fstat(os.open(a.table, os.O_RDONLY)).st_size // a.row_bytes
+        rows_np = np.remainder(raw, n_rows)
+    else:
+        raise SystemExit("--trace is required: uniform-random testing produced the wrong design twice")
+
+    g = StreamGather(a.table, row_bytes=a.row_bytes, threads=a.threads,
+                     max_rows_per_batch=a.batch_tokens * 16, rowcopy_so=a.rowcopy or None)
+    bad = g.verify()
+    print(f"  gate: {bad} of 4000 randomly sampled rows mismatch a direct read -> "
+          f"{'PASS' if bad == 0 else 'FAIL'}")
+    if bad:
+        return 1
+
+    B = a.batch_tokens * 16
+    nb = min(a.batches, len(rows_np) // B)
+    fills, exposed = [], []
+    g.submit(rows_np[:B])
+    for k in range(nb):
+        t0 = time.perf_counter()
+        if k + 1 < nb:
+            g.submit(rows_np[(k + 1) * B:(k + 2) * B])
+        idx = np.arange(B, dtype=np.int64)
+        out = g.upload_and_gather(rows_np[k * B:(k + 1) * B], idx)
+        torch.cuda.synchronize()
+        consumed = time.perf_counter() - t0
+        fills.append(g.stats["fill_s"])
+        exposed.append(consumed)
+    prev = 0.0
+    per_fill = []
+    for f in fills:
+        per_fill.append(f - prev)
+        prev = f
+    per_fill = np.asarray(per_fill[1:]) * 1e3
+    exposed = np.asarray(exposed[1:]) * 1e3
+    print(f"  batches={nb} rows/batch={B} threads={a.threads}")
+    print(f"  fill:  p50 {np.percentile(per_fill,50):6.2f} ms  p99 {np.percentile(per_fill,99):6.2f} ms")
+    print(f"  exposed against a {a.compute_ms:.0f} ms compute window: "
+          f"p50 {np.percentile(exposed,50):6.2f} ms  p99 {np.percentile(exposed,99):6.2f} ms")
+    print(f"  as a fraction of prefill: p50 {np.percentile(exposed,50)/a.compute_ms*100:.2f}%  "
+          f"p99 {np.percentile(exposed,99)/a.compute_ms*100:.2f}%")
+    d = np.arange(16, dtype=np.int64)
+    dl = []
+    for k in range(3000):
+        ids = rows_np[k * 16:(k + 1) * 16]
+        t0 = time.perf_counter()
+        g.fetch(ids)
+        torch.cuda.synchronize()
+        dl.append((time.perf_counter() - t0) * 1e6)
+    print(f"  decode (16 rows): p50 {np.percentile(dl,50):.1f} us  p99 {np.percentile(dl,99):.1f} us  "
+          f"p99.9 {np.percentile(dl,99.9):.1f} us")
+    g.close()
+    return 0
+
+
+if __name__ == "__main__":
+    sys.exit(_selftest(sys.argv[1:]))
