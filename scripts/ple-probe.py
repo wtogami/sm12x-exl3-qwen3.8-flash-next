@@ -68,7 +68,8 @@ def main():
                     help="prompt_tokens at or below this are single-chunk, hence reproducible")
     ap.add_argument("--reps", type=int, default=4, help="timed repeats for the throughput shapes")
     ap.add_argument("--warmup", type=int, default=2,
-                    help="discarded requests per shape before timing (cold cells measure ~30% low)")
+                    help="discarded requests per shape before timing; a cold cell measures "
+                         "roughly 30 percent low on prefill")
     a = ap.parse_args()
 
     parts, total = [], 0
