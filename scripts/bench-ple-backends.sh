@@ -27,9 +27,14 @@ CONT=${CONT:-qwen38-exl3-ple8}
 REPEATS=${REPEATS:-2}
 NPRO=${NPRO:-8}
 OUT=${OUT:-$ACC/backend-matrix}
+PROBE=${PROBE:-/home/rtx/stage/ple-probe.py}
+PROBE_REPS=${PROBE_REPS:-4}
+# Reference strict hash, measured on the pinned engine: five single-chunk greedy completions, identical
+# across repeated runs of the same configuration (the six-prompt "all" hash is not).
+REF_HASH=${REF_HASH:-a6cc8fed286b7071}
 mkdir -p "$OUT"
 TSV=$OUT/results.tsv
-[ -f "$TSV" ] || printf "cell\trepeat\timage\tple_stream\tbreakable\tenforce_eager\tgreedy\tprefill_tok_s\tdecode_tok_s\tshmem_gib\tcached_gib\tvram_mib\tdisk_sectors\telapsed_s\tverdict\n" > "$TSV"
+[ -f "$TSV" ] || printf "cell\trepeat\timage\tple_stream\tbreakable\tcudagraph_mode\tstrict\tprefill_tok_s\tdecode_tok_s\tshmem_gib\tcached_gib\tvram_mib\tdisk_sectors\telapsed_s\tverdict\n" > "$TSV"
 
 restore_serving() {
   echo "=== restoring the serving configuration ==="
@@ -84,22 +89,29 @@ cell() {  # name image ple_stream breakable enforce_eager cudagraph_mode
   podman logs ple-bench > "$OUT/$name.log" 2>&1
   grep -m1 "streaming backend selected" "$OUT/$name.log" >/dev/null && sel=yes || sel=no
   echo "  backend selection line: $sel"
+  # Correctness: the strict probe hashes five single-chunk greedy completions. Run from /tmp with -I:
+  # /home/rtx contains a bisect.py, and python puts the cwd on sys.path, so running from there makes
+  # `import urllib.request` import that file instead of the stdlib module (this killed an earlier run).
   bash /home/rtx/greedy.sh > "$OUT/$name-greedy.txt" 2>&1
-  local sha=$(sha256sum < "$OUT/$name-greedy.txt" | cut -c1-16)
-  local verdict=OK; [ "$sha" = "$BASE_SHA" ] || verdict="GREEDY_MISMATCH"
-  echo "  greedy $sha -> $verdict"
+  local gsha=$(sha256sum < "$OUT/$name-greedy.txt" | cut -c1-16)
   local r0=$(awk '$3=="nvme0n1"{print $6}' /proc/diskstats)
   local t0=$(date +%s.%N)
-  python3 /home/rtx/stage/bench-fixed.py > "$OUT/$name-bench.txt" 2>&1 || echo "  bench failed"
+  ( cd /tmp && python3 -I "$PROBE" --expect "$REF_HASH" --reps "$PROBE_REPS" ) > "$OUT/$name-bench.txt" 2>&1
   local el=$(awk -v a=$(date +%s.%N) -v b=$t0 'BEGIN{printf "%.1f", a-b}')
   local r1=$(awk '$3=="nvme0n1"{print $6}' /proc/diskstats)
-  local pre=$(grep -m1 "^prefill" "$OUT/$name-bench.txt" | awk '{print $2}')
-  local dec=$(grep -m1 "^decode"  "$OUT/$name-bench.txt" | awk '{print $2}')
+  local strict=$(awk '$1=="strict"{print $2}' "$OUT/$name-bench.txt")
+  local pre=$(awk '$1=="prefill"{print $2}' "$OUT/$name-bench.txt")
+  local dec=$(awk '$1=="decode"{print $2}' "$OUT/$name-bench.txt")
+  local verdict=OK
+  [ "${gsha}" = "$BASE_SHA" ] || verdict="GREEDY_MISMATCH"
+  [ "${strict}" = "$REF_HASH" ] || verdict="${verdict}+STRICT_MISMATCH"
+  echo "  greedy $gsha  strict ${strict:-NONE}  -> $verdict"
+  awk '$1=="all"{printf "  (ungated all-hash %s; chunked prompt is known irreproducible)\n", $2}' "$OUT/$name-bench.txt"
   local shm=$(awk '/^Shmem:/{printf "%.2f", $2/1048576}' /proc/meminfo)
   local ca=$(awk '/^Cached:/{printf "%.2f", $2/1048576}' /proc/meminfo)
   local vr=$(nvidia-smi --query-gpu=memory.used --format=csv,noheader,nounits)
   printf "%s\t%s\t%s\t%s\t%s\t%s\t%s\t%s\t%s\t%s\t%s\t%s\t%s\t%s\t%s\n" \
-    "$name" "$rep" "$img" "$ps" "$bc" "$ee" "$sha" "${pre:-NA}" "${dec:-NA}" "$shm" "$ca" "$vr" "$((r1-r0))" "$el" "$verdict" | tee -a "$TSV"
+    "$name" "$rep" "$img" "$ps" "$bc" "$ee" "$strict" "${pre:-NA}" "${dec:-NA}" "$shm" "$ca" "$vr" "$((r1-r0))" "$el" "$verdict" | tee -a "$TSV"
 }
 
 if [[ "${DRY_RUN:-0}" == 1 ]]; then
