@@ -101,6 +101,29 @@ case " $* " in
     fi
     ;;
 esac
+# PLE_STREAM=1 also has to take FULL CUDA graphs off the table, and breakable graphs alone do not do
+# it. The manager enables breakable capture with
+#     use_breakable_cg = is_breakable_cudagraph_enabled() and cudagraph_mode.has_piecewise_cudagraphs()
+# and the default mode here is FULL_AND_PIECEWISE: prefill captures breakable (where
+# @eager_break_during_capture can insert an eager segment) while DECODE captures one plain
+# torch.cuda.graph. Inside that FULL capture the decorator deliberately passes the call through
+# (`if mode == CUDAGraphMode.FULL: return fn(...)`), so the host row gather would run once at capture
+# time and never again -- stale rows on every replay, not an error. Constraining the mode to PIECEWISE
+# routes every capture through the breakable wrapper. It survives the config's own normalisation only
+# because breakable is enabled: _normalize_piecewise_cudagraph_mode downgrades a PIECEWISE request to
+# NONE when compilation is off *and* breakable is disabled, and streaming turns breakable on precisely
+# because compilation mode is forced to NONE.
+if [[ "$PLE_STREAM" == 1 ]]; then
+  case " $* " in
+    *" --compilation-config "*|*" --compilation-config="*|*" -cc "*|*" -cc="*|*" -O "*|*" -O="*)
+      echo "  note: caller supplied a compilation config; not forcing cudagraph_mode=PIECEWISE." >&2
+      echo "        If it enables FULL cudagraphs the streaming gather will refuse to start." >&2
+      ;;
+    *)
+      EXTRA_ARGS+=(--compilation-config '{"cudagraph_mode": "PIECEWISE"}')
+      ;;
+  esac
+fi
 # Size the pinned host memory before the container exists. A checkpoint-mapped
 # table allocates nothing table-sized, and a caller-supplied --engram-config
 # means we cannot know the placement, so both cases skip the check.

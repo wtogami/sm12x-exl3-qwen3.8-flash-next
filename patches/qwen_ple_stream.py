@@ -173,8 +173,11 @@ def stream_lookup(embedding, input_ids: torch.Tensor,
             "PLE streaming gather was reached inside a CUDA graph capture. The host-side row copy "
             "cannot be captured: capture would freeze one set of rows and every replay would reuse "
             "them, producing wrong output instead of failing. Start with "
-            "VLLM_USE_BREAKABLE_CUDAGRAPH=1 (start.sh sets it when PLE_STREAM=1), which runs this "
-            "as an eager segment on every replay, or --enforce-eager."
+            "VLLM_USE_BREAKABLE_CUDAGRAPH=1 *and* cudagraph_mode=PIECEWISE (both implied by "
+            "PLE_STREAM=1 in start.sh): breakable graphs put this call in an eager segment that "
+            "re-runs on every replay, but a FULL cudagraph capture deliberately does not break, and "
+            "the default FULL_AND_PIECEWISE mode captures decode as one FULL graph. --enforce-eager "
+            "also works, at the cost of all graphs."
         )
     if embedding.table is None:
         raise RuntimeError("PLE streaming storage was not bound after loading")
