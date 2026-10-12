@@ -66,7 +66,9 @@ def main():
     ap.add_argument("--max-tokens", type=int, default=64)
     ap.add_argument("--chunk-limit", type=int, default=2048,
                     help="prompt_tokens at or below this are single-chunk, hence reproducible")
-    ap.add_argument("--reps", type=int, default=4, help="repeats for the throughput shapes")
+    ap.add_argument("--reps", type=int, default=4, help="timed repeats for the throughput shapes")
+    ap.add_argument("--warmup", type=int, default=2,
+                    help="discarded requests per shape before timing (cold cells measure ~30% low)")
     a = ap.parse_args()
 
     parts, total = [], 0
@@ -98,6 +100,12 @@ def main():
     print(f"gated {len(strict_items)}/{len(parts)} prompts")
 
     for label, prompt, mt in (("prefill", LONG_UNIT * 700, 1), ("decode", SHORT, 256)):
+        # Warm up before timing. A freshly booted cell measured 8,205 tok/s prefill against 11,000-11,900
+        # for the SAME configuration on a long-running engine, while decode agreed to 0.5% -- the gap is
+        # cold kernel selection / autotuning and page-cache state, not the thing under test. Without this
+        # every cell would be a measurement of how recently it booted.
+        for _ in range(a.warmup):
+            post(a.url, a.model, prompt, mt)
         rates = []
         for _ in range(a.reps):
             _, ptok, ctok, el = post(a.url, a.model, prompt, mt)
