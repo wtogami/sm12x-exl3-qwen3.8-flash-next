@@ -70,6 +70,7 @@ ENV EXL3_TRELLIS_MIN_M=1 \
 # XGrammar termination fix (PR 52805) shipped upstream in v0.30.0; these CPU
 # AST regressions keep the fixes verified in the assembled image.
 COPY scripts/test-xgrammar-termination.py scripts/test-structured-output-reasoning.py /opt/qwen38-tests/
+COPY scripts/test-ple-stream-table.py /opt/qwen38-tests/test_stream_table.py
 RUN python3 /opt/qwen38-tests/test-xgrammar-termination.py \
  && python3 /opt/qwen38-tests/test-structured-output-reasoning.py
 LABEL org.opencontainers.image.source="https://github.com/tpurtell/sm12x-exl3-qwen3.8-flash-next" \
