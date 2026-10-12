@@ -713,13 +713,15 @@ unrepeated observation). Recent FTL churn is the better predictor, not occupancy
 Deleting the 1.7 TiB filler did not restore qd8, and that does not prove the
 degradation is permanent: `/nvme1` is mounted without `discard`, `fstrim` returns
 `Operation not permitted` unprivileged, and the drive does support trim
-(`discard_max_bytes` = 2 TiB, granularity 512). So the FTL was never told those
-LBAs were free -- from the device's point of view it was still ~90% full during
-the "5.5% recovery" measurement. `fstrim.timer` is active but weekly, and could
-not have covered a file created and deleted inside the window. A real recovery
-arm needs root, which makes this the one question in the whole pre-work where
-root would actually buy something (unlike section 2's page-cache case, where it
-would not).
+(`discard_max_bytes` = 2 TiB, granularity 512). The FTL really was never told those LBAs were free (`/nvme1` is mounted without
+`discard`, `fstrim` is `EPERM` unprivileged, and `fstrim.timer` is weekly so it could not
+have covered a file created and deleted inside the window), which made "the drive still
+believes it is ~90% full" the natural explanation. It is also the explanation I recorded
+as leading and recommended spending root to settle.
+
+**It was wrong. Trim changes nothing.** With root, after the fact: qd1 12,594 against
+12,729 before (-1.1%), qd8 96,904 against 96,448 (+0.5%). Root settled the question by
+disproving the story, which is exactly why it was worth asking for.
 
 **Two disclosed protocol defects.** `fio --numjobs=2` with a single `--filename`
 starts both jobs at offset 0 on the same file, so every fill pass wrote the whole
@@ -750,18 +752,58 @@ internal parallelism; it is invisible at depth and it is the whole story at
 qd1. Which regime the streaming path lives in is therefore not a tuning detail,
 it decides whether the design has 21x headroom or 1.3x.
 
-So the earlier conditional -- "if qd1 degrades the way qd8 did, a per-token
-synchronous read lands near 1.3x budget" -- is now measured, at 1.3x, and it is
-the thinnest margin anywhere in this study. **A per-token synchronous read path
-is not viable on a drive that has ever been written heavily**: one 30% slip and
-the chunk deadline is missed with no reserve. Submit at depth instead (io_uring
-or libaio, >=8 outstanding, 32 comfortably), where the same drive delivers
-21.3x.
+So the earlier conditional -- "if qd1 degrades the way qd8 did, a per-token synchronous
+read lands near 1.3x budget" -- is now measured, at 1.3x against the prefill figure.
+Which regime the streaming path runs in therefore decides whether there is 21x headroom
+or a hairline margin.
 
-Twenty-five minutes of idle produced no recovery whatsoever (qd8 96,448 vs
-96,572 at ten minutes, 0.1% apart), which is consistent with the untrimmed-
-garbage explanation above but still does not separate it from a persistent GC
-state -- that separation needs `fstrim`, and `fstrim` needs root.
+**The degradation is data placement, and rewriting the file reverses it.** Three
+explanations survived the fill study -- occupancy, untrimmed garbage, persistent FTL/GC
+state -- and they were separated by experiment rather than by argument:
+
+```
+state                                        qd1        qd8
+baseline (freshly written)                  20,846    160,953
+filler removed, 10 min idle                 12,656     96,572
+filler removed, 25 min idle                 12,729     96,448
+after sudo fstrim                           12,594     96,904   <- trim did nothing
+after rewriting the same 100 GiB in place   21,300    159,000   <- full recovery
+same, a further 12 min idle                 21,000    160,000   <- and it held
+```
+
+Deleting and trimming do nothing because the bytes never moved; rewriting allocates new
+physical extents and the reads are fast again, immediately and still 12 minutes later.
+The variable is **where the data sits** -- not how full the drive is, and not whether
+free space was reported to the FTL. The rewrite ran at 4,936 MiB/s, above this drive's
+sustained TLC rate, so fresh SLC residency was probably part of it, but the 12-minute
+persistence together with trim's complete irrelevance points at placement rather than a
+write cache that drains.
+
+**Retracting operational advice given in session.** I said a streaming design must budget
+against the drive's post-full-write state because "a serving drive that has ever been
+filled will not come back without trim". Both halves are false: it comes back by
+rewriting the table, and trim is not the lever. "A drive that has ever been written
+heavily" is therefore not a permanent condition, and the sentence above about qd1
+viability should be read against the current placement rather than the drive's history.
+The defensible statement is narrower: if random-read latency to the PLE file is 60-70%
+worse than expected, suspect stale placement and rewrite the file or re-fetch the
+checkpoint. Fill level genuinely does not matter -- qd32 held 207,752 -> 211,412 IOPS
+across a 5.7% to 90% sweep.
+
+**Both hosts are submit-limited, not device-limited.** `burst` got the same worker sweep
+as `gg`:
+
+```
+                1 job     2 jobs     4 jobs     8 jobs
+burst PM9A1      207k      420k       838k       988k IOPS  (3.9 GiB/s at 4k)
+gg 990 PRO       107k      249k       523k       722k IOPS  (2.8 GiB/s at 4k)
+```
+
+Against `gg`'s own measured 14,066 pages/s, four workers on `gg` is 37x headroom and
+eight is 51x; `burst` at four workers is 60x against its own 16,420. The single-job
+ceiling is where a naive design lives, and near-linear scaling to 8 jobs on both drives
+is the strongest single argument in this study that Stage B must be multi-threaded:
+neither drive is anywhere near its own limit, one submitting thread is the limit.
 
 ### The binding requirement is decode, not the prefill chunk
 
