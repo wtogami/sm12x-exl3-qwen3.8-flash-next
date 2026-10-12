@@ -19,6 +19,7 @@
 # that is fast and wrong is not a configuration.
 set -uo pipefail
 ACC=${ACC:-/home/rtx/accept}
+REPO=${REPO:-/home/rtx/sm12x-exl3-qwen3.8-flash-next}
 IMAGE_PIN=${IMAGE_PIN:-localhost/qwen38-rtx:local}
 IMAGE_STREAM=${IMAGE_STREAM:-localhost/qwen38-exactpin:stream}
 BASE_SHA=${BASE_SHA:-f91132436fb09e45}
@@ -59,36 +60,14 @@ cell() {  # name image ple_stream breakable enforce_eager
   [ "$bc" = 1 ] && extra+=(-e VLLM_USE_BREAKABLE_CUDAGRAPH=1)
   local eager=""
   [ "$ee" = 1 ] && eager="--enforce-eager"
-  # run line comes from the live container's CreateCommand; swap image, add env, new name
-  python3 - "$img" "${extra[@]}" -- $eager <<'PY' > $ACC/run-cell.sh
-import shlex, subprocess
-img, *rest = shlex.split(" ".join(shlex.quote(a) for a in __import__("sys").argv[1:]))
-eager = [a for a in rest if a.startswith("--enforce")]
-envs = [a for a in rest if a.startswith("-e") or a.startswith("--") and "PLE" in a]
-env_pairs, i = [], 0
-while i < len(rest):
-    if rest[i] == "-e":
-        env_pairs += ["-e", rest[i+1]]; i += 2; continue
-    i += 1
-cmd = shlex.split(subprocess.run(["podman","inspect","qwen38-exl3-ple8","-f",
-      "{{join .Config.CreateCommand \" \"}}"], capture_output=True, text=True).stdout)
-out, i = [], 0
-while i < len(cmd):
-    if cmd[i] in ("--name",): i += 2; continue
-    if cmd[i] in ("-d","--detach"): i += 1; continue
-    out.append(cmd[i]); i += 1
-k = next(j for j,t in enumerate(out) if t.startswith("podman")) 
-head, tail = [], []
-seen_img = False
-for j, t in enumerate(out):
-    if j <= k: continue
-    if not seen_img and (":local" in t or ":stream" in t) and not t.startswith("-"):
-        head.append(img); seen_img = True; continue
-    (head if not seen_img else tail).append(t)
-if not seen_img: raise SystemExit("image token not located")
-line = " ".join(["podman","run","-d","--name","ple-bench"] + env_pairs + head[k+1:] + tail + eager)
-print("#!/bin/bash\nset -euo pipefail\nexec " + line)
-PY
+  # The run line is derived from the live container's CreateCommand by mk-cell-run.py, which refuses
+  # to emit podman flags after the image (that is how "vllm serve" once received -e PLE_STREAM=1).
+  local gen=(python3 "$REPO/scripts/mk-cell-run.py" --base-container "$CONT" --name ple-bench
+             --image "$img")
+  [ "$ps" = 1 ] && gen+=(--env PLE_STREAM=1 --env PLE_ROWCOPY_SO=/opt/qwen38/ple_rowcopy.so)
+  [ "$bc" = 1 ] && gen+=(--env VLLM_USE_BREAKABLE_CUDAGRAPH=1)
+  [ "$ee" = 1 ] && gen+=(--arg=--enforce-eager)
+  "${gen[@]}" > $ACC/run-cell.sh || { echo "  run-line generation failed"; return 1; }
   bash -n $ACC/run-cell.sh || { echo "  cell run line does not parse"; return 1; }
   bash $ACC/run-cell.sh >/dev/null 2>&1 || { echo "  run rejected"; return 1; }
   local code=000

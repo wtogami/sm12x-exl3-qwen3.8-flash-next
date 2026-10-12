@@ -94,7 +94,10 @@ def main() -> int:
     ap.add_argument("--image")
     ap.add_argument("--env", action="append", default=[], help="KEY=VALUE, repeatable")
     ap.add_argument("--drop-env", action="append", default=[], help="KEY to remove from the base line")
-    ap.add_argument("--arg", action="append", default=[], help="appended AFTER the image (container argv)")
+    ap.add_argument("--arg", action="append", default=[],
+                    help="appended AFTER the image, i.e. container argv. Use the --arg=VALUE form for "
+                         "values that start with a dash (--arg=--enforce-eager); argparse cannot tell a "
+                         "bare --enforce-eager from another option")
     ap.add_argument("--emit", choices=("script", "line"), default="script")
     a = ap.parse_args()
 
