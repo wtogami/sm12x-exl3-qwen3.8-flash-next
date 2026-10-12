@@ -2691,3 +2691,94 @@ Hit rate: 86-94% from exact reuse distances, versus the 36-41% the uniform model
 Requests: 47.5% removed by within-batch dedup. Layout: must be non-encoded -- 42.9% versus 2.7%
 hits in the controlled comparison. What is left is wiring, not feasibility: `PLE_STREAM=1` in the
 engine, the cgroup-aware gate, and a byte-identical-output check against the pinned path.
+
+## Stage B met the engine, and the engine changed the design
+
+The wiring was right. The failure traceback ran `ple_layer.start_prefetch` →
+`ngram_embedding.start_prefetch` → `_lookup_on_current_stream` → my `_lookup` → `stream_lookup`, which
+is exactly the intended path, on a real engine start with the real checkpoint. The error was not a
+plumbing bug:
+
+```
+RuntimeError: Cannot copy between CPU and CUDA tensors during CUDA graph capture unless the CPU
+tensor is pinned. Please use tensor.pin_memory() or allocate the tensor...
+```
+
+and the frame that raised it was **the D2H of n-gram ids**, not the H2D of rows I had been worrying
+about. The deeper line was `breakable_cudagraph.py:105 return fn(*args, **kwargs)` -- the
+`@eager_break_during_capture` decorator on `start_prefetch` had passed straight through, because
+`is_breakable_cudagraph_enabled()` reads `VLLM_USE_BREAKABLE_CUDAGRAPH`, which was unset, in which case
+the decorator returns the *undecorated* function. So the mapped backend's host-prefetch design already
+assumed breakable graphs; my streaming backend needs them for a stronger reason.
+
+**Following that error message would have produced silently wrong output.** It suggests pinning the CPU
+tensor, which makes the *copy* capturable. The row gather around it cannot be capturable in any form:
+it is `ctypes.memmove` out of the page cache, and CUDA cannot see a ctypes call, so a capture reaching
+this function would record the graph *around* the host work, replay it with no host participation, and
+serve the same frozen rows every step -- whatever ids the profiling batch happened to use. Not an error,
+a wrong answer. Hence a runtime invariant instead of a config assumption:
+
+```python
+if torch.cuda.is_current_stream_capturing():
+    raise RuntimeError("PLE streaming gather was reached inside a CUDA graph capture. ...")
+```
+
+which is necessary because the decorator has a branch that deliberately does *not* break --
+`if mode == CUDAGraphMode.FULL: return fn(...)`. What makes breakable graphs safe is stated in that
+module's own docstring: the captured artifact is "the bound `CUDAGraph.replay` for graph segments, **or
+the user fn for eager segments** -- replayed in order at inference time", and "eager segments must
+operate on the same static buffers used during capture". The prefetch buffer is static and passed in by
+the caller, so the streaming lookup satisfies the second half already.
+
+`PLE_STREAM=1` therefore implies `VLLM_USE_BREAKABLE_CUDAGRAPH=1`, asserted against the real file body
+(unset → 1, explicit 0 respected, explicit 1 kept, `PLE_STREAM=0` leaves it alone).
+
+**And it splits the throughput question in two.** Enabling breakable graphs sets
+`compilation_config.mode = CompilationMode.NONE`. So a streaming-vs-pinned throughput delta measured
+across different graph modes is measuring both things at once. The comparison has to be
+{pinned, streaming} × {default graphs, breakable graphs}, and any single-difference number is not
+attributable to streaming. This is the trap I set for myself immediately after fixing the last one, and
+the only reason I did not fall into it is that reading *why* the gate exists turned up the side effect.
+
+### Corrections to my own process this round
+
+6. **The restore trap destroyed the evidence it was supposed to preserve.** `restore()` began with
+   `podman rm -f ple-stream-test`; `podman logs` had already come back empty at the point of failure
+   detection, so by the time I wanted the traceback the container was gone and I had to re-run a full
+   engine stop/start to get 470 lines of log. Archive (`logs` + `inspect` for exit code and OOM flag)
+   *before* any cleanup. Both restore attempts did land the host back in its serving state -- health
+   200, greedy sha `f91132436fb09e45`, Shmem 66.18 GiB, VRAM 91,992 MiB -- so the failure was purely
+   epistemic, which is the more expensive kind.
+
+7. **A commit message claimed work that had not been written** (fourth instance of this pattern). The
+   python block editing `start.sh` died on an unterminated triple-quoted string; the commit still ran
+   because the failing block was the second of two in one shell invocation, and the message described
+   the `start.sh` change as implemented. Fixed in a follow-up commit that states the message was wrong,
+   rather than amended, so the wrong claim stays visible. `bash -n` also caught a stray `fi` that the
+   replacement introduced -- the anchor already ended with one.
+
+8. **My test harness for the implication logic was wrong before the code was.** "FAIL start=unset →
+   got unset" looked like a bug in `start.sh`; in fact the extracted `if` block was being run with
+   `PLE_STREAM` unset, so the branch correctly did nothing. An assertion that cannot distinguish "code
+   is wrong" from "precondition missing" is not a test. The same call also printed an if/fi "imbalance"
+   (13 vs 9) from an `awk` heuristic that counts `]; then` inside `[[ ]]` -- noise; `bash -n` is the
+   authority and it passed.
+
+9. **Nested heredocs inside `ssh '…'` keep breaking**, three times in one session, always the same way:
+   `\\'` or `"` terminating a string early. The fix that actually works is writing the script to a file
+   locally, `scp`, then `bash`; the fix I keep attempting is more escaping.
+
+### Two facts about the deployed baseline that changed my arithmetic
+
+The serving container is `localhost/qwen38-rtx:local`, in which **`qwen_pinned_host` does not exist** --
+`find_spec` returns None. So its `PLE_PIN_STRATEGY=round2` is not a preference that image honours: it
+torch-rounds the 47.684 GiB FP8 table to a **64.000 GiB** pin. The exact-size work is in
+`localhost/qwen38-exactpin:local`, which is not what is serving. That is a ~16.3 GiB host-RAM saving
+available today by switching image, with none of the streaming work involved.
+
+It also invalidated my own pre-registered acceptance number. I had written "Shmem should fall to
+~18.5 GiB", derived by subtracting 47.684 from the observed 66.18. But 66.18 decomposes two ways and
+the total cannot tell them apart: 64.000 + 2.18 (round2) or 47.684 + 18.50 (exact). The container env
+settles it -- round2 -- so under the actual deployed baseline, streaming should take Shmem to **~2.2
+GiB**. The check's threshold would have reached the right verdict either way, which is exactly why the
+printed expectation needed correcting rather than leaving a check whose reasoning I could not reproduce.
