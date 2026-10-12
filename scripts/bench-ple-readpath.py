@@ -519,7 +519,14 @@ def main():
         "contaminated": bool(bg_pages_s > 0.05 * got) if got else False,
         "device_pages_net": int(max(0, dev_pages - bg_pages_s * el)),
         "device_busy_ms": None,   # f[6], kept out of every rate below -- see the field note
+        # A negative hit rate is not a probability, it is a signal: the device moved more
+        # than was asked for. Surface it as amplification with its request/sector breakdown
+        # so the reader can tell "the filesystem read extra clusters or metadata" apart from
+        # "the counter is being misread again".
         "measured_hit_rate": round(1 - dev_pages / max(1, requested), 4),
+        "fs_device_amplification": round(dev_pages / max(1, requested), 3),
+        "device_sectors_per_request": round((s1 - s0) / max(1, r1 - r0), 2),
+        "page_cache_growth_pages": (res1 - res0) if (res0 is not None and res1 is not None) else None,
         "residency_window_gib": round(rwin / 2**30, 1) if args.residency else None,
         "residency_offset_gib": round(roff / 2**30, 2) if args.residency else None,
         "host_resident_pages_before": res0, "host_resident_pages_after": res1,
@@ -537,6 +544,8 @@ def main():
         "cpu_seconds": round(cpu_s, 2),
         "cpu_ms_per_1k_pages": round(cpu_s * 1000 / max(1, requested / 1000), 2),
         "caveats": [
+            "a device/page ratio above 1 means the filesystem or the device moved more than "
+            "was requested (btrfs metadata walks, cluster reads, or an O_DIRECT fallback)",
             "python threads, not io_uring: the submit path is part of what is measured, so "
             "a short fall is a property of this prototype's rate as much as of the device",
             "device counters are host-wide: nothing else may be reading the disk",
