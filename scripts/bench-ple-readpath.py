@@ -237,6 +237,10 @@ def main():
     ap.add_argument("--region-start-gib", type=float, default=0.0,
                     help="confine requests to a region so runs cannot warm each other")
     ap.add_argument("--region-gib", type=float, default=0.0, help="0 = to end of file")
+    ap.add_argument("--evict-timeout", type=float, default=30.0)
+    ap.add_argument("--sync-first", action="store_true",
+                    help="sync() before evicting: needed for a just-written file")
+    ap.add_argument("--require-cold", action="store_true", help="exit 2 if eviction fails")
     ap.add_argument("--evict-first", action="store_true",
                     help="fadvise DONTNEED the region before timing (whole range: proven effective)")
     ap.add_argument("--evict-lag-pages", type=int, default=0,
@@ -352,14 +356,29 @@ def main():
     rwin = min(size, max(1, args.residency_gib) * 2**30)
     if args.evict_first:
         # Whole-range DONTNEED is the form that works: 2 GiB went to 0.00. Per-page DONTNEED
-        # on a page read microseconds earlier does nothing at all, because the folio is
-        # still in a per-CPU LRU add batch and invalidate_mapping_pages skips elevated
-        # refcounts. See the evict-lag experiment.
-        os.posix_fadvise(R.fd, lo * args.row_bytes, (hi - lo) * args.row_bytes,
-                         os.POSIX_FADV_DONTNEED)
-        sync_t = time.perf_counter()
-        while time.perf_counter() - sync_t < 0.5:
-            time.sleep(0.05)
+        # on a page read microseconds earlier does nothing at all, because the folio is still
+        # in a per-CPU LRU add batch and invalidate_mapping_pages skips elevated refcounts.
+        # Dirty folios are skipped too, so a just-written file needs to drain writeback first
+        # -- which is exactly the case that produced a warm run labelled "cold" here, caught
+        # only because residency is measured before the clock starts. Verify, never assume.
+        w0 = os.popen("sync; echo ok").read().strip() if args.sync_first else "skipped"
+        deadline = time.perf_counter() + args.evict_timeout
+        cold = None
+        while time.perf_counter() < deadline:
+            os.posix_fadvise(R.fd, lo * args.row_bytes, (hi - lo) * args.row_bytes,
+                             os.POSIX_FADV_DONTNEED)
+            time.sleep(0.25)
+            probe = min(2 * 2**30, (hi - lo) * args.row_bytes)
+            res, _ = mincore_resident(R.fd, probe, bs, off=lo * args.row_bytes)
+            cold = None if res is None else res * bs / 2**20
+            if cold is None or cold <= max(4.0, probe / 2**20 * 0.01):
+                break
+        if cold is not None and cold > max(4.0, probe / 2**20 * 0.01):
+            print(f"  !! evict-first could not reach the region: {cold:,.1f} MiB still resident "
+                  f"of {probe/2**20:,.0f} MiB probed after {args.evict_timeout}s. This run is "
+                  "WARM; its hit rate describes the cache, not the device.", file=sys.stderr)
+            if args.require_cold:
+                raise SystemExit(2)
     res0, res_err = (mincore_resident(R.fd, rwin, bs) if args.residency else (None, None))
     touched_bytes = args.steps * args.tokens_per_step * args.rows_per_token * args.row_bytes * 1.04
     if touched_bytes < args.min_working_set:
@@ -425,6 +444,8 @@ def main():
     out = {
         "mode": args.mode, "threads": args.threads, "fs_block_bytes": bs,
         "tensor": args.tensor or None,
+        "row_bytes": args.row_bytes,
+        "region_start_bytes": lo * args.row_bytes, "region_bytes": (hi - lo) * args.row_bytes,
         "region_gib": round(span * args.row_bytes / 2**30, 2),
         "region_start_gib": round(args.region_start_gib, 2), "evict_first": args.evict_first,
         "blob": os.path.basename(args.blob), "blob_bytes": size,
