@@ -35,6 +35,7 @@ fi
 
 echo "=== locate the blob to measure (headers only, no bulk reads) ==="
 BLOB=${BLOB:-}
+BLOB_REQUESTED="$BLOB"
 if [ -z "$BLOB" ]; then
   BLOB=$(find "${MODEL:-/nonexistent}" -maxdepth 1 -name '*.safetensors' -exec readlink -f {} + 2>/dev/null \
          | while read -r f; do printf '%s\t%s\n' "$(stat -c %s "$f")" "$f"; done \
@@ -69,7 +70,24 @@ PY
 )
 fi
 true
-echo "  blob: $BLOB"
+# A defaulted blob is the dangerous case: the caller asked about one file and the receipts describe
+# another, in identical formatting. model-00019 was substituted this way and an A/B "proved" a file
+# was indistinguishable from itself.
+if [ -z "$BLOB_REQUESTED" ]; then
+  echo "  blob: $BLOB  (DEFAULTED -- BLOB was not set; largest shard in MODEL)"
+  echo "  !! WARNING: no explicit BLOB; receipts describe the file above. Set BLOB= for any A/B."
+else
+  echo "  blob: $BLOB"
+fi
+{
+  echo "blob_requested=$BLOB_REQUESTED"
+  echo "blob_used=$BLOB"
+  echo "model=${MODEL:-}"
+  echo "trace=${TRACE:-<uniform>}"
+  echo "caps=${CAPS:-} threads=${THREADS:-} steps=${STEPS:-} toks=${TOKS:-} target=${TARGET:-} dev=${DEV:-} mws=${MWS:-}"
+  echo "precell=${PRECELL:-<none>}"
+  echo "blob_bytes=$(stat -c %s "$BLOB" 2>/dev/null)"
+} > "$OUT/manifest.txt" 2>/dev/null || true
 
 wait_idle() {   # the device counters are host-wide, so a benchmark must not overlap a serving engine
   [ -n "${SKIP_IDLE:-}" ] && return 0
