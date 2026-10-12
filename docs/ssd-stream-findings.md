@@ -484,21 +484,34 @@ Two consequences, both better than an estimate:
   to a page multiple would change the prime arithmetic and the checkpoint bytes to
   buy 3.0% of the pages for 1.6x the disk, which section 6 already measured and
   rejected.
-* **Pages per token is 17.00, not the 16 this write-up had been using.** A row
-  touches one page unless it straddles, and the straddle rate is exact rather than
-  random: starts live at `head_start + local * ROW_BYTES`, so mod 4096 they occupy
-  only `4096 / gcd(ROW_BYTES, 4096)` residues. BF16 rows are 320 B,
-  `gcd(320, 4096) = 64`, giving 64 residues of which 4 (3840, 3904, 3968, 4032)
-  straddle, so 4/64 = 6.25% and `16 x 1.0625 = 17.00` pages/token. FP8 rows are
-  160 B, `gcd = 32`, 128 residues, 4 straddle, so 3.125% and 16.50. A 200,000-token
-  Monte Carlo over the real offsets returned 17.00 and 16.50 with 6.25% and 3.11%
-  straddling: the closed form, confirmed rather than approximated.
+* **Pages per token is 17.25, not the 16 this write-up had been using.** A row
+  touches one page unless it straddles. For a single contiguous, page-aligned table
+  the straddle rate is exact rather than random: starts sit at `row * ROW_BYTES`, so
+  mod 4096 they occupy only `4096 / gcd(ROW_BYTES, 4096)` residues, and for BF16
+  (320 B, `gcd = 64`) exactly 4 of 64 residues straddle -- 6.25%, giving
+  `16 x 1.0625 = 17.0000`. FP8 (160 B, `gcd = 32`) gives 4 of 128, 3.125%, 16.5000.
+  A 200,000-token Monte Carlo on that contiguous model reproduces both figures
+  exactly.
+* **But the shipping checkpoint is not one contiguous table, and that costs another
+  1.5%.** It is 128 independent tensors, each carrying its own byte phase, so the
+  clean modular argument does not apply. Measured on the real file offsets: 24
+  distinct phases mod 4096 across the 128 shards and **zero** page-aligned (first
+  phases 96, 104, 232, 608, 616, 1120 -- header lengths and preceding tensors shift
+  every one). A 200,000-token Monte Carlo over those actual offsets gives
+  **17.2519** pages/token for BF16 and **16.5333** for FP8, versus the 17.0000 and
+  16.5000 the closed form predicts. Both numbers are reported because both are
+  correct for their own model: 17.0000 is a property of the prime layout, 17.2519 is
+  what a reader of the files as shipped pays. Staging the table into a page-aligned
+  copy would recover only 1.5% of the pages, so the phase tax is not worth a second
+  copy of 95 GiB.
+
+A 2048-token chunk therefore touches about 35,300 pages, and covering that inside a
+3.6 s compute budget needs about 9,800 pages/s.
 
 The `12.8 rows per page` figure quoted from arXiv 2603.10087 is the *within-head*
 density (`4096 / 320`), not a divisor for pages-per-token. The two must not be
-conflated: 16 rows drawn from 16 separate blocks cost 17 pages however dense each
-block is. A 2048-token chunk therefore touches about 34,800 pages, and covering
-that inside a 3.6 s compute budget needs about 9,700 pages/s.
+conflated: 16 rows drawn from 16 separate blocks cost 17.25 pages however dense
+each block is.
 
 A row also never crosses a shard *file*, structurally rather than rarely:
 `discover_table_layout` partitions rows, not bytes -- shard i owns rows
