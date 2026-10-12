@@ -1053,6 +1053,62 @@ prefetch scaffolding already written, so this is a bounded change rather than a 
 subsystem -- but it is *code*, not configuration, and no flag on the current image will
 do it.
 
+### Status: closed as infeasible on this hardware class, not blocked
+
+Arm C (`PLE_MMAP=1`, GPU-dereferenced file mapping) is not waiting on anything. The verdict
+has three parts and they are not the same claim:
+
+1. **The mechanism cannot work on a discrete RTX, and no flag or driver setting changes that.**
+   `require_pageable_access` (ple_pageable.py:67, called at ngram_embedding.py:77) checks
+   `CU_DEVICE_ATTRIBUTE_PAGEABLE_MEMORY_ACCESS_USES_HOST_PAGE_TABLES`, which reports 0 on the
+   RTX PRO 6000. The kernel it gates (`_gather_mapped_rows_kernel`, defined at :186 and invoked
+   at :329) is handed the mapping pointer and dereferences it, so there is no path around the
+   gate that keeps the design's premise. The capability requires the GPU to walk host page
+   tables -- a property of a coherent link (NVLink-C2C on GB10/GH200), not of a driver option.
+2. **The design itself is sound, for the machine it was written on.** vLLM #58439/#58835 target
+   GB10, where the attribute is set. Closing arm C here is a statement about the host, not a
+   criticism of the upstream design.
+3. **The objective survives; only this route to it is closed.** Streaming the table from NVMe
+   without pinning it is viable on this GPU class by the copy shape -- sglang-ssd-stream is
+   validated on the same card, and `benchmarks/gg-stageB-readpath-20261012/` measures a threaded
+   CPU gather at 182,535 pages/s against a 128k-170k pages/s requirement. Arm C's slot in the
+   plan is filled by stage B, not left empty.
+
+**The two escape hatches are not arm C.** Making the mapping dereferenceable means registering
+it: `cudaHostRegister` over the range forces residency -- it faulted in 49 GiB unrefusably and
+OOM-killed the serving engine, which is how the session started -- so you pay the RAM the design
+existed to avoid and have simply rebuilt arm B. Registering a *bounded* window instead is a
+pinned staging buffer, which is stage B by another name. Either way the design stops being arm C
+at the moment it starts working.
+
+### A trap in this file for the next reader: `PagePrefetcher` is not a copy path
+
+`PagePrefetcher` (:412) pins buffers that look like staging -- `torch.empty(max_tokens,
+dtype=input_ids.dtype).pin_memory()` at :471, plus query-offset and context slots at :472-474
+and `copy_(..., non_blocking=True)` at :485-488. Those carry the **step's inputs**, not table
+bytes. Its purpose is stated at :498-500 and in the module docstring: it issues `readahead` for
+a step's pages "at once" so the GPU's page faults "wait on reads that are already in flight in
+parallel instead of issuing them one at a time." The docstring is explicit that there is "no
+CPU-gather/host-to-device staging path" and that "the prefetch is only a hint: the lookup is
+correct whether or not it has finished."
+
+Anyone auditing this for a port to discrete GPUs will find those `pin_memory()` calls and
+reasonably conclude a copy path exists. It does not.
+
+The same docstring also concedes a structural weakness that outlives the hardware question:
+because a decode step's rows are unknown until the previous step samples, **the prefetch has no
+lead over the lookup** -- so on a cold table the GPU and the prefetch race for the same pages,
+and "loading the weights evicts it from the page cache" means every start begins cold. Worth
+remembering when comparing stage B against a hypothetical GB10 deployment: zero-copy is not
+automatically the faster design here, it is the lower-memory one.
+
+
+The arm C receipt at `/home/rtx/arms/C-mmap-20261011-2308/` holds only a 372-byte
+`start.log` (the container id, no engine stderr): the failure text lives in this document
+rather than beside it, because the log was read from `podman logs` in-session and not filed.
+Weaker than the other arms' receipts; noted so nobody treats the absence of a transcript as an
+absence of evidence.
+
 ## 5. Prior art, checked against the sources (corrections to plan section 3)
 
 The plan's table is broadly right. These are the places where the primary
