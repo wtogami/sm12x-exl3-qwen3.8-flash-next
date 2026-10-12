@@ -2149,6 +2149,31 @@ path, the boundary, the fan-out path, the whole table, and scattered non-monoton
 what let the earlier 24x-underfilled buffer look plausible: `0 of 4000 sampled` passes on a build
 that copies 1/24 of a batch if the sample lands in the copied part.
 
+## An A/B that compared a file against itself, and the two real numbers it left behind
+
+The first BF16 layout A/B was void. The resolution script that was supposed to name the blob failed on
+a path bug, so `BLOB` reached the matrix runner empty -- and the runner, rather than refusing, fell
+back to `MODEL`, which defaults to the **serving container's own snapshot**, and picked the largest
+shard in it. Both arms therefore measured `model-00019` and the comparison tool reported
+"retention indistinguishable (<1%)" about a file against itself. The pre-existing guard only fires when
+nothing resolves at all; the case that actually misleads is resolving successfully to the wrong thing.
+The runner now warns loudly whenever `BLOB` is defaulted and writes `$OUT/manifest.txt` recording
+`blob_requested` against `blob_used`, model, trace, caps, threads, steps, target, dev, precell and blob
+size, so every receipt can be checked for what it actually describes.
+
+Two measurements survive the void run, and both are worth more than the invalid conclusion:
+
+* **Independent reproduction of the encoded-extent retention penalty.** `model-00019` at a 4 GiB cap
+  measured **2.2% hits** here against **2.7%** in the original controlled pair, with amplification
+  0.98x. Different session, cold-started by `drop_caches` rather than `fadvise` alone, same answer to
+  within 0.5 points.
+* **A third sample of the noise floor, and it separates by configuration.** Capped cells reproduced to
+  0.034% on device pages and 0.18% on rate; the *uncapped* `pcache` cell's rate differed 5.29%, where
+  the earlier self-pair gave 3.43%. So uncapped page-cache throughput on this host is a +-3-5%
+  instrument while capped cells are tight to well under 1%. Any future claim of a few-percent
+  throughput difference must come from capped cells or be repeated, and uncapped `pcache` rates should
+  be treated as indicative only.
+
 ## The BF16 checkpoint is already on disk, and it is the pathological case in its entirety
 
 Answering "does the NOCOW tree contain BF16 as well as FP8" turned up something I had been treating as
