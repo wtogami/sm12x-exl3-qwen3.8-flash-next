@@ -3075,3 +3075,44 @@ with the table unpinned. The eager cell ran after the breakable cell, so the tab
 its predecessor's faults. Cells are not I/O-independent when they share a page cache; the first streaming
 cell pays for everyone. Reading those two numbers as a pair would have produced a 14x "eager reads less"
 result that is pure sequencing.
+
+# v2 as built: staging in `prepare_inputs`, and why that place in particular
+
+`patches/qwen_ple_stream2.py`, wired by `port-ple-stream.py` into three installed files. One sentence of
+justification carries the whole design: **`prepare_inputs` is where `input_ids` themselves become fresh for
+the step**, so staging rows there inherits the freshness property the engine already guarantees, instead of
+needing a new argument for it.
+
+Why the page prefetcher — which runs one line earlier and already has host-side ids — is *not* the right
+hook for the data path: it treats a skipped step as harmless by design (`self.skipped += 1  # a hint only:
+the lookup stays correct`). For warming a cache that is exactly right. For producing features, a skipped
+step would mean the graph reads the previous step's rows and nothing would ever say so. v2 therefore keeps
+its own path, and additionally tags every staged row with a device-side sequence number written in the same
+stream order as the rows, so `_lookup` copies and then `masked_fill_`s anything not tagged for the current
+step: a missed fill degrades to zeros and a counted skip, never to stale features.
+
+Sizing, checked rather than guessed: `max_num_tokens` is `scheduler_config.max_num_batched_tokens` (2048
+here), so staging is `2048 x 16` rows x 160 B = **5.24 MB** of device memory plus four pinned arenas of the
+same size. That row count is identical to the engine's own `_prefetch_buffer` (`max_total_tokens *
+etp_data_parallel_size x num_ngram_heads x embedding_dim`) at ETP=1; at ETP>1 mine would be short, and
+`stage()` raises on capacity overflow rather than staging a partial step.
+
+Two bugs found in my own wiring while testing it:
+
+* The capture invariant in `stream_lookup` sat **above** the new v2 dispatch, so v2 — whose entire purpose
+  is to be capturable — would have refused to start. Reordered, and the ordering is now asserted
+  structurally by byte offset (v2 return < guard < v1 host copy), because that is precisely the kind of
+  thing a later tidy-up silently breaks.
+* Staging is gated on `PLE_STREAM_V2`, not `PLE_STREAM`, because building a stager *binds* it onto the
+  embedding and `_lookup` dispatches on the bound object. Running the hook under a v1 deployment would
+  have quietly converted it into v2 mid-flight.
+
+The Dockerfile's assertions moved into `patches/check-ple-stream.py` after the inline `python3 -c` version
+ran into the same quoting wall as before (a `\"` inside a single-quoted shell string reaches Python as a
+literal backslash). The file now prints 11 PASS lines at build time, including that the staging hook
+landed **exactly once** in `model_state.py` and that the streaming selection sits ahead of
+`checkpoint_mapped`.
+
+Both staging modes are implemented and named (`sync` waits on the step's D2H on the CPU; `async` hands it
+to a worker thread) because the cost of the D2H is the one open question in this design and I would rather
+measure both than argue about one.
