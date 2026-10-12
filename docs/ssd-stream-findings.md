@@ -1219,10 +1219,12 @@ of it is buffered. The practical consequences:
   requested).
 * It also means `O_DIRECT` does not fully protect against cache pressure on a tight host:
   it still occupies some page cache, which is exactly the resource being economised.
-* The `pcache` and `odirect` cells are within about 4% of each other in throughput at equal
-  thread counts (131k vs 126k uncapped, 129k vs 122k capped). If that survives the full
-  matrix, the access-method choice is decided by **predictability, copies, and RAM
-  accounting**, not by rate -- which is the conclusion already argued from the C/N model.
+* **The access methods are NOT within 4% -- that figure came from 12-step cells and the full
+  matrix refutes it.** Page cache beat `O_DIRECT` by +29.6% at 4 threads, +18.5% at 8, +11.4%
+  at 12, and the gap reversed to -2.0% and -4.9% at 12-16 threads under a 4 GiB cap. Short
+  cells understate badly (131k pages/s over 12 steps against 182k over 48 on the same blob),
+  so the validation pass was not qualified to answer this. Full matrix:
+  `benchmarks/gg-stageB-readpath-20261012/`.
 
 Short cells understate the rate: the same blob at 8 threads measured 157,843 pages/s over 40
 steps against 131,407 over 12, so the matrix uses 48 steps per cell and single-cell numbers
