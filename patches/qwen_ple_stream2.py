@@ -280,10 +280,6 @@ def make_stager(embedding, wrapper, max_rows: int) -> StepStager:
 
 def _build_stagers(state) -> list:
     """One stager per streaming n-gram embedding, sized from the model state that owns them."""
-    from vllm.model_executor.models.qwen4_exp.nvidia.ngram_embedding import (  # noqa: F401
-        Qwen4ExpNGramEmbedding,
-    )
-
     out = []
     for module in state.model.modules():
         emb = getattr(module, "ngram_embedding", None)
