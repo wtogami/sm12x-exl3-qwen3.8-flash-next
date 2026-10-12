@@ -2114,6 +2114,42 @@ measuring stick rather than the thing measured -- after `diskstats` field indice
 `du`-derived compression claim. The pattern is consistent enough to be a rule: when two of my
 instruments disagree, one of them is lying, and the one I notice is not necessarily the culprit.
 
+## One pass of a real trace, at full geometry, inside a capped container: the sizing model holds
+
+A 47.684 GiB exact-geometry fixture, the session's real 36,465,776 (token, head) row ids,
+`--evict-first --require-cold`, 8 threads, one full pass per cell, page granularity. Predictions
+were written into the log before the first cell ran.
+
+| cell | hit predicted | hit measured | device GiB predicted | device GiB measured | pages/s |
+|---|---|---|---|---|---|
+| pcache cap 8 | 0.75 +-0.04 | **0.744** | 18-22 | **19.02** | 155,345 |
+| pcache cap 16 | 0.80 +-0.03 | **0.797** | 15-17 | **15.08** | 166,659 |
+| odirect cap 8 | ~74 (all misses) | 0.000 | ~74 | **74.22** | 85,624 |
+| odirect cap 16 | ~74 | 0.000 | ~74 | **74.22** | 85,583 |
+| pcache / odirect, uncapped | 0.80 / 0.000 | *failed: host python had no numpy; re-running* | | | |
+
+Every capped cell landed inside its predicted band, and `dedup_saving_frac` read 0.467 against the
+0.475 measured independently by brute-force reuse counting. This is the first end-to-end
+confirmation of the chain that the whole low-RAM design rests on: the offline exact-reuse-distance
+hit-rate curve, derived from logged n-gram ids, predicts what the kernel page cache actually does
+under a cgroup bound. A 47.684 GiB table behaves like a ~15 GiB table at these capacities.
+
+Two results that change design choices rather than just confirming them:
+
+* **`O_DIRECT` cannot sustain the prefill read rate.** 85.6k pages/s against a 132.7k target, in
+  both capped configurations, with page-cache amplification 1.00x as expected -- it is not a
+  misconfiguration, it is the device and submit path. Converted to workload terms at 8.56
+  pages/token, that is roughly the prefill requirement with no headroom. Any streaming design that
+  deliberately bypasses the page cache therefore gives up the one thing that makes a small-RAM host
+  work: the ~80% of reads that cost nothing.
+* **The page-cache path clears the target with margin at both caps** (155-167k pages/s, ~1.2-1.3x
+  requirement), which is why stage B reads through the cache with row-granular copies instead of
+  trying to be clever about bypassing it.
+
+One incidental validation: the runner's `wait_idle` gate reported "engine busy (1 requests)" and
+deferred a cell -- the requests were this session's own inference against the idle-looking `burst`
+engine. The gate protected a measurement from the very workload I did not know was there.
+
 ## What the instruments got wrong while I was using them
 
 Five defects in the read-path instrument, found in one hour by making each one capable of failing.
