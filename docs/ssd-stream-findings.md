@@ -1204,6 +1204,50 @@ Three consequences for this repo's own design notes:
   that distinction, and it is the distinction that decides whether the feature runs on a
   discrete RTX at all.
 
+### Encoded extents damage page-cache retention, and that is what "O_DIRECT is not direct" really was
+
+The 1.64x steady-state shortfall had two candidate causes -- more passes needed, or btrfs
+encoded extents. **10 passes settled it, and settled it in favour of layout.** Same host, same
+drive, same 8 threads, same request pattern; the control file is a `--reflink=never` copy with
+identical md5, differing only in `chattr +C` / `compress=no`:
+
+| layout | cell | pages/s | hits | cache fraction | dev/req |
+|---|---|---|---|---|---|
+| encoded | uncapped | 215,589 | 88.6% | whole region | 0.114 |
+| encoded | 4 GiB | 163,749 | **9.2%** | 39.6% | 0.908 |
+| encoded | 3 GiB | 147,699 | **−15.0%** | 27.1% | 1.150 |
+| NOCOW | uncapped | 227,779 | **90.0%** | whole region | 0.100 |
+| NOCOW | 4 GiB | 177,409 | **42.9%** | 39.6% | 0.571 |
+| NOCOW | 3 GiB | 168,317 | **31.1%** | 27.1% | 0.689 |
+
+Four things follow, and the third is the one that makes the attribution a proof rather than a
+correlation:
+
+* **Stationarity is refuted outright.** At a 4 GiB cap the encoded file went from 12.3% hits at
+  3.2 passes to **9.2% at 10 passes**. It got worse with more passes. This is not an asymptote
+  we had not reached.
+* **The model is right about LRU and wrong only about the filesystem.** NOCOW hit rates land
+  *above* the C/N prediction (+3.3pp at cap4, +3.9pp at cap3), and the uncapped cells land on
+  `1 - 1/passes` almost exactly: 90.0% against 90.0% predicted for 10 passes. The encoded
+  uncapped cell reads 88.6% for the same reason -- a 14% metadata tax on the single cold pass.
+* **`O_DIRECT` behaves completely differently between the two, which only layout explains.**
+  Page-cache growth across 21M requests: **0.51 GiB encoded, 0.00 GiB NOCOW.** Device pages per
+  request: **1.16 encoded (flagged), 1.00 NOCOW.** No placement effect and no queue-depth effect
+  causes the buffered path to populate cache for a direct read. So the whole "O_DIRECT is
+  neither direct nor cache-free" finding reduces to one thing: this file's extents are encoded.
+* **NOCOW is a prerequisite, not a tuning knob.** +8.3% throughput at the 4 GiB cap, +14% at
+  3 GiB, hit rates that match the model instead of missing by 1.64x, the metadata tax gone, and
+  an honest O_DIRECT.
+
+Two caveats kept attached. The NOCOW copy was also **freshly written**, and the placement
+finding elsewhere in this document means fresh writes can be genuinely faster -- so part of the
+throughput gap may be placement. The two mechanisms are separable, though: fresh placement does
+not make a direct read populate the page cache, so the 0.51-vs-0.00 GiB result stands on layout
+alone. An encoded-but-freshly-written copy is isolating the rest. And the trade is not free for
+every profile: compression shrinks a BF16 table by ~16% (95.37 -> 80.47 GiB measured earlier),
+which reduces bytes on the wire, while encoded extents damage retention -- unresolved for BF16,
+flagged rather than guessed.
+
 ### A counter I trusted without calibrating, and the claim it manufactured
 
 **Retracted: the section here previously claimed the drive's own DRAM cache had absorbed
