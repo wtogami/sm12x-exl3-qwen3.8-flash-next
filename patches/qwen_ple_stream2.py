@@ -248,13 +248,30 @@ class StepStager:
 
         Capturable by construction: no host pointers, no stream changes, no Python branching on host
         state, and the mask buffer is preallocated because allocating inside a capture is how graphs get
-        weird. The mask is evaluated on the device from the sequence tags at replay time, so a fill that
-        did not land turns into zeros plus a counted event rather than into the previous step's features.
+        weird. The masking itself is `apply_staged_rows`, which is device-agnostic and unit-tested on the
+        CPU -- that function is where a v2 bug would silently produce wrong features, so it should not
+        require a GPU and a booted engine to check.
         """
-        staged = self._mask[:n_rows]
-        torch.eq(self.dev_seq[:n_rows], self.cur_seq, out=staged)
-        out_rows[:n_rows].copy_(self.dev[:n_rows])
-        out_rows[:n_rows].masked_fill_(~staged.unsqueeze(1), 0)
+        if n_rows > self.max_rows:
+            raise RuntimeError(
+                f"PLE v2 lookup asked for {n_rows} rows; staging holds {self.max_rows}. The stager was "
+                "sized from max_num_tokens x ngram_heads, so a larger request means the batch shape and "
+                "the staging geometry disagree -- most likely tensor-parallel ETP > 1, which the "
+                "pinned backend accounts for and this sizing does not.")
+        apply_staged_rows(self.dev, self.dev_seq, self.cur_seq, out_rows, self._mask, n_rows)
+
+
+def apply_staged_rows(dev, dev_seq, cur_seq, out_rows, mask, n_rows: int) -> None:
+    """out_rows[:n] = dev[:n], with any row whose sequence tag is not current zeroed.
+
+    Deliberately written as device-agnostic torch ops so the semantics can be tested on the CPU. The rule
+    it implements is the safety property of the whole design: a staged row is used only if it was staged
+    for this step. Everything else is a bug we would rather see as zeros than as the previous step's
+    features.
+    """
+    torch.eq(dev_seq[:n_rows], cur_seq, out=mask[:n_rows])
+    out_rows[:n_rows].copy_(dev[:n_rows])
+    out_rows[:n_rows].masked_fill_(~mask[:n_rows].unsqueeze(1), 0)
 
 
 def make_stager(embedding, wrapper, max_rows: int) -> StepStager:
