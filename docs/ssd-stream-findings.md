@@ -2070,6 +2070,33 @@ Therefore:
   deployment note is: *compression is on, it is costing retention and throughput as measured above,
   and its disk benefit on this filesystem is unverified by the instruments available here.*
 
+### The disk question settled without root, and my price for it was five times too big
+
+`compsize` is installed on both hosts but its `SEARCH_V2` ioctl needs privilege (`Operation not
+permitted`), so I said it was unavailable -- asserting an instrument was missing without testing
+the obvious alternative. The alternative is `df`: it reports bytes the filesystem actually
+allocated, and it cannot inherit whatever `st_blocks` is doing. Allocation delta for 1 GiB written,
+sampled 33 s apart so a btrfs transaction commit has landed, with `chattr +C` as the control:
+
+| payload | compressed dir | NOCOW dir |
+|---|---|---|
+| 1 GiB of zeros | **3.4%** | 100.0% |
+| 1 GiB of real FP8 weight bytes | **97.1%** | 100.0% |
+
+Three conclusions. The method detects real savings (zeros -> 3.4%), so `st_blocks` is confirmed to
+report logical size for compressed extents on this mount and every space claim built on it was
+void. btrfs *is* compressing the encoded extents. And on the actual payload it saves **2.9%**, so
+my "NOCOW forfeits about 6.7 GiB" figure overstates the cost by roughly five times: the real price
+on a 47.684 GiB table is about **1.4 GiB**.
+
+That leaves a genuine unexplained gap -- standalone zstd-1 at btrfs's own 128 KiB block size said
+86.0% on a 256 MiB sample, while allocation says 97.1% over 1 GiB. The likeliest cause is that the
+sample and the written region are not the same material: this shard holds no n-gram tensors at all,
+so its first 256 MiB may be a more compressible tensor than what follows. If so, my per-block
+measurement was right about its own bytes and wrong about the shard. Either way the deployment
+recommendation gets stronger rather than weaker: giving up 1.4 GiB of disk to buy 42.9% hit rate
+instead of 2.7%, and 10.3% throughput, is not a close call.
+
 That is the third time tonight a number I quoted confidently turned out to be an artifact of the
 measuring stick rather than the thing measured -- after `diskstats` field indices and a
 `du`-derived compression claim. The pattern is consistent enough to be a rule: when two of my
