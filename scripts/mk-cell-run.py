@@ -100,7 +100,7 @@ def build(base: list[str], name: str, image: str | None, envs: list[str], args: 
     # The image position is known here; re-detecting it later is what produced a false alarm, because
     # the first non-flag token in a podman line is usually a flag's VALUE (nvidia.com/gpu=all for
     # --device), not the image.
-    return cmd, len(out)
+    return cmd, len(out), base[img_i]
 
 
 def main() -> int:
@@ -120,21 +120,59 @@ def main() -> int:
     a = ap.parse_args()
 
     base = create_command(a.base_container)
-    cmd, img_i = build(base, a.name, a.image, a.env, a.arg, a.drop_env)
+    cmd, img_i, base_image = build(base, a.name, a.image, a.env, a.arg, a.drop_env)
     if a.detach:
         cmd = cmd[:2] + ["-d"] + cmd[2:]
 
-    # Content preservation: every token of the original container command must survive verbatim, except
-    # the ones deliberately replaced. Without this check a quoting bug can produce a line that is
-    # structurally perfect -- right flags, right order -- and semantically wrecked.
-    replaced = {a.name} | {kv.split("=", 1)[0] for kv in a.env} | set(a.drop_env)
-    if a.image:
-        replaced.add(cmd[img_i])
-    for tok in base[base.index("run" if "run" in base else "create") + 1:]:
-        if tok in replaced or tok in ("-d", "--detach", "--name") or tok.startswith("-"):
-            continue
-        if tok not in cmd:
-            raise SystemExit(f"BUG: token from the base container did not survive: {tok[:70]!r}")
+    # --- content preservation -------------------------------------------------
+    # The container argv (everything after the image) must be byte-identical to the base container's,
+    # plus whatever --arg we asked for. This is the check that the join-then-shlex bug needed: flag
+    # positions were perfect while --hf-overrides' JSON value had lost every quote, so only comparing
+    # the tokens themselves can see it.
+    sub = next(i for i, tok in enumerate(base) if tok in ("run", "create"))
+    base_img_i = next(i for i in range(sub + 1, len(base))
+                      if not base[i].startswith("-") and i > 0
+                      and not (base[i - 1] in ("-e", "--env", "-v", "--volume", "--device", "--name",
+                                               "--network", "--ipc", "--security-opt", "--label")
+                               or base[i - 1].startswith("--") and "=" not in base[i - 1]
+                               and base[i - 1] in takes_value))
+    want_tail = base[base_img_i + 1:] + list(a.arg)
+    if cmd[img_i + 1:] != want_tail:
+        for i, (x, y) in enumerate(zip(cmd[img_i + 1:], want_tail)):
+            if x != y:
+                raise SystemExit(f"BUG: container argv token {i} changed: {x[:70]!r} != {y[:70]!r}")
+        raise SystemExit("BUG: container argv length changed unexpectedly")
+
+    # Every base podman flag/value must survive unless deliberately replaced. Values are tracked by which
+    # flag they belong to, because 'localhost/qwen38-rtx:local' is a token like any other but is the one
+    # we are explicitly allowed to swap.
+    drop_keys = set(a.drop_env) | {kv.split("=", 1)[0] for kv in a.env}
+    cur_flag, missing = None, []
+    i = sub + 1
+    while i < len(base):
+        tok = base[i]
+        if tok in ("--name",):
+            cur_flag = tok
+        elif tok in ("-e", "--env"):
+            cur_flag = tok
+        elif tok in ("-d", "--detach"):
+            cur_flag = None            # stripped on purpose; --detach re-adds it
+        elif cur_flag in ("-e", "--env"):
+            if tok.split("=", 1)[0] not in drop_keys and tok not in cmd[:img_i]:
+                missing.append(tok)
+            cur_flag = None
+        elif cur_flag == "--name":
+            cur_flag = None            # replaced on purpose
+        elif tok.startswith("-"):
+            cur_flag = tok
+        elif tok == base_image:
+            pass                       # replaced on purpose when --image given
+        elif tok not in cmd[:img_i]:
+            missing.append(tok)
+        i += 1
+    if missing:
+        raise SystemExit("BUG: podman arguments lost from the base container: "
+                         + ", ".join(repr(x[:60]) for x in missing[:3]))
 
     # self-check: podman-level flags must never appear after the image. Container argv legitimately
     # starts with flags (--enforce-eager, --max-model-len), so only the podman-only set is a bug.
