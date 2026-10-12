@@ -266,6 +266,8 @@ def _selftest(argv):
     ap.add_argument("--compute-ms", type=float, default=205.0,
                     help="model compute time the fill hides behind")
     ap.add_argument("--rowcopy", default="")
+    ap.add_argument("--buffers", type=int, default=4,
+                    help="arena ring depth; 2 reproduces the H2D/CPU overwrite race for comparison")
     a = ap.parse_args(argv)
 
     import torch
@@ -280,7 +282,8 @@ def _selftest(argv):
         raise SystemExit("--trace is required: uniform-random testing produced the wrong design twice")
 
     g = StreamGather(a.table, row_bytes=a.row_bytes, threads=a.threads,
-                     max_rows_per_batch=a.batch_tokens * 16, rowcopy_so=a.rowcopy or None)
+                     max_rows_per_batch=a.batch_tokens * 16, rowcopy_so=a.rowcopy or None,
+                     buffers=a.buffers)
     bad = g.verify()
     print(f"  gate: {bad} of 4000 randomly sampled rows mismatch a direct read -> "
           f"{'PASS' if bad == 0 else 'FAIL'}")
