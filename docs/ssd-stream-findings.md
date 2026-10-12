@@ -2964,3 +2964,58 @@ gather has to live inside the model forward.
 
 The `stream-eager` cell is expected to be bad and is kept only as a documented fallback; the eager
 measurement above is already its third data point.
+
+# The matrix that booted nothing, and the five defects it surfaced first
+
+All eight cells were rejected in seconds. Nothing was measured, and the host came back healthy — but the
+cause was not the engine, and the fix chain turned into a small catalogue of ways a harness can be wrong.
+
+**1. My run-line generator corrupted container arguments.** `create_command()` asked podman to
+`{{join .Config.CreateCommand " "}}` and then `shlex.split()`ed the result. `CreateCommand` is an argv
+*list* with no quoting metadata; `shlex.split` *parses* quoting. So
+`--hf-overrides '{"text_config":{"rope_type":"yarn",...}}'` came back with every double quote removed, and
+the container died on its own command line: `vllm serve: error: argument --hf-overrides: Value {...}
+cannot be converted to <function loads>`. That reads like "podman rejected my flags" and is nothing of the
+kind. Fixed by reading `{{json .Config.CreateCommand}}`.
+
+**2. The dry run passed all four cells anyway.** It asserted flag positions — nothing podman-level after
+the image, env before the image — and every one of those assertions was true while the arguments were
+semantically wrecked. Structure was never the problem. The check that catches this class compares *content*:
+the generated container argv must be byte-identical to the base container's plus the requested additions,
+and each JSON-valued argument must still parse as JSON.
+
+**3. `-d` was stripped and never re-added.** `build()` removes the base line's `--detach` so the driver
+controls run mode, and nothing put it back — so cells would have run in the foreground and hung the health
+loop, which is a much worse failure than a fast rejection. Adding it also exposed a second bug of the classic
+kind: inserting a token invalidates an index computed before the insertion.
+
+**4. Two locators for one grammar.** The new content check carried its own "find the image" logic and found
+the *model path* instead, so a correct line failed the check with "container argv token 0 changed". Same
+failure family as the duplicated `--dev` resolver: two implementations of one inference, disagreeing. Now
+one function, `find_image_index()`, used by both paths. And the podman-flag scan walked past the image into
+container argv, reporting `--port`'s value and the model path as "lost arguments" — a check that refuses
+correct input teaches you to delete it.
+
+**5. A cold cell measures ~2x low.** The first real smoke cell booted, became healthy at 290 s, reproduced
+the strict hash exactly — and reported 8,205 tok/s prefill against 17,000-ish for the same pinned config,
+while decode agreed to 0.5%. Kernel selection and autotuning are cold. Every timed shape now discards two
+requests first; without that, the matrix measures how recently each cell booted.
+
+## The instrument claim I had to take back within one message
+
+I wrote that prefill had "a 2.2× spread on one configuration" and was therefore unusable. Wrong: the swing
+was 8.2k → 11k → 17k because during a rewrite I dropped a `[:14000]` truncation on the prefill prompt,
+changing it from ~3,500 to ~7,900 tokens. I was comparing two measurements of two different things and
+reaching for "noise" to explain it. With the definition held constant, spread over four back-to-back runs is
+16.2k–18.3k, about 13%, and driving the engine from a second client did not lower it.
+
+So the resolution limits for this matrix, stated before reading it: **decode** is a real instrument
+(163.4–164.6 tok/s across every run tonight, under 1%), and decode is precisely where FULL-vs-PIECEWISE
+graphs should bite. **Prefill** at median-of-3 resolves something like 7–10% and nothing finer. A prefill
+difference under that is not a finding. The timed lines now print their own shape (prompt tokens, chars,
+reps, warmup) so a silent redefinition shows up in the data rather than in my memory.
+
+Smaller notes: an argparse help string containing a bare `%` raises at `add_argument` time, which
+`py_compile` cannot see; and my habit of piping runs through `grep '^prefill'` hid that traceback entirely,
+making a crashed probe look like a silent one — the same shape as the "failed cell looked like a running
+one" defect from the read-path instrument. Both now checked by importing the module and reading `tail`.
