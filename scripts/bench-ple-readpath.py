@@ -119,6 +119,20 @@ def mincore_resident(fd, nbytes, bs, off=0):
         lib.munmap(addr, nbytes)
 
 
+def resident_pages(fd, start, nbytes, bs, chunk=1 << 30):
+    """mincore() over an arbitrary range, in chunks, totalling the resident pages. Probing a
+    prefix and extrapolating is what let a 5.48 GiB warm tail pass a cold gate."""
+    tot, off, end = 0, start, start + max(0, nbytes)
+    while off < end:
+        n = min(chunk, end - off)
+        res, err = mincore_resident(fd, n, bs, off)
+        if res is None:
+            return None, err
+        tot += res
+        off += n
+    return tot, None
+
+
 def page_index(p):
     """Filesystem block size, queried not assumed -- a 160-byte FP8 row is not a valid
     direct-I/O unit and the read unit has to be the real one."""
@@ -251,12 +265,13 @@ def main():
     ap.add_argument("--sync-first", action="store_true",
                     help="sync() before evicting: needed for a just-written file")
     ap.add_argument("--require-cold", action="store_true", help="exit 2 if eviction fails")
+    ap.add_argument("--verbose", action="store_true")
     ap.add_argument("--evict-first", action="store_true",
                     help="fadvise DONTNEED the region before timing (whole range: proven effective)")
     ap.add_argument("--evict-lag-pages", type=int, default=0,
                     help="evict a page only after this many newer pages have been read")
-    ap.add_argument("--residency-gib", type=int, default=16,
-                    help="window size mincore() covers, from offset 0")
+    ap.add_argument("--residency-gib", type=int, default=0,
+                    help="cap the residency probe window; 0 covers the whole touched region")
     ap.add_argument("--min-working-set", type=int, default=8 * 2**30,
                     help="warn below this many touched bytes (drive DRAM cache)")
     args = ap.parse_args(a)
@@ -367,32 +382,35 @@ def main():
     # 20-40 GiB proves nothing about coldness, which is how an earlier run here reported a
     # "verified cold" start for a region it never looked at.
     roff = lo * args.row_bytes
-    rwin = min((hi - lo) * args.row_bytes, max(1, args.residency_gib) * 2**30)
+    rwin = (hi - lo) * args.row_bytes if args.residency_gib <= 0 \
+        else min((hi - lo) * args.row_bytes, args.residency_gib * 2**30)
     if args.evict_first:
-        # Whole-range DONTNEED is the form that works: 2 GiB went to 0.00. Per-page DONTNEED
-        # on a page read microseconds earlier does nothing at all, because the folio is still
-        # in a per-CPU LRU add batch and invalidate_mapping_pages skips elevated refcounts.
-        # Dirty folios are skipped too, so a just-written file needs to drain writeback first
-        # -- which is exactly the case that produced a warm run labelled "cold" here, caught
-        # only because residency is measured before the clock starts. Verify, never assume.
-        w0 = os.popen("sync; echo ok").read().strip() if args.sync_first else "skipped"
-        deadline = time.perf_counter() + args.evict_timeout
-        cold = None
+        # Whole-range DONTNEED is the form that works. Dirty folios are skipped until
+        # writeback drains, and folios still in a per-CPU LRU add batch are skipped while
+        # refcounts are elevated, so this is a loop with a verdict -- not a call and a hope.
+        # The probe covers the ENTIRE region: a prefix probe passed a run whose remaining
+        # 5.48 GiB was resident, and that run's "cold" numbers were 36% page cache.
+        region_bytes = (hi - lo) * args.row_bytes
+        gate_mib, deadline = None, time.perf_counter() + args.evict_timeout
         while time.perf_counter() < deadline:
-            os.posix_fadvise(R.fd, lo * args.row_bytes, (hi - lo) * args.row_bytes,
-                             os.POSIX_FADV_DONTNEED)
+            os.posix_fadvise(R.fd, lo * args.row_bytes, region_bytes, os.POSIX_FADV_DONTNEED)
             time.sleep(0.25)
-            probe = min(2 * 2**30, (hi - lo) * args.row_bytes)
-            res, _ = mincore_resident(R.fd, probe, bs, off=lo * args.row_bytes)
-            cold = None if res is None else res * bs / 2**20
-            if cold is None or cold <= max(4.0, probe / 2**20 * 0.01):
+            res, _ = resident_pages(R.fd, lo * args.row_bytes, region_bytes, bs)
+            gate_mib = None if res is None else res * bs / 2**20
+            limit = max(4.0, region_bytes / 2**20 * 0.01)
+            if gate_mib is None or gate_mib <= limit:
                 break
-        if cold is not None and cold > max(4.0, probe / 2**20 * 0.01):
-            print(f"  !! evict-first could not reach the region: {cold:,.1f} MiB still resident "
-                  f"of {probe/2**20:,.0f} MiB probed after {args.evict_timeout}s. This run is "
-                  "WARM; its hit rate describes the cache, not the device.", file=sys.stderr)
+        limit = max(4.0, region_bytes / 2**20 * 0.01)
+        if gate_mib is not None and gate_mib > limit:
+            print(f"  !! evict-first left {gate_mib:,.1f} MiB resident of a "
+                  f"{region_bytes/2**20:,.0f} MiB region (limit {limit:.1f} MiB). This run is "
+                  "WARM: its hit rate describes the cache, not the device.", file=sys.stderr)
             if args.require_cold:
                 raise SystemExit(2)
+        elif args.verbose:
+            print(f"  cold gate: {gate_mib:,.1f} MiB resident of "
+                  f"{region_bytes/2**20:,.0f} MiB region", file=sys.stderr)
+
     res0, res_err = (mincore_resident(R.fd, rwin, bs) if args.residency else (None, None))
     touched_bytes = args.steps * args.tokens_per_step * args.rows_per_token * args.row_bytes * 1.04
     if touched_bytes < args.min_working_set:
@@ -445,7 +463,7 @@ def main():
 
     if errors:
         print("  !! worker errors: " + "; ".join(errors[:5]), file=sys.stderr)
-    res1, _ = (mincore_resident(R.fd, rwin, bs, roff) if args.residency else (None, None))
+    res1, _ = (resident_pages(R.fd, roff, rwin, bs) if args.residency else (None, None))
     el = time.perf_counter() - t_start
     ru1 = resource.getrusage(resource.RUSAGE_SELF)
     cpu_s = (ru1.ru_utime - ru0.ru_utime) + (ru1.ru_stime - ru0.ru_stime)
