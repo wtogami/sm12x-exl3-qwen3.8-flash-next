@@ -525,6 +525,15 @@ def main():
         # "the counter is being misread again".
         "measured_hit_rate": round(1 - dev_pages / max(1, requested), 4),
         "fs_device_amplification": round(dev_pages / max(1, requested), 3),
+        # 1 - device/requests is NOT the hit rate on a filesystem that amplifies cold
+        # reads: device traffic counts ~1.16 pages per distinct page, which buries the
+        # hits. The defensible figure subtracts the pages that were actually pulled into
+        # the page cache (mincore growth) from the requests issued. Requires a run whose
+        # region fits the cache, so nothing was evicted.
+        "hit_rate_from_residency": (round((requested - (res1 - res0)) / requested, 4)
+                                    if (res0 is not None and res1 is not None and dev_pages > 0)
+                                    else None),
+        "distinct_pages_pulled": (res1 - res0) if (res0 is not None and res1 is not None) else None,
         "device_sectors_per_request": round((s1 - s0) / max(1, r1 - r0), 2),
         "page_cache_growth_pages": (res1 - res0) if (res0 is not None and res1 is not None) else None,
         "residency_window_gib": round(rwin / 2**30, 1) if args.residency else None,
