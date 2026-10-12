@@ -119,11 +119,11 @@ run_host() {  # $1 mode $2 threads $3 tag
         --mode "$1" --threads "$2" --tokens-per-step "${TOKS:-2048}" --steps "${STEPS:-150}" \
         --require-cold --evict-first --residency --dev "${DEV:-nvme0n1}" \
         --target-pages-per-s "${TARGET:-115700}" --min-working-set "${MWS:-0}" \
-        --output /work/out.json >"$OUT/$3.log" 2>&1
+        --output /work/out.json >"$OUT/$4.log" 2>&1
     local rc=$?
-    awk '/^\{$/,/^\}$/' "$OUT/$3.log" > "$OUT/$3.json"
-    echo "    rc=$rc  (parsed $(wc -c < "$OUT/$3.json") bytes of json)"
-    [ -s "$OUT/$3.json" ] || tail -3 "$OUT/$3.log" | cut -c1-140 | sed 's/^/      /'
+    awk '/^\{$/,/^\}$/' "$OUT/$4.log" > "$OUT/$4.json"
+    echo "    rc=$rc  (parsed $(wc -c < "$OUT/$4.json") bytes of json)"
+    [ -s "$OUT/$4.json" ] || tail -3 "$OUT/$4.log" | cut -c1-140 | sed 's/^/      /'
   }
 
   : > "$OUT/cells.txt"
@@ -163,13 +163,15 @@ for tag, j in rows:
         if (j.get("host_cache_gib_used") or 0) > 0.5: warn += " !fell-back-to-buffered"
         if j.get("measured_hit_rate", 0) > 0.5: warn += " !direct-but-cached"
     if not j["met_target"]: warn += " !under target"
+    if j.get("contaminated"): warn += f" !background {j.get('background_pages_per_s',0):,.0f} p/s"
     print(f"{tag:26s} {j['pages_per_s_achieved']:10,.0f} {str(j['met_target']):>4s} "
           f"{(hc if hc is not None else -1):9.2f} {dv if dv is not None else -1:10,} "
-          f"{dr if dr is not None else -1:10,} {j['latency_us']['p50']:7.1f} {j['latency_us']['p99']:8.1f} "
+          f"{j.get("device_pages_net", dr) if dr is not None else -1:10,} {j['latency_us']['p50']:7.1f} {j['latency_us']['p99']:8.1f} "
           f"{j['cpu_ms_per_1k_pages']:10.1f}{warn}")
-print("\n  flags: !not cold = region was resident at start; !fell-back-to-buffered = an O_DIRECT run")
+print("\n  device column is NET of measured background traffic.  flags: !not cold = region was resident at start; !fell-back-to-buffered = an O_DIRECT run")
 print("  that populated the page cache, i.e. the kernel ignored O_DIRECT (btrfs does this on")
 print("  compressed extents); !under target = could not sustain the prefill page rate, which")
-print("  is a real result about that configuration, not a failed run.")
+print("  is a real result about that configuration, not a failed run; !background N p/s = the")
+print("  host was doing more than 5% of that much I/O on its own, so the cell measures noise.")
 PY
 echo MATRIXDONE

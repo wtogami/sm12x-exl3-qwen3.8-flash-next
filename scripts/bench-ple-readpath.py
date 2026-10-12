@@ -266,6 +266,8 @@ def main():
                     help="sync() before evicting: needed for a just-written file")
     ap.add_argument("--require-cold", action="store_true", help="exit 2 if eviction fails")
     ap.add_argument("--verbose", action="store_true")
+    ap.add_argument("--baseline-seconds", type=float, default=1.0,
+                    help="sample background device traffic before timing; 0 disables")
     ap.add_argument("--evict-first", action="store_true",
                     help="fadvise DONTNEED the region before timing (whole range: proven effective)")
     ap.add_argument("--evict-lag-pages", type=int, default=0,
@@ -419,6 +421,20 @@ def main():
               "this much and device counters will report hits that are not media reads",
               file=sys.stderr)
 
+    # Background traffic baseline. Device counters are host-wide, so a cell can report more
+    # device pages than page requests issued -- which happened, and silently. Measuring the
+    # idle rate for a moment first makes contamination visible instead of absorbed into the
+    # result; a run where the background is more than a few percent of the measured rate is
+    # not a measurement of anything.
+    bg_pages_s = 0.0
+    if args.baseline_seconds > 0:
+        br0, bs0 = disk_reads(args.dev)
+        tb0 = time.perf_counter()
+        time.sleep(args.baseline_seconds)
+        br1, bs1 = disk_reads(args.dev)
+        el_b = max(1e-6, time.perf_counter() - tb0)
+        bg_pages_s = (bs1 - bs0) * SECTOR / bs / el_b
+
     t_start = time.perf_counter()
     r0, s0 = disk_reads(args.dev)
     ru0 = resource.getrusage(resource.RUSAGE_SELF)
@@ -499,6 +515,9 @@ def main():
         "device_pages_read": int(dev_pages),
         "device_reads_completed": r1 - r0,
         "device_mib_read": round((s1 - s0) * SECTOR / 2**20, 1),
+        "background_pages_per_s": round(bg_pages_s, 1),
+        "contaminated": bool(bg_pages_s > 0.05 * got) if got else False,
+        "device_pages_net": int(max(0, dev_pages - bg_pages_s * el)),
         "device_busy_ms": None,   # f[6], kept out of every rate below -- see the field note
         "measured_hit_rate": round(1 - dev_pages / max(1, requested), 4),
         "residency_window_gib": round(rwin / 2**30, 1) if args.residency else None,
