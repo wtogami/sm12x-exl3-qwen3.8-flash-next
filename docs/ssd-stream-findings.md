@@ -3116,3 +3116,43 @@ landed **exactly once** in `model_state.py` and that the streaming selection sit
 Both staging modes are implemented and named (`sync` waits on the step's D2H on the CPU; `async` hands it
 to a worker thread) because the cost of the D2H is the one open question in this design and I would rather
 measure both than argue about one.
+
+## A typo I made twice is a missing check, not bad luck
+
+v2's first real engine start died at `prepare_inputs → stage_step_rows → _build_stagers` with
+`ModuleNotFoundError: No module named 'vllm.model_executor.models.qwen4_exp'`. The module is
+`vllm.models.qwen4_exp`. I had already written this exact wrong prefix once earlier in the session, in
+`skip_pageable_gate`, and had already been told the correct path by an import I ran to check it. Repeating
+it means the class of error was unguarded, so now it is: `check-ple-stream.py` greps every overlay for the
+literal bad path and fails the build. It could not be caught by importing the module, because the bad
+import sits inside a function body and never executes at import time — which is also why the eleven
+existing build assertions all passed on a broken image.
+
+The import was also dead code: `_build_stagers` matches the backend by `type(emb).__name__`, so the fix was
+deletion, not correction. And the same traceback confirmed the part I was actually testing: the staging hook
+fires in `prepare_inputs`, eagerly, before any capture, exactly where designed.
+
+## The staleness mask, tested where it can be tested
+
+`apply_staged_rows` decides inside the captured graph whether a staged row is used. Its failure mode is
+"silently wrong n-gram features", so it was factored out of the class as device-agnostic torch ops and put
+under `scripts/test-ple-stream-v2.py`, which runs on CPU: all-fresh copies every row, all-stale zeroes the
+output, mixed tags resolve **per row** (not per buffer), stale rows carry no staged bytes, and a short
+`n_rows` neither reads nor writes past its bound. Seven assertions, all passing inside the image against
+the real torch.
+
+The first draft of the seventh check was `not out.any() or True`, which cannot fail. I have written
+variants of that mistake often enough this session that the file now carries a static guard for it — a
+check whose result is a constant is worse than no check, because it reads like coverage.
+
+The case that check documents is genuinely load-bearing and genuinely not covered by this function: a
+never-filled buffer has zero tags and `cur_seq == 0`, so it *matches* and gets copied. It is unreachable in
+the engine only because `_lookup` runs after `prepare_inputs` has staged the step and the first fill sets
+`cur_seq >= 1`. That is a property of hook placement, not of the mask, and the test says so rather than
+implying the function is self-defending.
+
+## Procedural
+
+A `scp` of that test file failed with "No such file or directory" while the file was sitting committed in
+the repo: the command ran without a `cd`, so the relative path resolved against the session's workspace
+root instead of the repo. Absolute paths in remote-copy commands, or `cd` in the same statement.
