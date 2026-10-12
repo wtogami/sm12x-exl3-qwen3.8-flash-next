@@ -70,7 +70,7 @@ Two preconditions to assert rather than assume:
   construction, and the fallback branch calls `.contiguous()`, so this is free --
   but it is why an exact-size tensor must not be produced by slicing a larger one.
 
-## Two sites that would silently undo it
+## Two sites that would re-round the table (accepted risk, kept as a tripwire)
 
 `model_executor/model_loader/utils.py` re-pins CPU-resident parameters in the
 `finally` of the same context manager that hands out the module:
@@ -89,6 +89,13 @@ ever fires on the PLE table, the pin silently becomes 128.000 GiB again, and it
 would also *copy* 95 GiB. An implementation has to either route these through the
 same exact-size allocator or assert the table never reaches them. `model_executor/
 offloader/uva.py:121` has the same idiom and the same caveat.
+
+**Owner judgement, recorded so the guard is not over-read.** The code paths that reach
+those branches are a new model release or an experimental quant, and each of those
+already requires recipe validation against specific resource limits -- so a re-rounded
+128 GiB pin surfaces during validation, not silently in production. `reject_exact_repin`
+is therefore a convenience that converts a validation-day OOM into a named error, not
+the mitigation for a live hazard. It stays because it costs one set lookup per re-pin.
 
 ## The lifetime trap
 
@@ -137,6 +144,37 @@ warn-above-70% settings were kept deliberately after a probe reached 77.5%,
 because an allocation probe is not a served run; exact-size improves the
 numerator and is no reason to loosen the policy.
 
+## Performance expectations, and the only valid comparison
+
+Steady state should be **unchanged**, for a structural reason rather than an
+optimistic one: both designs reach the device through the same aliased UVA view of the
+same page-locked bytes, so the kernel, the PCIe traffic and the served tokens are
+identical. What changes is how much host RAM is committed, not how it is read.
+
+Proving "unchanged" is harder than proving "regressed", because the effect sought is
+the absence of one. `fp8` c16 decode in the existing receipts spans 864 median to 993
+max -- about 15% -- so a 1-2% difference is invisible below that noise floor and N has
+to be raised to match. Requirements for the comparison:
+
+* same image and config, single variable `PLE_PIN_STRATEGY`;
+* **same host** -- a decode rate is a property of the machine producing it, and every
+  receipt in `benchmarks/` came from `burst` or another box, never `gg`;
+* co-located client, plus a `runtime.json` per arm. Several historical result
+  directories carry no receipt at all, which is how the host question stayed unnoticed;
+* greedy byte-identity checked across arms before timing is compared, since otherwise
+  the arms may be benchmarking different token sequences;
+* `Shmem`, worker pin mappings and swap recorded per arm. That is the claim actually
+  being made, and it needs no benchmark to establish.
+
+Startup cost is out of scope as a concern. Page-locking measured 42.0 s and 63.8 s for
+the identical call, so it is neither well-quantified nor decision-relevant, and
+exact-size can only reduce it.
+
+The same discipline governs the streaming comparison, where some loss is an accepted
+trade: streaming is a survival path for hosts whose GPU VRAM exceeds their system RAM,
+not a throughput play. The deliverable there is a measured cost against the `gg` pinned
+baseline -- never against a foreign host's number.
+
 ## Tests to write with the change
 
 `scripts/test-ple-memcheck.py` currently asserts BF16-on-`gg` refuses. Under
@@ -157,5 +195,5 @@ the assertion mean anything.
    `PLE_PIN_STRATEGY`, defaulting to today's behaviour.
 2. The gate and its test matrix in the same commit; they are one change.
 3. Assert-not-assume for the two re-pin paths in `model_loader/utils.py`.
-4. Re-measure startup page-lock on `gg` at both profiles (the 42-64 s spread is
-   too wide to quote a saving from) before claiming one.
+4. Measure `gg` pinned baseline vs `gg` exact-size on the same host (startup time is
+   explicitly not a concern; steady-state non-regression is).
