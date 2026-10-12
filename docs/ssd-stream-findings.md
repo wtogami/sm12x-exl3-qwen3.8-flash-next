@@ -2114,6 +2114,41 @@ measuring stick rather than the thing measured -- after `diskstats` field indice
 `du`-derived compression claim. The pattern is consistent enough to be a rule: when two of my
 instruments disagree, one of them is lying, and the one I notice is not necessarily the culprit.
 
+## The module's first GPU run: correct bytes, wrong timing, and the timing was the test's fault
+
+`patches/qwen_stream_gather.py` driven by the real session trace against a verified 8 GiB FP8
+fixture on `gg`, alongside the serving engine:
+
+    gate: 0 of 4000 randomly sampled rows mismatch a direct read -> PASS
+    fill:  p50  11.31 ms  p99  32.72 ms
+    exposed against a 205 ms compute window: p50  11.74 ms  p99  33.13 ms   (5.73% of prefill)
+    decode (16 rows): p50 298.9 us  p99 440.8 us
+
+Prediction had been 0.2% of prefill and ~17 us decode, from the `burst` prototype. The correctness
+half held immediately; the timing half failed for two reasons, one in the module and one in the
+harness, and only one of them is about the design.
+
+* **The pipeline never ran.** `submit()` stored into a single `_pending` slot, so submitting batch
+  k+1 overwrote the handle for batch k and `wait()` dutifully waited for the batch just submitted.
+  That is why `exposed ~= fill`: the measurement was correct and the thing it measured was a
+  synchronous design. A one-slot queue cannot express "filling k+1 while the device still needs k",
+  which is the entire premise of stage B. Pending fills are a FIFO now.
+* **Decode paid thread-pool dispatch.** Fanning 16 rows across 24 threads to move 2.5 KiB measured
+  299 us; small batches copy inline now.
+* **What is left is environmental and is now instrumented.** Each 32,768-row batch touches on the
+  order of 17,000 distinct pages to deliver 5.24 MiB of payload, so fill cost is dominated by page
+  residency, and `gg` currently holds ~66 GiB of pinned host memory for the serving engine plus its
+  own page cache. The self-test reports per-batch minor/major fault deltas and host/cgroup memory so
+  the next run attributes the gap instead of arguing about it.
+
+Method note. The inline small-batch path was first written with `bounds` rebound *after* the copy
+call, which would have copied a `1/threads` slice into a stale arena. The GPU gate would have caught
+that as a mysterious byte mismatch, so there is now a GPU-free test,
+`scripts/test-ple-rowcopy.py`, that byte-compares **every** row rather than sampling, for the inline
+path, the boundary, the fan-out path, the whole table, and scattered non-monotonic ids. Sampling is
+what let the earlier 24x-underfilled buffer look plausible: `0 of 4000 sampled` passes on a build
+that copies 1/24 of a batch if the sample lands in the copied part.
+
 ## The exclusion test: copy-on-write is innocent, so the layout advice collapses to nothing
 
 The controlled D-versus-E pair varied three things at once -- CoW flag, extent count, and whether
