@@ -113,7 +113,7 @@ cell() {  # name image ple_stream breakable enforce_eager cudagraph_mode repeat 
   local shm=$(awk '/^Shmem:/{printf "%.2f", $2/1048576}' /proc/meminfo)
   local ca=$(awk '/^Cached:/{printf "%.2f", $2/1048576}' /proc/meminfo)
   local vr=$(nvidia-smi --query-gpu=memory.used --format=csv,noheader,nounits)
-  printf "%s\t%s\t%s\t%s\t%s\t%s\t%s\t%s\t%s\t%s\t%s\t%s\t%s\t%s\t%s\n" \
+  printf "%s\t%s\t%s\t%s\t%s\t%s\t%s\t%s\t%s\t%s\t%s\t%s\t%s\t%s\t%s\t%s\n" \
     "$name" "$rep" "$img" "$ps" "$bc" "$ee" "$strict" "${pre:-NA}" "${dec:-NA}" "$shm" "$ca" "$vr" "$((r1-r0))" "$el" "$verdict" "$v2" | tee -a "$TSV"
 }
 
