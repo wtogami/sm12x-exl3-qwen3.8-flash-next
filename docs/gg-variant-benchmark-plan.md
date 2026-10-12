@@ -309,6 +309,72 @@ design, roughly **half a day** including both builds and the C-only instrumentat
 B comparison is the cheap and decision-relevant half -- one build, one env var, and a
 claim about pinned bytes that is already provable from `/proc` in seconds.
 
+## Target hosts, measured footprint, and two of my own conclusions I had to retract
+
+The goal is stated by host size, not by throughput: **make a 16 GiB host able to serve this
+model at all, make 32 GiB workable, and make 64 GiB comfortable with RAM left for other
+work.** That reframes the access-method question, and it exposed two errors in how I had been
+presenting my own measurements.
+
+### What the engine costs in host RAM with the table pinned, measured
+
+On `gg` while serving (`Shmem 66.18 GiB` = the 64.000 rounded pin plus the 2.000 embedding pin):
+
+```
+  MemTotal 125.68   MemAvailable 48.83   Shmem 66.18   swapped 1.98
+  non-table host footprint = 125.68 - 48.83 - 66.18 = 10.67 GiB resident  (+1.98 swapped)
+```
+
+Of that ~12.6 GiB, only ~5.8 GiB is attributable to process RSS -- worker heap 1.81, worker
+anonymous 1.03 across 815 mappings, libraries 0.24, nvidia driver 0.21, API server 1.28, engine
+core 1.18 -- and **the checkpoint is not among them**: no category for checkpoint mappings
+appeared, so the loader is not holding the weights mapped resident. The remaining ~5 GiB sits
+in kernel and driver allocations outside process RSS.
+
+This matters because it is the floor a streaming build cannot go below. It is a separate
+problem from the table, and it is the one that decides whether 16 GiB is real.
+
+### Retraction one: the page-cache advantage is not 11%
+
+The matrix measured ~11.5% hit rates and I wrote that page cache beat `O_DIRECT` by 11-30%.
+That number is a **single-pass artifact**: each cell issued ~1.6M requests over a 2.1M-page
+region, so almost every page was cold by construction. Steady-state serving re-reads the table
+across requests, and there the hit rate is the cache fraction, `C/N`, which is a completely
+different figure at these host sizes:
+
+| host | minus 12.6 GiB floor | page cache for the table | steady-state hit | device load (of 128k-170k pages/s) | threads / cores |
+|---|---|---|---|---|---|
+| 16 GiB | ~3.4 GiB, less the OS | 3.4 GiB of 47.68 | **~7%** | 119k-158k | ~8-10 / ~2.5 |
+| 32 GiB | ~19.4 GiB | 19.4 GiB | **~41%** | 76k-100k | ~5-6 / ~1.2-1.6 |
+| 64 GiB | ~51.4 GiB | whole table | **approaches 100%** | near zero once warm | warm-up only |
+
+At 32 GiB the device carries 60% of the requirement, which the measured 163,834 pages/s at 8
+threads covers with room. At 64 GiB the table simply lives in RAM -- as page cache, not pinned.
+Warm-up cost is one full pass: 12.5M pages at ~130k pages/s is about 96 s of background reading.
+
+### Retraction two: "the cache bonus costs the RAM you came to save" is wrong for page cache
+
+I argued that a large cache benefit requires spending the memory streaming exists to free. That
+is true of *pinned* memory and false of page cache, which is the whole point of the design:
+clean file-backed pages are reclaimed under pressure with no I/O and no swap, so the cache
+grows to fill idle RAM and shrinks the moment something else needs it. A 64 GiB host therefore
+gets near-total hits **and** leaves room for other work -- the two are not in competition, which
+is exactly why page cache beats a pinned table rather than merely substituting for it.
+
+The consequence for `O_DIRECT` is decisive. On a 32 GiB host it would forfeit ~41% of traffic
+that would otherwise never reach the drive, on a filesystem where it does not even stay direct
+(1.16x amplification, 495 MiB of cache populated anyway). It survives as an option for jitter
+control on the tightest hosts, where the cache is worth ~7% anyway, and for nothing else.
+
+### The gating question for 16 GiB is not streaming
+
+With a 12.6 GiB non-table floor plus the OS, a 16 GiB host has ~2 GiB of usable cache and no
+headroom for the allocator slop and driver mappings that a bigger GPU may add. Streaming makes
+47.684 GiB of table invisible to the memory budget; it does not touch the 12.6 GiB underneath
+it. So the honest sequencing is: **32 GiB is the realistic floor for this engine today**, and
+16 GiB needs a second, unrelated piece of work -- shrinking the engine's own host footprint,
+starting with whatever the ~5 GiB of unattributed kernel/driver memory is.
+
 ## CUDA graph cost, and why it did not gate streaming (measured 2026-10-12 00:49 CDT)
 
 Step 1 of the streaming path was to bound the CUDA-graph unknown: a CPU gather cannot live
