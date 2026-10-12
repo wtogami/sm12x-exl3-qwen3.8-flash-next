@@ -22,9 +22,11 @@ from __future__ import annotations
 
 import ctypes
 import os
+import resource
 import sys
 import threading
 import time
+from collections import deque
 from concurrent.futures import ThreadPoolExecutor
 
 import numpy as np
@@ -67,7 +69,7 @@ class StreamGather:
     def __init__(self, table_path: str, *, row_bytes: int = 160, n_rows: int | None = None,
                  max_rows_per_batch: int = 2048 * 16, threads: int = 24,
                  rowcopy_so: str | None = None, device: str = "cuda",
-                 madv_random: bool = True):
+                 madv_random: bool = True, small_copy_rows: int = 4096):
         import torch
 
         self.torch = torch
@@ -105,9 +107,14 @@ class StreamGather:
         self._pool = ThreadPoolExecutor(max_workers=2, thread_name_prefix="ple-fill")
         self._fan = ThreadPoolExecutor(max_workers=self.threads, thread_name_prefix="ple-fan")
         self._lock = threading.Lock()
-        self._pending = None
+        # FIFO of (future, buffer, count). A single slot cannot express "filling k+1 while the
+        # device still needs k", which is the entire premise of the design; the first version used
+        # one slot and silently degenerated to synchronous fills.
+        self._queued: "deque" = deque()
         self._next_buf = 0
+        self._small_copy_rows = int(small_copy_rows)
         self.stats = {"batches": 0, "rows": 0, "fill_s": 0.0, "disk_hints": 0}
+        self.rusage = []   # (batches, rows, minflt, majflt) sampled at each wait()
 
     # ------------------------------------------------------------------ fill (host side)
     def _fill(self, byte_off: np.ndarray, buf: int) -> float:
@@ -127,7 +134,11 @@ class StreamGather:
                                      byte_off[lo:hi], hi - lo, self.row_bytes)
 
         t0 = time.perf_counter()
-        list(self._fan.map(work, range(k)))
+        if n <= self._small_copy_rows or k <= 1:
+            work(0)          # inline: pool dispatch costs more than the copy for small n
+            bounds = [0, n]
+        else:
+            list(self._fan.map(work, range(k)))
         return time.perf_counter() - t0
 
     def submit(self, row_ids: np.ndarray) -> None:
@@ -143,18 +154,21 @@ class StreamGather:
                              f"vs n_rows={self.n_rows}")
         buf = self._next_buf
         with self._lock:
-            self._pending = (self._pool.submit(self._fill, ids * self.row_bytes, buf), buf, ids.size)
+            self._queued.append((self._pool.submit(self._fill, ids * self.row_bytes, buf),
+                                 buf, ids.size))
             self._next_buf = 1 - buf
 
     def wait(self) -> tuple:
         """Block until the batch passed to submit() is resident. Returns (view, count)."""
-        fut, buf, count = self._pending
-        if fut is None:
+        if not self._queued:
             raise RuntimeError("wait() without a preceding submit(); use fetch() for one-shot use")
+        fut, buf, count = self._queued.popleft()   # FIFO: submit(k+1) must not consume k's slot
         dt = fut.result()
         self.stats["batches"] += 1
         self.stats["rows"] += count
         self.stats["fill_s"] += dt
+        ru = resource.getrusage(resource.RUSAGE_SELF)
+        self.rusage.append((self.stats["batches"], count, ru.ru_minflt, ru.ru_majflt))
         return self._arena[buf][: count * self.row_bytes], count
 
     # ----------------------------------------------------------------- device side
@@ -256,17 +270,18 @@ def _selftest(argv):
     B = a.batch_tokens * 16
     nb = min(a.batches, len(rows_np) // B)
     fills, exposed = [], []
+    # Correct order: submit k, submit k+1, consume k (which waits on the OLDEST queued fill).
+    # The previous harness submitted k+1 then immediately waited, which is what made exposed equal
+    # fill and looked like a slow design rather than a broken test.
     g.submit(rows_np[:B])
     for k in range(nb):
         t0 = time.perf_counter()
         if k + 1 < nb:
             g.submit(rows_np[(k + 1) * B:(k + 2) * B])
-        idx = np.arange(B, dtype=np.int64)
-        out = g.upload_and_gather(rows_np[k * B:(k + 1) * B], idx)
+        out = g.upload_and_gather(rows_np[k * B:(k + 1) * B], np.arange(B, dtype=np.int64))
         torch.cuda.synchronize()
-        consumed = time.perf_counter() - t0
+        exposed.append(consumed_ := (time.perf_counter() - t0))
         fills.append(g.stats["fill_s"])
-        exposed.append(consumed)
     prev = 0.0
     per_fill = []
     for f in fills:
@@ -275,7 +290,25 @@ def _selftest(argv):
     per_fill = np.asarray(per_fill[1:]) * 1e3
     exposed = np.asarray(exposed[1:]) * 1e3
     print(f"  batches={nb} rows/batch={B} threads={a.threads}")
+    ru = g.rusage
+    dmin = [ru[i][2] - ru[i - 1][2] for i in range(1, len(ru))]
+    dmaj = [ru[i][3] - ru[i - 1][3] for i in range(1, len(ru))]
     print(f"  fill:  p50 {np.percentile(per_fill,50):6.2f} ms  p99 {np.percentile(per_fill,99):6.2f} ms")
+    print(f"  faults per batch: minor p50 {np.percentile(dmin,50):,.0f}  major p50 {np.percentile(dmaj,50):,.0f}"
+          f"  (major = pages read from disk during the fill; minor = page-table work on warm pages)")
+    mem = {}
+    for line in open("/proc/meminfo"):
+        f = line.split()
+        if f[0] in ("MemAvailable:", "Cached:", "Dirty:", "Shmem:"):
+            mem[f[0][:-1]] = int(f[1]) / 1048576
+    print("  host at end: " + "  ".join(f"{k} {v:.1f} GiB" for k, v in mem.items()))
+    cgroup = ""
+    for f in ("/sys/fs/cgroup/memory.max", "/sys/fs/cgroup/memory.high"):
+        try:
+            cgroup += f"  {f}={open(f).read().strip()}"
+        except OSError:
+            pass
+    print(f"  cgroup:{cgroup or ' unlimited'}")
     print(f"  exposed against a {a.compute_ms:.0f} ms compute window: "
           f"p50 {np.percentile(exposed,50):6.2f} ms  p99 {np.percentile(exposed,99):6.2f} ms")
     print(f"  as a fraction of prefill: p50 {np.percentile(exposed,50)/a.compute_ms*100:.2f}%  "
