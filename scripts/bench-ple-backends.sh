@@ -35,7 +35,7 @@ PROBE_WARMUP=${PROBE_WARMUP:-2}
 REF_HASH=${REF_HASH:-a6cc8fed286b7071}
 mkdir -p "$OUT"
 TSV=$OUT/results.tsv
-[ -f "$TSV" ] || printf "cell\trepeat\timage\tple_stream\tbreakable\tenforce_eager\tstrict\tprefill_tok_s\tdecode_tok_s\tshmem_gib\tcached_gib\tvram_mib\tdisk_sectors\telapsed_s\tverdict\n" > "$TSV"
+[ -f "$TSV" ] || printf "cell\trepeat\timage\tple_stream\tbreakable\tenforce_eager\tstrict\tprefill_tok_s\tdecode_tok_s\tshmem_gib\tcached_gib\tvram_mib\tdisk_sectors\telapsed_s\tverdict\tple_stream_v2\n" > "$TSV"
 
 restore_serving() {
   echo "=== restoring the serving configuration ==="
@@ -54,8 +54,8 @@ restore_serving() {
 }
 trap restore_serving EXIT INT TERM
 
-cell() {  # name image ple_stream breakable enforce_eager cudagraph_mode
-  local name=$1 img=$2 ps=$3 bc=$4 ee=$5 cgm=$6 rep=$7
+cell() {  # name image ple_stream breakable enforce_eager cudagraph_mode repeat v2
+  local name=$1 img=$2 ps=$3 bc=$4 ee=$5 cgm=$6 rep=$7 v2=${8:-0}
   echo
   echo "=== cell $name (ple_stream=$ps breakable=$bc enforce_eager=$ee) repeat $rep, image $img ==="
   podman rm -f ple-bench >/dev/null 2>&1 || true
@@ -114,7 +114,7 @@ cell() {  # name image ple_stream breakable enforce_eager cudagraph_mode
   local ca=$(awk '/^Cached:/{printf "%.2f", $2/1048576}' /proc/meminfo)
   local vr=$(nvidia-smi --query-gpu=memory.used --format=csv,noheader,nounits)
   printf "%s\t%s\t%s\t%s\t%s\t%s\t%s\t%s\t%s\t%s\t%s\t%s\t%s\t%s\t%s\n" \
-    "$name" "$rep" "$img" "$ps" "$bc" "$ee" "$strict" "${pre:-NA}" "${dec:-NA}" "$shm" "$ca" "$vr" "$((r1-r0))" "$el" "$verdict" | tee -a "$TSV"
+    "$name" "$rep" "$img" "$ps" "$bc" "$ee" "$strict" "${pre:-NA}" "${dec:-NA}" "$shm" "$ca" "$vr" "$((r1-r0))" "$el" "$verdict" "$v2" | tee -a "$TSV"
 }
 
 if [[ "${DRY_RUN:-0}" == 1 ]]; then
@@ -123,10 +123,11 @@ if [[ "${DRY_RUN:-0}" == 1 ]]; then
   echo "=== DRY RUN: generating run lines only ==="
   trap - EXIT
   cell_dry() {
-    local name=$1 img=$2 ps=$3 bc=$4 ee=$5 cgm=$6
+    local name=$1 img=$2 ps=$3 bc=$4 ee=$5 cgm=$6 v2=${7:-0}
     local gen=(python3 "$REPO/scripts/mk-cell-run.py" --base-container "$CONT" --name "ple-dry-$name"
                --image "$img" --detach)
     [ "$ps" = 1 ] && gen+=(--env PLE_STREAM=1 --env PLE_ROWCOPY_SO=/opt/qwen38/ple_rowcopy.so)
+    [ "$v2" = 1 ] && gen+=(--env PLE_STREAM_V2=1)
     [ "$bc" = 1 ] && gen+=(--env VLLM_USE_BREAKABLE_CUDAGRAPH=1)
     [ "$ee" = 1 ] && gen+=(--arg=--enforce-eager)
     [ -n "$cgm" ] && gen+=(--arg=--compilation-config --arg="{\"cudagraph_mode\": \"$cgm\"}")
@@ -153,6 +154,7 @@ PY
   cell_dry pinned-breakable-pw "$IMAGE_PIN"    0 1 0 "PIECEWISE"
   cell_dry stream-breakable-pw "$IMAGE_STREAM" 1 1 0 "PIECEWISE"
   cell_dry stream-eager        "$IMAGE_STREAM" 1 0 1 ""
+  cell_dry stream-v2-sync      "$IMAGE_STREAM" 1 0 0 "" 1
   echo "  dry run complete; nothing started"
   exit 0
 fi
@@ -163,6 +165,10 @@ for rep in $(seq 1 "$REPEATS"); do
   cell pinned-breakable-pw   "$IMAGE_PIN"     0 1 0 "PIECEWISE" $rep   # graph-mode cost alone
   cell stream-breakable-pw   "$IMAGE_STREAM"  1 1 0 "PIECEWISE" $rep   # the feature, legal config
   cell stream-eager          "$IMAGE_STREAM"  1 0 1 ""          $rep   # fallback, no graphs at all
+  # v2: staging before replay, so the graph regime is left exactly as the deployment runs it.
+  # Predictions written before the first run: decode back to ~160 tok/s (v1 measured 126.7) and
+  # Shmem ~2.18 GiB (v1 measured 4.44; the gap is the ~2.25 GiB non-FULL-graph surcharge).
+  cell stream-v2-sync        "$IMAGE_STREAM"  1 0 0 ""          $rep   1
 done
 
 echo
