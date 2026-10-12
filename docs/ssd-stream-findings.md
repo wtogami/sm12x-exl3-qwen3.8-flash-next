@@ -811,6 +811,24 @@ prefill, sets the rate -- point the same way, so the design consequence is singl
 valued: submit at depth (>=8, 32 comfortably) and treat every qd1 number,
 including the promising baseline ones, as inapplicable.
 
+**And a third caveat that outranks the other two: these receipts are not from `gg`.**
+The requirement above is derived from `benchmarks/`, whose 48 host-named receipts are
+all `burst`, with the rest from `ostrich`, `raptor`, `kiwi`, `emu` and `dodo`. None
+are from `gg`, which is a materially different machine. A decode-rate requirement is
+a property of the host producing tokens, so 16,420 pages/s is what `burst` would need
+to feed, used here as a stand-in for `gg` purely because nothing had been measured on
+`gg`. Section 3c carries the `gg`-specific figure. The rule this session established:
+compare a host only against itself -- `gg` pinned baseline vs `gg` exact-size vs `gg`
+streaming -- never against a receipt from another box.
+
+A related gap in the archive, found while looking for a pinned FP8 baseline to
+compare the mmap numbers against: `benchmarks/exl3-ple8-final/` has `runtime.json`,
+`tools.json`, `seven.jsonl` and friends but **no `clients.json`**, while
+`benchmarks/exl3-ple8-mmap-final/` has a complete `clients.json` (c16 660 tok/s).
+So the repo contains checkpoint-mapped PLE8 throughput with no pinned PLE8
+throughput to subtract it from -- the "what does streaming cost" question has never
+been answered on any host, not just on `gg`.
+
 Two caveats on the requirement itself. These receipts come from assorted dev builds
 with the table resident in RAM, which is the correct basis -- the streaming path
 has to keep up with today's decode rate to avoid regressing it, not with a slower
@@ -891,6 +909,24 @@ is. Against the FP8 decode requirement of 16,420 pages/s, four jobs give ~32x
 headroom. And qd1 remains the wrong shape on this host too -- 1.2x, clearing with
 no margin, consistent with `burst`'s degraded 0.8-0.9x being a symptom of the same
 design error rather than of that drive's state.
+
+
+### The `gg` baseline, and why the headroom column above is provisional
+
+The `x req` column in the table above divides by `burst`'s requirement. Redoing it
+for `gg` requires `gg`'s own decode rate, which had never been measured -- so a
+baseline arm was run on `gg` with the repo's own instrument, configured to match the
+historical receipts exactly (`--mtp-tokens 3 --mtp-policy static --output-tokens 256
+--warmup-runs 2 --runs 3 --concurrency 1 2 4 8 16`, co-located client, against the
+serving `qwen38-exl3-ple8` container with `--max-num-seqs 16`), with
+`capture-runtime.py` writing a `runtime.json` beside it so the receipt says what host
+produced it.
+
+Until that arm is in, the honest reading of the disk table is ordinal rather than
+absolute: `gg`'s single-thread ceiling of ~150k IOPS with near-linear scaling to 722k
+across 8 workers is comfortably above *any* plausible decode rate on this class of
+machine (which the receipts bound at roughly 1k tok/s, i.e. ~17k pages/s), and qd1 is
+the wrong shape regardless of which host's number you pick.
 
 
 ---
