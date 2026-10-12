@@ -407,6 +407,8 @@ def main():
                     help="sample background device traffic before timing; 0 disables")
     ap.add_argument("--evict-first", action="store_true",
                     help="fadvise DONTNEED the region before timing (whole range: proven effective)")
+    ap.add_argument("--trace-provenance", default="",
+                    help="one line describing where the trace came from; recorded in the receipt")
     ap.add_argument("--expect-access-model", choices=["uniform", "real-trace"], default="",
                     help="fail the cell unless the realized traffic model matches; a missing "
                          "--trace-file otherwise degrades a trace cell to uniform silently")
@@ -694,6 +696,15 @@ def main():
         "raw_row_requests": rows_total,
         "dedup_saving_frac": round(1 - requested / max(1, rows_total), 4),
         "access_model": "real-trace" if args.trace_file else "uniform",
+        # Provenance, recorded rather than remembered. The corpora used so far are SYNTHETIC --
+        # random windows sliced out of the container image's Python source, docstrings and JSON,
+        # interleaved as pseudo-turns -- and "real-trace" above only means "driven from a file".
+        # Without the source in the receipt, a synthetic reuse curve reads like a measured workload.
+        "trace_file": os.path.basename(args.trace_file) if args.trace_file else None,
+        "trace_rows": int(os.path.getsize(args.trace_file) // 4) if args.trace_file else 0,
+        "trace_provenance": (args.trace_provenance or
+                             ("UNDECLARED -- name the corpus in the filename or pass "
+                              "--trace-provenance" if args.trace_file else "synthetic uniform-random")), 
         "tokens_per_step": args.tokens_per_step,
         "byte_amplification": round(bs / args.row_bytes, 2),
         "elapsed_s": round(el, 2),
