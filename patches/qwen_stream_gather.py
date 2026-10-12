@@ -251,6 +251,135 @@ class StreamGather:
         os.close(self.fd)
 
 
+class StreamTable:
+    """Row gather over a SHARDED checkpoint table: many read-only mmaps, one staging arena.
+
+    Why this exists separately from StreamGather: the production n-gram table is 128 shards spread
+    across 22 safetensors blobs, so a row id maps to (shard, local row) and different shards live in
+    different files with different mappings. StreamGather's single mapping cannot express that, and
+    getting the shard arithmetic wrong is silent -- rows come back from the neighbouring shard and
+    every downstream number still looks plausible. So the mapping is isolated here and tested against
+    a synthetic multi-shard table with no engine and no GPU.
+
+    Layout matches ple_pageable.MappedTable: rows_per_shard rows per shard, row_bytes per row, and
+    rows outside [vocab_start, vocab_end) are zeroed by the caller's contract, not by us.
+    """
+
+    def __init__(self, paths, *, rows_per_shard: int, row_bytes: int = 160, threads: int = 24,
+                 small_copy_rows: int = 4096, rowcopy_so: str | None = None):
+        if not paths:
+            raise ValueError("no shard paths given")
+        self.row_bytes = int(row_bytes)
+        self.rows_per_shard = int(rows_per_shard)
+        self.threads = max(1, int(threads))
+        self._small = int(small_copy_rows)
+        self._copy = _load_rowcopy(rowcopy_so)
+        self.maps = []          # (fd, base, size, n_rows)
+        for path in paths:
+            fd = os.open(path, os.O_RDONLY)
+            size = os.fstat(fd).st_size
+            if size < rows_per_shard * row_bytes:
+                os.close(fd)
+                raise ValueError(
+                    f"{path}: {size} bytes holds {size // row_bytes} rows, fewer than the "
+                    f"{rows_per_shard} rows_per_shard the layout claims -- refusing to guess")
+            base = _libc.mmap(None, size, _PROT_READ, _MAP_PRIVATE, fd, 0)
+            if not base or base == ctypes.c_void_p(-1).value:
+                raise OSError(f"mmap({path}) failed: {os.strerror(ctypes.get_errno())}")
+            _libc.madvise(ctypes.c_void_p(base), size, _MADV_RANDOM)
+            self.maps.append((fd, base, size, size // row_bytes))
+        self.num_shards = len(self.maps)
+        self.num_rows = self.num_shards * self.rows_per_shard
+
+    def split(self, ids: np.ndarray):
+        """Row ids -> (shard index array, local row array). Pure, so it can be unit-tested."""
+        ids = np.asarray(ids, dtype=np.int64).reshape(-1)
+        if ids.size and (ids.min() < 0 or ids.max() >= self.num_rows):
+            raise ValueError(f"row id out of range: [{ids.min()}, {ids.max()}] vs num_rows={self.num_rows}")
+        shard = ids // self.rows_per_shard
+        return shard, ids - shard * self.rows_per_shard
+
+    def gather_to(self, ids: np.ndarray, host_dst, *, out_rows: np.ndarray | None = None) -> int:
+        """Copy rows into a contiguous host buffer.
+
+        host_dst is a writable buffer at least len(ids) * row_bytes bytes. Rows are handled shard by
+        shard so each memcpys from one mapping; within a shard the copy fans out over threads.
+        Returns the number of rows written.
+        """
+        ids = np.asarray(ids, dtype=np.int64).reshape(-1)
+        if ids.size == 0:
+            return 0
+        shard, local = self.split(ids)
+        dst_base = host_dst if isinstance(host_dst, int) else ctypes.addressof(host_dst)  # normalised once
+        for s in np.unique(shard):
+            fd, base, _size, nrows = self.maps[int(s)]
+            sel = np.flatnonzero(shard == s)
+            offs = (local[sel] * self.row_bytes).astype(np.int64)
+            bad = local[sel] >= nrows
+            if bad.any():
+                raise ValueError(f"shard {s}: row {local[sel][bad.max()]} beyond its {nrows} rows")
+            # sel is ascending but NOT contiguous once ids from several shards interleave, so
+            # destinations are per-row (dst_off) rather than one contiguous span per shard.
+            self._copy_slice(base, offs, sel, dst_base)
+        return ids.size
+
+    def _copy_slice(self, shard_base, offs, sel, dst_addr):
+        """Fan out one shard's copies across threads, writing to each row's true output slot."""
+        n = offs.size
+        k = 1 if n <= self._small else min(self.threads, max(1, n // 64))
+        bounds = [int(x) for x in np.linspace(0, n, k + 1)]
+
+        def work(i):
+            lo, hi = bounds[i], bounds[i + 1]
+            if hi <= lo:
+                return
+            # one call per slice; destinations are computed per row inside C via the offset table
+            rows = np.ascontiguousarray(sel[lo:hi], dtype=np.int64)
+            self._copy_shard_rows(shard_base, dst_addr, offs[lo:hi], rows,
+                                  np.ascontiguousarray(offs[lo:hi], dtype=np.int64))
+
+        if k == 1:
+            work(0)
+        else:
+            list(self._fan().map(work, range(k)))
+
+    def _fan(self):
+        if getattr(self, "_fanpool", None) is None:
+            self._fanpool = ThreadPoolExecutor(max_workers=self.threads, thread_name_prefix="ple-tab")
+        return self._fanpool
+
+    def _copy_shard_rows(self, shard_base, dst_addr, src_offs, _rows, _unused):
+        """Native copy with per-row destination addresses (dst = slot index * row_bytes)."""
+        lib = self._copy
+        try:
+            fn = lib.ple_copy_rows_to
+        except AttributeError:
+            # Fallback for a helper built without the scattered-destination entry point: correct
+            # but serial. Loud, because silently slow is how a design gets misjudged.
+            n = src_offs.size
+            buf = ctypes.create_string_buffer(self.row_bytes)
+            for i in range(n):
+                ctypes.memmove(buf, ctypes.c_void_p(shard_base + int(src_offs[i])), self.row_bytes)
+                ctypes.memmove(ctypes.c_void_p(dst_addr + int(_rows[i]) * self.row_bytes), buf, self.row_bytes)
+            return
+        fn.argtypes = [ctypes.c_void_p, ctypes.c_void_p,
+                       np.ctypeslib.ndpointer(dtype=np.int64, ndim=1, flags="C_CONTIGUOUS"),
+                       np.ctypeslib.ndpointer(dtype=np.int64, ndim=1, flags="C_CONTIGUOUS"),
+                       ctypes.c_long, ctypes.c_long]
+        fn.restype = None
+        dst_offs = np.ascontiguousarray(_rows * self.row_bytes, dtype=np.int64)
+        fn(ctypes.c_void_p(shard_base), ctypes.c_void_p(dst_addr),
+           np.ascontiguousarray(src_offs, dtype=np.int64), dst_offs, src_offs.size, self.row_bytes)
+
+    def close(self):
+        for fd, base, size, _n in self.maps:
+            _libc.munmap(ctypes.c_void_p(base), size)
+            os.close(fd)
+        if getattr(self, "_fanpool", None) is not None:
+            self._fanpool.shutdown(wait=True)
+        self.maps = []
+
+
 # ---------------------------------------------------------------------------- standalone test
 def _selftest(argv):
     import argparse

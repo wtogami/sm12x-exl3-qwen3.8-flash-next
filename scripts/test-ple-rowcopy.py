@@ -63,9 +63,73 @@ def main(argv=None):
     print(f"  {'scattered random ids':24s} rows= 3,000  wrong={bad:6,d}  {'PASS' if bad == 0 else 'FAIL'}")
     failures += bad
 
+    failures += shard_test(a, sg, np)
+
     g._fan.shutdown(); os.close(g.fd); os.unlink(blob.name)
     print(f"  total wrong rows: {failures}")
     return 1 if failures else 0
+
+
+def shard_test(args, sg, np):
+    """Multi-shard geometry: rows must come from the right FILE, not just the right offset.
+
+    The production table is 128 shards across 22 blobs, so a row id maps to (shard, local row).
+    A bug here returns plausible-looking bytes from the neighbouring shard, which is the class of
+    error that survives every other check in this file.
+    """
+    import ctypes, os, tempfile
+    nshard, rps, rb = 3, 5000, 160
+    paths, blobs = [], []
+    try:
+        for s in range(nshard):
+            # distinct byte patterns per shard, so a wrong-file read can never match
+            data = bytes(((s + 1) * 97 + i) % 251 for i in range(rps * rb))
+            f = tempfile.NamedTemporaryFile(delete=False)
+            f.write(data); f.close()
+            paths.append(f.name); blobs.append(data)
+        st = sg.StreamTable(paths, rows_per_shard=rps, row_bytes=rb, threads=8,
+                            rowcopy_so=args.rowcopy or None)
+        assert st.num_rows == nshard * rps, "row count must be shards x rows_per_shard"
+
+        # split(): exact shard/local arithmetic, including boundaries
+        probe = np.array([0, 1, rps - 1, rps, rps + 1, 2 * rps - 1, 2 * rps, nshard * rps - 1],
+                         dtype=np.int64)
+        sh, loc = st.split(probe)
+        exp_sh = [0, 0, 0, 1, 1, 1, 2, 2]
+        exp_loc = [0, 1, rps - 1, 0, 1, rps - 1, 0, rps - 1]
+        assert list(sh) == exp_sh, f"shard split wrong: {list(sh)} != {exp_sh}"
+        assert list(loc) == exp_loc, f"local split wrong: {list(loc)} != {exp_loc}"
+        print(f"  {'shard/local split':24s} {len(probe)} boundary ids          PASS")
+
+        # gather every shard's first/last rows + scattered ids across all shards
+        ids = np.concatenate([np.array([0, rps - 1, rps, 2 * rps - 1, 2 * rps, nshard * rps - 1]),
+                              np.sort(np.random.default_rng(5).choice(st.num_rows, 2000, replace=False))])
+        buf = (ctypes.c_ubyte * (ids.size * rb))()
+        got = st.gather_to(ids, buf)
+        assert got == ids.size, f"gathered {got} of {ids.size} rows"
+        view = bytes(bytearray(buf))
+        bad = 0
+        for i, r in enumerate(ids):
+            s, local = int(r) // rps, int(r) % rps
+            want = blobs[s][local * rb:(local + 1) * rb]
+            if want != view[i * rb:(i + 1) * rb]:
+                bad += 1
+        print(f"  {'sharded gather':24s} rows={ids.size:6,d}  wrong={bad:6,d}  "
+              f"{'PASS' if bad == 0 else 'FAIL'}")
+
+        # out-of-range must raise, not clamp
+        try:
+            st.split(np.array([st.num_rows], dtype=np.int64))
+            print("  range guard                    FAIL (no exception)")
+            bad += 1
+        except ValueError:
+            print("  range guard                    raises on out-of-range id   PASS")
+        st.close()
+        return bad
+    finally:
+        for f in paths:
+            try: os.unlink(f)
+            except OSError: pass
 
 if __name__ == "__main__":
     sys.exit(main())

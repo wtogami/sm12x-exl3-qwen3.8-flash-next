@@ -20,3 +20,11 @@ void ple_copy_rows(const unsigned char *src, unsigned char *dst,
 
 /* Same, but folding rows that straddle a page boundary is unnecessary: reads come from the
  * mapping, not from page-granular slots, so any row_bytes is contiguous by construction. */
+
+/* Scattered-destination row copy: src offsets and dst offsets are both per-row, because a sharded
+ * table writes gathered rows into arbitrary output slots. Kept separate from ple_copy_rows so the
+ * contiguous hot path stays a straight loop. */
+void ple_copy_rows_to(const unsigned char *src, unsigned char *dst,
+                      const int64_t *src_off, const int64_t *dst_off, long n, long row_bytes) {
+  for (long i = 0; i < n; i++) memcpy(dst + dst_off[i], src + src_off[i], row_bytes);
+}
