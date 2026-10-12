@@ -585,3 +585,34 @@ necessary here at all -- which removes the largest implementation risk identifie
 
 What is left, in order: measure real reuse statistics (the cold fraction is worth 16x per
 page), then the prototype.
+
+## Shelved: replace the synthetic corpora with logged traffic
+
+Every hit rate and capacity figure in `docs/ssd-stream-findings.md` rests on `synth-*.rows.bin`, which
+is 2,600 pseudo-turns of random windows sliced (seed 11) out of the container image's Python source,
+docstrings and JSON. Uniform-traffic conclusions are unaffected; **hit rates, the reuse curve, and the
+32 GiB target floor are provisional until this is done.**
+
+Bias runs both ways and the sign is unknown, which is the whole reason to measure rather than argue:
+
+* optimistic -- 2,487 copies of the Apache licence header, and a fixed ~80 MB pool means late windows
+  revisit early pages; real traffic has far more cold first touch
+* pessimistic -- an agentic client re-sends its entire context every request, so the same n-gram ids
+  are re-touched once per turn; the synthetic stream cannot express this and it may be the largest
+  single effect in coding-agent workloads
+
+Procedure, deliberately avoiding a proxy in front of the engine that serves this session:
+
+    # root, on the inference host. ~30 min, capped at 4 GiB (contexts are re-sent, it fills fast).
+    timeout 1800 tcpdump -i lo -s 0 -C 500 -W 8 -w /home/rtx/ple-capture.pcap 'tcp port 8001 and greater 200'
+
+Then offline, no engine changes: parse HTTP request bodies from the pcap, tokenize with the
+checkpoint's `tokenizer.json`, map through the validated numpy port of `compute_ngram_ids`
+(`/nvme1/pletrace/ple_ngram_ids.py`, byte-identical to the engine CPU path over 24 randomised batches),
+and emit `real-<n>-rows.bin`. Re-score the exact reuse-distance curve (`lru2`) and re-run the capped
+trace cells; the sizing gate is then measured rather than extrapolated.
+
+Constraints to respect when it happens: the capture contains the full prompt text of live sessions, so
+it is the user's decision and the pcap should be deleted after parsing; a recording proxy instead of a
+capture would add a hop in front of the thing doing the reasoning, which is why it was rejected; and
+new traces must be passed with `--trace-provenance` so receipts carry it.
