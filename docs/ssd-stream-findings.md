@@ -787,9 +787,37 @@ portion in a 30-minute idle window. Twelve minutes therefore cannot distinguish
 irrelevance stand regardless of which it is.
 
 The discriminator is time, not another knob: re-measure after hours of idle, with
-nothing written in between. If the speed decays back toward 12.7k/96.4k the recovery was
-write-cache residency; if it holds near 21k/159k it is placement. That run is in
-progress; until it lands, read "placement" above as one of two live explanations.
+nothing written in between. **That run finished, and it says placement.**
+
+```
+  2026-10-11 22:54  immediately after rewriting the 100 GiB file in place
+      qd1  21.5k IOPS     qd8  160k IOPS
+  2026-10-12 01:35  after 2h40m of idle with nothing written to the device at all
+      qd1  21.0k IOPS     qd8  160k IOPS      (-2.3%, 0.0%)
+```
+
+The pre-rewrite slow state was 12.7k qd1 / 96.4k qd8, so the recovery is **+65% at qd1 and
++66% at qd8, and it survived two hours forty** when twelve minutes could not rule out the
+alternative. Whatever the rewrite changed, it is durable on the timescale that matters for a
+serving host -- it is not a write cache about to fold back.
+
+Two consequences, one of them a feature idea:
+
+* **A slow drive may not be a slow drive.** If random reads to the PLE file are measuring
+  60-70% of expectation, a rewrite recovers two thirds of the throughput with no root and no
+  re-download. For a design whose entire budget is device IOPS at 32 GiB, that is the
+  difference between feasible and not.
+* **So the preflight should measure the drive, not assume it.** The streaming gate already has
+  to reason about RAM; adding a 30-second qd1/qd8 `fio`-style probe against the table file gives
+  a placement check the same way `--require-cold` gives a coldness check. Cheaper than explaining
+  a 40% throughput shortfall, and it turns "the drive is slow" into a measured claim.
+
+Boundaries on this result: one drive (PM9A1 on `burst`), one rewrite, one idle window. `gg`'s
+990 PRO measured 19,859 qd1 / 121,243 qd8 in the baselines, close to `burst`'s fast state, but
+**`gg` has not had a placement probe since** and it is the machine everything here is quoted
+against. Also, before anyone rewrites a Hugging Face blob, check its link count: cache blobs are
+frequently hardlinked, and rewriting through a hardlink silently rewrites every model that shares
+it.
 
 **Retracting operational advice given in session.** I said a streaming design must budget
 against the drive's post-full-write state because "a serving drive that has ever been
