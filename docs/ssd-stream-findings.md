@@ -131,6 +131,52 @@ where `pin_memory` of the same size is at the edge. Confirm on `burst` first.
 
 ---
 
+## 1b. Both fixes were tested on gg, and the cheap one works
+
+The allocation probe ran on `gg` itself (125.68 GiB, the host that cannot fit the
+monolithic pin), with its serving engine stopped and restored afterwards -- Shmem
+returned to its exact pre-test 66.18 GiB and the worker again mapped 64.000 + 2.000
+GiB.
+
+* **`cudaHostAlloc(95.368 GiB)` succeeded in 42 s**, mapping `pow2=False`, i.e. the
+  exact table size with no rounding. `torch.empty(pin_memory=True)` of the same
+  tensor failed *instantly* with the documented `CUDA error: out of memory`. That is
+  the whole thesis of section 1 demonstrated constructively: the table was never too
+  big for `gg`, only the 128 GiB it rounds to was.
+* **Pow2 tiling works too and needs no allocator bypass.** Decomposing the request
+  into binary-sized `torch` allocations committed 95.38 GiB instead of 128.00 -- the
+  same 32.6 GiB saving -- using only `pin_memory`, so it is a change to
+  `allocate_embedding_weight()` alone, with no raw pointer lifetime to own. It is
+  the cheaper patch and lands the same result. Each tile rounds to itself, so the
+  waste collapses from 32.6 GiB to the sum of per-tile round-ups.
+* **Both together fit**: 97.38 GiB pinned (table + rounded embedding), 22.76 GiB
+  still available, `swap_used` unchanged at 0.04 GiB throughout, so no silent
+  swapping flattered the result.
+
+Two costs worth knowing before anyone celebrates:
+
+* **Page-locking 95 GiB takes 42 s**, and the engine already spends ~40 s starting.
+  Roughly doubles cold start, and it is on the critical path before the first token.
+* **22.76 GiB of headroom is thin.** The host that demonstrably *served* this shape
+  had 53 GiB free (130 of 183). Nothing has served a request at 77.5% of RAM, and
+  the gate's 70% warn tier is deliberately left where it is for that reason -- see
+  `memcheck: separate what has served from what merely pinned`.
+
+Measurement correction: an earlier single-shot copy test reported the new pinned
+memory as no faster than pageable (13.4 vs 13.4 GiB/s), which would have doomed the
+idea. It was a broken harness -- one cold copy, no warmup, sampling the last 256 MiB.
+With warmup and repeats: **26.4 GiB/s pinned vs 13.5 GiB/s pageable, 1.96x**, and
+flat across every offset of the 95 GiB buffer (25.8 GiB/s at the very tail), on a
+single NUMA node (`node0`, 126 GiB) so there is no far-node penalty for a gather
+that reads the whole table. The cold first copy measured 12.1 GiB/s, which is exactly
+the phantom 13.4 -- first-touch, not a property of the memory.
+
+Consequence for the plan: streaming is no longer the only route to `exl3` BF16 on
+`gg`. A tiling change to one function costs 32.6 GiB of waste and 42 s of startup;
+streaming costs an I/O subsystem and buys a 100x smaller RAM footprint. Which is
+right depends on whether the goal is "serve BF16 on this host" or "free the RAM" --
+see the re-staging note in section 5.
+
 ## 2. Page-cache eviction: the plan's "unsolved without root" is solvable without root
 
 Plan section 6 says a `posix_fadvise(POSIX_FADV_DONTNEED)` attempt "did not
