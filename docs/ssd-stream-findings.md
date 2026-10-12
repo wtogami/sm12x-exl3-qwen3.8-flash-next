@@ -177,6 +177,109 @@ streaming costs an I/O subsystem and buys a 100x smaller RAM footprint. Which is
 right depends on whether the goal is "serve BF16 on this host" or "free the RAM" --
 see the re-staging note in section 5.
 
+## 1c. The exact-size alternative was tested at full scale, failed, and killed the engine
+
+Section 1b left one design open: skip tiling entirely by handing
+`get_cuda_view_from_cpu_tensor` a single **exact-size** externally-pinned buffer
+(95.368 GiB for BF16), which would dodge the pow2 rounding with one allocation
+instead of two. It was run at full size on `gg`. It does not work, and the
+failure mode is worth recording precisely because the *reason* is the op's branch,
+not the allocation.
+
+```
+cudaHostAlloc(95.368 GiB)                 rc=0   42.0 s  (2.27 GiB/s)  page_aligned=True
+torch.frombuffer(...).view(bfloat16)      is_pinned() = False
+get_cuda_view_from_cpu_tensor             RuntimeError cuda_view.cu:53: cudaHostAlloc failed: out of memory
+cudaHostRegister, sweep 1/8/16 GiB        rc=0 at every size, is_pinned() = False at every size
+```
+
+`cudaHostAlloc` succeeded -- the buffer existed, 95.368 GiB, page-aligned. What
+killed it is that the wrapped tensor does not *report* as pinned, so the op took
+its fallback branch (`cuda_view.cu:53`: `cudaHostAlloc` a second buffer and copy
+into it) and asked the driver for another 95.368 GiB on a 125.68 GiB host. The
+driver refused cleanly. **An external buffer that the op cannot identify as
+pinned is not merely slower, it doubles the reservation**, which is worse than
+the pow2 rounding this was meant to fix: 190 GiB of demand versus 128.
+
+So tiling stays the design, and for a specific reason now measured rather than
+inferred: each tile is allocated by torch's own `pin_memory`, which the op *does*
+recognise (a torch-pinned tensor came back at the same address), so tiles alias
+and nothing is duplicated.
+
+### One inconsistency in my own measurements, left open deliberately
+
+An earlier run at 512 MiB reported `is_pinned()=True` for both the
+`cudaHostRegister` and `cudaHostAlloc` wrapped buffers, and the view aliased at
+the same address. The full-scale run reports `False` for the same constructions.
+Sizes 1/8/16 GiB agree with the full-scale result, so the odd data point is the
+512 MiB one, but I do not have a mechanism that explains a size-dependent
+`is_pinned`, and I am not going to invent one. Two defects in that probe limit
+how much of it to trust:
+
+* every `driver says Unregistered` line is void -- `cuPointerGetAttributes`
+  returned `rc=1` (`CUDA_ERROR_INVALID_VALUE`), i.e. the call failed, so it read
+  nothing;
+* the full-scale case never printed whether `torch.frombuffer` preserved the
+  buffer address, so a pointer-identity problem in my wrapper is not excluded as
+  the cause of the failed alias.
+
+The resolution is one small run at 8-16 GiB, cgroup-capped, printing
+`p.value == w.data_ptr()`, `is_pinned`, and `view.data_ptr() == w.data_ptr()` so
+the three candidate failure points separate. It is not needed for the tiling
+decision; it is needed only to know whether an exact-size path is salvageable.
+
+### Why the engine died: `cudaHostRegister` and `cudaHostAlloc` are not equally safe
+
+The 21:38 CDT outage on `gg` (container `Exited (137)`) was caused by the first,
+unguarded version of this probe, not by the engine. Kernel evidence:
+
+```
+[167139.9] python3: page allocation stall for 10 secs: order:0, mode:GFP_HIGHUSER|__GFP_ZERO|__GFP_COMP
+         PID 104923 Comm:python3 UID:1002          <- the probe; the engine was PID 103172/103174
+[167216.4] <allocation failure dump>               = 21:38:17 CDT (boot + timestamp)
+          shmem 70,459,496 kB = 67.2 GiB           = the engine, still alive at that instant
+          inactive_anon 119,668,516 - shmem = 49.2 GiB  = the probe's 95 GiB, ~half faulted in
+          free 192,207 pages = 751 MiB,  Free swap 343,740 kB of 8 GiB
+[     --  ] engine container died 21:38:36, exit 137
+```
+
+The operational lesson is an asymmetry between the two CUDA APIs that no guard of
+mine was pointing at:
+
+* **`cudaHostRegister` is the dangerous one.** It takes an existing lazily-mmap'd
+  region and converts reservation into resident pages, faulting them in
+  progressively with no up-front accounting against `MemAvailable`. It ran for
+  77 seconds and climbed 49 GiB before anything refused. `torch.empty` returning
+  in 0.0 s is what makes this invisible: the cost arrives during registration.
+* **`cudaHostAlloc` refuses cleanly** (rc=1002 / a Python exception) before
+  committing, which is why the second 95 GiB attempt produced an error rather than
+  an OOM storm -- swap usage afterwards was 0.07 GiB.
+
+My guards were on the allocation and not on the registration.
+
+And the OOM killer's choice is the part to design around: it killed the **67 GiB
+bystander**, not the offender that was still climbing. A probe that over-commits
+does not lose the probe, it loses whatever else is resident. Non-negotiable rules
+for host-memory probes on a box that also serves:
+
+1. `podman run --memory=<cap>` so the cgroup kills the offender instead of the
+   kernel hunting a victim host-wide (established earlier that this does enforce
+   rootless);
+2. a raised `--oom-score-adj` on the probe container, so if the host is threatened
+   anyway the probe is selected, not the engine;
+3. pre-flight asserts that no earlier probe is still *alive*, not just that
+   `MemAvailable` looks adequate -- the specific error here was assuming a 120 s
+   client timeout had killed the container, when a podman container outlives its
+   launching ssh session. The `MemAvailable 24.1 GiB` in the follow-up log was
+   that zombie, visible in my own output and misread as host noise;
+4. no host-memory-exhaustive probe at all while the engine is up.
+
+The engine was restored at 21:42 CDT and verified back to its exact pre-incident
+steady state: `http=200`, `Shmem 66.18 GiB`, worker mappings `64.000 + 2.000 GiB`,
+and three identical greedy requests byte-identical. During load it transiently
+pins an extra 2 GiB (68.000 total), which disappears once serving -- worth knowing
+before reading a mid-startup `Shmem` as a regression.
+
 ## 2. Page-cache eviction: the plan's "unsolved without root" is solvable without root
 
 Plan section 6 says a `posix_fadvise(POSIX_FADV_DONTNEED)` attempt "did not
@@ -378,6 +481,84 @@ The plan's arithmetic target of ~38k page-reads/s at `max_num_seqs=16` needs
 qd>=4 and is comfortably under the qd8 knee, so the plan's conclusion holds for
 the right reason: bandwidth and IOPS are not the constraint. Serialization,
 cache state and read amplification are.
+
+---
+
+## 3b. Fill level is not what moves random reads; FTL state is
+
+The plan's Stage B needs to know whether a nearly-full serving drive changes the
+streaming budget. A 100 GiB uncompressed random-read dataset was measured on a
+**Samsung PM9A1 2TB** (`MZVL22T0HBLB-00BL7`) on `burst`, newly provisioned as
+single-XFS-AG-ish `noatime` `nodiscard`, at four occupancy checkpoints plus a
+post-cleanup arm. Sweeps: `fio --rw=randread --bs=4k --direct=1 --ioengine=libaio
+--size=100g --runtime=45 --time_based --numjobs=1`, after a 300 s (baseline) or
+600 s dwell. Pages/token is 17.25 for the shipping BF16 layout (section 5), so
+the 2048-token chunk budget is 35,328 pages / 3.6 s = **9,813 pages/s**.
+
+```
+condition        qd8 IOPS   x need    qd32 IOPS  x need   qd8 p99    qd32 p99   temp
+baseline 5.7%      160,953   16.4x      207,752   21.2x     70.1 us     207.9 us   43C
+fill 50%            84,776    8.6x      210,667   21.5x    268.3 us     230.4 us   45C
+fill 75%            97,059    9.9x      211,775   21.6x    134.1 us     230.4 us   46C
+fill 90%            97,030    9.9x      211,412   21.5x    134.1 us     230.4 us   45C
+cleanup 5.5%        96,572    9.8x      211,583   21.6x    134.1 us     230.4 us   40C
+```
+
+**What is solid.** Queue depth 32, the depth a real prefetcher would run at, is
+insensitive to everything tested: 207,752 -> 211,412 IOPS (+1.8%) across a 5.7%
+to 90% sweep, and it did not move even in the arm run immediately after the
+largest write of the study. Temperature never exceeded 46 C, so nothing here is
+thermal. At production depth the device is throughput-saturated with respect to
+this workload, and the plan's "IOPS is not the constraint" survives a full drive
+with 21x margin.
+
+**What is not solid, and why the shape of the qd8 curve matters more than its
+size.** qd8 fell 39.7% and never came back -- but it does not track fill. Ranked
+by occupancy the numbers are 160,953 / 84,776 / 97,059 / 97,030 / 96,572, i.e.
+non-monotonic: the 50% arm is *worse* than the 90% arm. Ranked by the write
+volume immediately preceding each arm (1,700 GiB / 954 GiB / 572 GiB, with the
+baseline having only its own 100 GiB dataset build behind it) the ordering is
+monotonic: the biggest preceding write produced the worst qd8 and the only tail
+outlier in the study (p99.9 1,548 us, versus 84-293 us everywhere else, single
+unrepeated observation). Recent FTL churn is the better predictor, not occupancy.
+
+**The recovery arm is void, and it is void for a reason worth remembering.**
+Deleting the 1.7 TiB filler did not restore qd8, and that does not prove the
+degradation is permanent: `/nvme1` is mounted without `discard`, `fstrim` returns
+`Operation not permitted` unprivileged, and the drive does support trim
+(`discard_max_bytes` = 2 TiB, granularity 512). So the FTL was never told those
+LBAs were free -- from the device's point of view it was still ~90% full during
+the "5.5% recovery" measurement. `fstrim.timer` is active but weekly, and could
+not have covered a file created and deleted inside the window. A real recovery
+arm needs root, which makes this the one question in the whole pre-work where
+root would actually buy something (unlike section 2's page-cache case, where it
+would not).
+
+**Two disclosed protocol defects.** `fio --numjobs=2` with a single `--filename`
+starts both jobs at offset 0 on the same file, so every fill pass wrote the whole
+range twice: the log shows `io=1700GiB` against an 849 GiB target. Occupancy
+percentages are correct (measured with `du`), but write volume and therefore GC
+work were double what was intended -- which strengthens, not weakens, the
+write-churn reading above. And qd1/qd128 were only measured at baseline; the
+degraded state is unmeasured at both.
+
+**The unmeasured case is the one the naive design would hit.** qd1 baseline is
+20,846 IOPS = 2.1x the chunk budget, the thinnest margin in the study. If qd1
+degrades the way qd8 did, a per-token synchronous read path lands near 1.3x
+budget -- a projection, not a measurement, which is exactly why it should not be
+left unmeasured. Practical consequence: submit at depth (io_uring or libaio,
+>=8 outstanding) rather than synchronously per token, and measure degraded-qd1
+before trusting any qd1 number.
+
+**None of these numbers transfer to the serving host.** Three different drives
+are in play: section 3's FX900 Pro is `burst`'s root device, this study is
+`burst`'s PM9A1 scratch, and serving runs on `gg`'s single **Samsung 990 PRO
+4TB**. `gg` also differs in the other direction: its checkpoint subvol is
+`compress=zstd:1 ... discard=async`, so deletes *do* reach the FTL promptly there
+(the no-trim caveat above is `burst`-specific) while section 3's compression
+traps *do* apply there. The missing measurement that matters most is therefore
+990 PRO + uncompressed PLE file (`chattr +C`, section 3) at qd1/qd8/qd32, not
+another fill sweep on a drive nobody serves from.
 
 ---
 
@@ -781,4 +962,19 @@ print(\'after cudaHostAlloc 5 GiB, cumulative %.3f GiB (i.e. +5.000)\' % ((sm()-
 python3 -c "
 from math import log2
 for gib in (47.684, 70, 95.367): print(gib, '->', 2**round(log2(gib)+0.5001))"
+
+# 7. can a "recovery" arm even be measured here?  (burst /nvme1: no -- EPERM)
+cat /sys/class/nvme/nvme1/model
+cat /sys/block/nvme1n1/queue/discard_max_bytes /sys/block/nvme1n1/queue/discard_granularity
+findmnt -no OPTIONS /nvme1 | grep -c discard        # 0 = online trim off
+fstrim -v /nvme1 2>&1 | tail -1                     # Operation not permitted unprivileged
+systemctl is-active fstrim.timer                    # weekly only
+
+# 8. is a fill-state drop actually fill, or preceding write volume?  print both
+grep -E "^### |WRITE: bw" /nvme1/bench/fillstate.log
+
+# 9. the API asymmetry that OOM-killed the engine (section 1c): register faults
+#    pages in unrefusably; alloc refuses cleanly.  Watch residency, not RSS,
+#    and never do this with the engine resident.
+watch -n1 'awk "/^MemAvailable|^Shmem|^SwapFree/{printf \"%-11s %.2f GiB\n\",\$1,\$2/1048576}" /proc/meminfo'
 ```
