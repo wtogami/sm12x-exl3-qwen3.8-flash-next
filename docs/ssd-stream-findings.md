@@ -2859,3 +2859,59 @@ and it is one of the reasons the comparison has to be a 2×2 rather than a pair.
 
 Both prior attempts restored the serving engine cleanly — health 200, greedy `f91132436fb09e45`, Shmem
 66.18 GiB, VRAM 91,992 MiB — and both failures were archived before cleanup, unlike the first one.
+
+# Stage B works: the FP8 table served by CPU row copy with 62 GiB less pinned memory
+
+Third attempt started, became healthy at 170 s, and passed the bar.
+
+| | pinned (deployed) | `PLE_STREAM=1` |
+|---|---|---|
+| `Shmem` | 66.18 GiB | **4.43 GiB** |
+| `MemAvailable` | 50.14 GiB | **109.88 GiB** |
+| `Cached` | 69.24 GiB | 82.74 GiB |
+| VRAM used | 91,992 MiB | 91,512 MiB |
+| greedy output | `f91132436fb09e45` | `f91132436fb09e45` |
+| device sectors, warm greedy burst | — | **392 (=196 KiB)** |
+| capture-copy errors | 0 | 0 |
+
+The memory prediction held to the arithmetic rather than to luck. The deployed engine pins
+`PowerOf2Ceil(47.684 GiB) = 64.000 GiB` for the table; streaming pins only the token embedding,
+`PowerOf2Ceil(248320 x 2560 x 2 B) = 2.000 GiB`, plus ~2.18 GiB of unrelated shmem → expected ~4.2 GiB,
+observed **4.43 GiB**. Freed: ~61.7 GiB of pinned host memory, and 59.7 GiB more `MemAvailable`, which is
+what the page cache then spends: 82.74 GiB cached against a 47.7 GiB table, and a warm burst touching the
+device for 196 KiB. That is the entire point of the feature, measured.
+
+The 0.25 GiB gap between predicted and observed is not chased; it is inside the resolution of "rounded
+embedding pin plus unrelated shmem", and claiming it away would be dressing the model to fit.
+
+## Greedy output on prompts over 2048 tokens is not reproducible on this engine
+
+Found while trying to *strengthen* the correctness bar, and independent of streaming. Two runs of the same
+six-prompt probe on the unchanged pinned engine produced different aggregate hashes. Per-prompt hashing
+over three runs isolated it to exactly one prompt — the 2,222-token one, the only prompt above
+`--max-num-batched-tokens 2048`. Then:
+
+- Five back-to-back identical calls of one 2,110-token prompt → **three distinct completions**, with
+  nothing interleaved. So it is not scheduling or interleaving.
+- `vllm:prefix_cache_queries_total` 103,379 with `hits_total` 0 → **prefix caching is not the mechanism**.
+- 1,510 / 1,610 / 1,710 / 1,860 / 2,010 tokens: stable. 2,310 / 2,610 (needing chunked prefill): flip.
+- 4,010 tokens looked stable over three runs, so the "small final chunk" hypothesis is **not**
+  established. The boundary the data supports is "prompt requires chunked prefill".
+
+Consequences, both acted on. The strict gate hashes only single-chunk prompts (five of six here); the
+long one is hashed into a separate `all` value and reported without gating — a prompt that cannot
+reproduce itself can produce a false failure *or* a false pass. And it puts an earlier conclusion in
+doubt: a previous session attributed non-reproducible greedy output to the PLE side stream ("identical
+prompts matched in 2 of 8"). If those prompts exceeded 2048 tokens, this effect is a candidate cause and
+that attribution needs re-testing before it is relied on again.
+
+`scripts/ple-probe.py` records all of this in its own docstring, because the next person to see a
+mismatched hash needs to know which half is meaningful.
+
+## A stray `bisect.py` in `/home/rtx` silently breaks python there
+
+The throughput probe died with `ModuleNotFoundError: No module named 'torch'` while importing
+`urllib.request`. Python puts the cwd on `sys.path`, `urllib.request` imports `bisect`, and
+`/home/rtx/bisect.py` shadows the stdlib module — and that file imports torch. Nothing about the engine
+was involved. Probes now run `cd /tmp && python3 -I`, which is stated in the driver comment so it does
+not get "simplified" back later.
