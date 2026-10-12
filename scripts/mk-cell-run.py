@@ -21,6 +21,38 @@ PODMAN_ONLY = {"-e", "--env", "-d", "--detach", "--name", "-v", "--volume", "--d
                "--network", "--ipc", "--security-opt", "--annotation", "-p", "--publish"}
 
 
+TAKES_VALUE = {"--name", "-e", "--env", "-v", "--volume", "--device", "--network", "--ipc",
+               "--security-opt", "--annotation", "-p", "--publish", "--entrypoint", "--user",
+               "--workdir", "--shm-size", "--ulimit", "--pid", "--hostname", "--cidfile",
+               "--label", "--log-driver", "--rootfs", "--cgroup-conf", "--memory", "--cpus"}
+
+
+def find_image_index(tokens: list[str], start: int) -> int:
+    """Index of the image token: first non-flag after `start` that is not some flag's value.
+
+    One implementation on purpose. build() and the preservation check used to each carry their own, and
+    the second one located the model path instead of the image -- which made a correct line fail the
+    check, the exact failure mode that teaches people to delete checks.
+    """
+    i, skip = start, False
+    while i < len(tokens):
+        tok = tokens[i]
+        if skip:
+            skip = False
+            i += 1
+            continue
+        if tok in TAKES_VALUE:
+            skip = True
+            i += 1
+            continue
+        if tok.startswith("-"):
+            i += 1
+            continue
+        return i
+        # everything after this point is container argv, which may legitimately start with a dash
+    raise SystemExit("could not locate the image token in the container command")
+
+
 def create_command(container: str) -> list[str]:
     """The container's argv, token for token.
 
@@ -52,28 +84,7 @@ def build(base: list[str], name: str, image: str | None, envs: list[str], args: 
     run_i = next((i for i, tok in enumerate(base) if tok in ("run", "create")), None)
     if run_i is None:
         raise SystemExit("CreateCommand contains neither `run` nor `create`; refusing to guess")
-    takes_value = {"--name", "-e", "--env", "-v", "--volume", "--device", "--network", "--ipc",
-                   "--security-opt", "--annotation", "-p", "--publish", "--entrypoint", "--user",
-                   "--workdir", "--shm-size", "--ulimit", "--pid", "--hostname", "--cidfile",
-                   "--label", "--log-driver", "--rootfs", "--cgroup-conf", "--memory", "--cpus"}
-    img_i, i, skip = None, run_i + 1, False
-    while i < len(base):
-        tok = base[i]
-        if skip:
-            skip = False
-            i += 1
-            continue
-        if tok in takes_value:
-            skip = True
-            i += 1
-            continue
-        if tok.startswith("-"):
-            i += 1
-            continue
-        img_i = i
-        break
-    if img_i is None:
-        raise SystemExit("could not locate the image token in CreateCommand")
+    img_i = find_image_index(base, run_i + 1)
 
     head, tail = base[:img_i], base[img_i + 1:]
     # strip what we are replacing: name, detach, dropped envs
@@ -130,12 +141,7 @@ def main() -> int:
     # positions were perfect while --hf-overrides' JSON value had lost every quote, so only comparing
     # the tokens themselves can see it.
     sub = next(i for i, tok in enumerate(base) if tok in ("run", "create"))
-    base_img_i = next(i for i in range(sub + 1, len(base))
-                      if not base[i].startswith("-") and i > 0
-                      and not (base[i - 1] in ("-e", "--env", "-v", "--volume", "--device", "--name",
-                                               "--network", "--ipc", "--security-opt", "--label")
-                               or base[i - 1].startswith("--") and "=" not in base[i - 1]
-                               and base[i - 1] in takes_value))
+    base_img_i = find_image_index(base, sub + 1)
     want_tail = base[base_img_i + 1:] + list(a.arg)
     if cmd[img_i + 1:] != want_tail:
         for i, (x, y) in enumerate(zip(cmd[img_i + 1:], want_tail)):
