@@ -1747,6 +1747,12 @@ verify the reference, stage a copy, verify the staged copy's md5, `mv` it into p
   all 22 blobs: file size agrees with its own safetensors header   (0 mismatches)
   all 22 shards open via safetensors.safe_open the way the loader does  (0 failures)
   hardened probe re-run: size and md5 identical before and after
+  engine restarted from the restored checkpoint:
+      SERVING after 120s   Model loading took 72.24 GiB and 191.96 s
+      max-model-len 524288   checkpoint_mapped false   num_speculative_tokens 3
+      Shmem 66.18 GiB   pins 64.000 + 2.000 GiB   MemAvailable 49.17 GiB
+      greedy output identical to the pre-incident reference strings
+      blob md5 after the load: unchanged
 ```
 
 **The engine never noticed** -- its weights were already loaded and pinned, which is exactly why
@@ -1763,6 +1769,14 @@ safetensors header.
   on one you did not.
 * **Record an md5 of any artifact before measuring against it.** The recovery worked because one
   existed for an unrelated reason; that is luck, not process.
+* **A verification script is itself a script, and needs the same care as the thing it checks.**
+  Four of them failed tonight while checking my own repair: `fio --size=20g` extended the file it
+  was meant to observe; `podman inspect -q -f` suppressed the format output so a readiness guard
+  could only ever report "not running"; a nested-quote syntax error killed the determinism check
+  *after* the script had printed a confident-looking config block; and `podman events` streams by
+  default, hanging a diagnostic. Two of those produced output that looked like a passed check
+  while checking nothing. When the tool is the thing standing between you and a corrupt
+  checkpoint, a broken check is not a cosmetic problem.
 * **Verify a fixture's identity at every step that consumes it.** Two of tonight's three runs are
   valid only because the copies were md5-checked as they were built.
 
@@ -1777,5 +1791,17 @@ the redo must copy from a scratch file, not from the production blob.
 **Also measured while probing, on the restored file with the hardened tool:** `gg` reads at
 **20.1k qd1 / 131k qd8**, against its historical 19.9k / 121.2k baseline and `burst`'s
 12.7k / 96.4k slow-placement state. So `gg` is in a healthy placement and its drive is not a
-suspect in any of these numbers. The `chattr +C` reference copy is being kept until the next
-engine restart confirms a clean load, then deleted.
+suspect in any of these numbers. **Closed out.** The engine restarted from the restored
+checkpoint, reached serving in 120 s, pinned 64.000 + 2.000 GiB, and produced greedy output
+identical to the pre-incident reference strings -- which is the check that actually matters,
+because a wrong byte anywhere in a shard changes tokens. Output determinism is the oracle for
+checkpoint integrity, the same one that made arm B credible.
+
+One operational side effect of the night, unrelated to the damage: this restart loaded in
+**191.96 s** rather than the 170.2 s measured earlier, because every benchmark cell ran
+`--evict-first` and the last load was a cold 72 GiB read of the weights. Nothing is wrong; the
+first start after this may simply be slower until the page cache refills.
+
+The `chattr +C` reference copy is **kept deliberately** -- it is a verified, byte-identical,
+NOCOW-laid-out 8 GiB fixture, which is precisely what the layout-vs-placement redo needs, and it
+costs 8 GiB on a volume with 3.3 TB free.
