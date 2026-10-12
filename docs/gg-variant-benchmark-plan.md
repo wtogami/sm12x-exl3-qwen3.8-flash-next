@@ -13,7 +13,7 @@ configurations, same everything else.
 | --- | --- | --- |
 | **A** `round2` | today's default: `pin_memory`, table pins 64.000 GiB for 47.684 GiB of FP8 | already running; receipt exists |
 | **B** `exact` | `PLE_PIN_STRATEGY=exact`: table pins 47.684 GiB, aliased, no kernel change | one build, then an env var |
-| **C** `stream` | checkpoint-mapped PLE table (`port-ple-mmap`, upstream PR 58439 + 58835) | a build that applies those ports |
+| **C** `stream` | checkpoint-mapped PLE table: `PLE_MMAP=1` -> `--engram-config {"cpu_offload": true, "checkpoint_mapped": true}` | **nothing -- already in the image** |
 
 Two consequences of that table that change the schedule:
 
@@ -22,10 +22,14 @@ Two consequences of that table that change the schedule:
   the `reject_exact_repin` import in `model_loader/utils.py`. Re-measure A on the
   B-image with the flag off (`A'`) and interleave `A'`/`B`. The build is the expensive
   part; the arm is one env var and a restart.
-* **C needs a second build anyway.** The installed image contains **zero** mmap-related
-  lines in `ngram_embedding.py`, so streaming is not a config flip. Since B's build is
-  needed first, build in that order and keep the delta between images to exactly the
-  mmap ports.
+* **C needs no build at all.** The mmap ports are already in the installed image --
+  labels `io.tpurtell.ple-mmap.pr = 58439+58835`, commit `47b9933db82d` -- and the
+  implementation lives in `nvidia/ple_pageable.py` (`PagePrefetcher`, `PrefetchSource`),
+  imported by `nvidia/model_state.py` and `nvidia/ngram_embedding.py`. An earlier note
+  here claimed "zero mmap lines" because it grepped `common/ngram_embedding.py`, the
+  wrong file; the feature is a config flag (`PLE_MMAP=1`), not a compile-time choice.
+  That reverses the schedule: C is measured first on the current image while nothing is
+  rebuilding, and only B needs the build.
 
 ## Grid: a staircase, not a cross product
 
@@ -45,6 +49,31 @@ c1            <= 935,216 (so 512K fits)    256, 1024 out      261632, 458752
 At 512K only one request is servable at a time (1.78x means two do not fit), so the
 long-context arm is necessarily c1 and measures a different thing from the c16 arm:
 single-stream latency and prefill burst size rather than aggregate page pressure.
+
+## Decision: all arms run at `LONGCTX=0` (native 262144)
+
+YaRN is dropped from the core comparison. It is close to orthogonal to the storage
+question (below), it removes a confound rather than adding one, and it makes the
+concurrency-ceiling problem disappear. `A'` had to be re-measured anyway, so switching
+modes costs no extra runs.
+
+One correction to the reasoning that got us here: the claim that YaRN costs throughput was
+**already measured and refuted in this repo**. `start.sh` documents the switch as
+"RULER 97.66 at 523K vs 97.92 at native 262K, **no measured throughput cost**". So the
+saving from dropping it is not engine time -- it is test-suite time, which is a property
+of which arms we choose to run, not of the rope mode. Both knobs are independent, and
+conflating them nearly cost us the load-bearing prefill measurement, since the biggest
+prefill point (261,632) is available inside the native window.
+
+Two consequences that are not free:
+
+* **The existing baseline receipt is now stale by configuration**, since it was taken at
+  `524288`/YaRN. It stays as a historical record but cannot be paired against any arm
+  here.
+* **Cross-mode determinism is not valid.** YaRN changes positional encoding, so the same
+  prompt can legitimately produce different greedy tokens. The byte-identity gate only
+  means something within one rope mode. This is reasoning, not measurement -- it gets
+  confirmed or corrected the first time an arm is run in both modes.
 
 ## Is the 512K YaRN window relevant here? Partly, and not for the obvious reason
 
@@ -135,7 +164,13 @@ therefore resolve roughly +/-3% and nothing finer.
 
 ## Hygiene, in order of how much it would have cost us
 
-1. **Never benchmark a freshly written table file.** The PM9A1-class SLC region is
+1. **The `uncompressed` requirement is O_DIRECT-specific, and arm C does not obey it.**
+   The checkpoint-mapped path reads by demand paging, so the kernel decompresses
+   transparently -- compression costs that arm CPU cycles rather than silently faking its
+   numbers, and `chattr +C` buys it nothing. Any streaming-doc warning about uncompressed
+   tables must say which access method it applies to, or it will send the next reader to
+   fix a problem that arm C does not have.
+2. **Never benchmark a freshly written table file.** The PM9A1-class SLC region is
    ~236 GB, which swallows both the 47.7 GiB FP8 table and the 95.4 GiB BF16 table whole,
    so a streaming prototype measured against a just-copied checkpoint measures the drive's
    write cache. Either use the production checkpoint as-is (what the `gg` disk numbers
