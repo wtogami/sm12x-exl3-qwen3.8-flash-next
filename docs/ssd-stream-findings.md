@@ -2141,3 +2141,43 @@ because 250 batches only touch 5.97 GiB of distinct pages, and the difference wa
 The same run also initially reported uncapped numbers identical to capped ones because the host had
 already cached the file from the earlier arm: the cross-cgroup free-hit effect measured that
 morning, appearing as a result.
+
+## The pipelined gather: 0.2% of prefill, even while reading cold from disk
+
+The un-pipelined numbers above are an upper bound on the wrong quantity. In the engine the lookup
+for batch k+1 runs while batch k is being computed -- upstream already exposes that hook as
+`start_prefetch`, which exists precisely so the pinned lookup overlaps a decoder layer. Filled with
+a persistent pool of 24 threads doing C-side `memcpy` from a read-only mapping into double-buffered
+pinned staging, one batch ahead, on a 47.7 GiB fixture under a 20 GiB cgroup cap:
+
+| condition | fill per 2048-token batch | **exposed cost** (p50) | exposed (p99) | device traffic |
+|---|---|---|---|---|
+| cold file, 24 threads | 34.75 ms | **0.46 ms = 0.22% of prefill** | 0.79 ms = 0.39% | 9.9 GiB |
+| warm cache, 24 threads | 1.28 ms | 0.40 ms = 0.20% | 0.81 ms = 0.39% | 0.0 GiB |
+| cold file, 8 threads | 133.40 ms | 0.40 ms = 0.20% | 54.76 ms = 26.7% | 6.6 GiB |
+| per-row `pread` from Python, 24 threads | 223.97 ms | 19.78 ms = 9.7% | 23.89 ms | 0.0 GiB |
+
+The fill rate does not have to be fast; it has to fit inside the compute window, and 35 ms fits
+inside ~205 ms. Thread count matters only for the tail: at 8 threads a cold start produces a 27%
+p99, at 24 threads 0.39%. And **the implementation language matters more than the mechanism** --
+calling `pread` per row from Python is GIL-bound and gets *slower* with more threads (156 ms at 8,
+224 ms at 24), while one `ctypes` call per slice releases the GIL and scales to 3,894 MiB/s. If the
+engine's staging fill is written in Python it will be the bottleneck; if it is one C call per
+thread slice it is free.
+
+Two caveats on these numbers. The 205 ms compute window is `gg`'s measured prefill rate applied to
+this batch shape, not a `burst` measurement -- this table's exposed cost is a ratio against a real
+number from another machine. And the gate that validates all of it samples 2,000 random rows against
+direct positional reads; the version before it checked only row 0, passed unconditionally, and
+produced a confident 1.9% figure from code that was reading the wrong bytes.
+
+### Where this leaves the design
+
+Everything now has a measurement attached. Decode: 16.6 us p50 with a warm cache, and a 1.4 ms p99
+when the cache is smaller than the working set, against a step budget of tens of milliseconds.
+Prefill: 0.2% exposed with a one-batch pipeline and 24 threads. Working set: 14.7 GiB for a
+serving-shaped session, so a 32 GiB host's ~19.4 GiB of cache clears it and 8 GiB does not.
+Hit rate: 86-94% from exact reuse distances, versus the 36-41% the uniform model predicted.
+Requests: 47.5% removed by within-batch dedup. Layout: must be non-encoded -- 42.9% versus 2.7%
+hits in the controlled comparison. What is left is wiring, not feasibility: `PLE_STREAM=1` in the
+engine, the cgroup-aware gate, and a byte-identical-output check against the pinned path.
