@@ -100,10 +100,13 @@ wait_idle() {   # the device counters are host-wide, so a benchmark must not ove
 # says which.
 run_host() {  # $1 mode $2 threads $3 tag
     wait_idle || return 1
+    local extra=()
+    if [ -n "${TRACE:-}" ]; then extra+=(--trace-file "$TRACE"); fi
     timeout 1800 python3 scripts/bench-ple-readpath.py --blob "$BLOB" \
       --mode "$1" --threads "$2" --tokens-per-step "${TOKS:-2048}" --steps "${STEPS:-150}" \
       --require-cold --evict-first --residency --dev "${DEV:-nvme0n1}" \
       --target-pages-per-s "${TARGET:-115700}" --min-working-set "${MWS:-0}" \
+      "${extra[@]}" \
       --output "$OUT/$3.json" >"$OUT/$3.log" 2>&1
     local rc=$?
     echo "    rc=$rc"
@@ -112,13 +115,19 @@ run_host() {  # $1 mode $2 threads $3 tag
 
   run_capped() {  # $1 mode $2 threads $3 gib $4 tag
     wait_idle || return 1
+    local mnt=() extra=()
+    if [ -n "${TRACE:-}" ]; then
+      mnt+=(-v "$TRACE:/work/trace.bin:ro,Z"); extra+=(--trace-file /work/trace.bin)
+    fi
     timeout 2400 podman run --rm --memory "${3}g" --memory-swap "${3}g" \
       -v "$PWD/scripts/bench-ple-readpath.py:/work/bench.py:ro,Z" \
       -v "$BLOB:/work/blob:ro,Z" \
+      "${mnt[@]}" \
       --entrypoint python3 "$IMG" /work/bench.py --blob /work/blob \
         --mode "$1" --threads "$2" --tokens-per-step "${TOKS:-2048}" --steps "${STEPS:-150}" \
         --require-cold --evict-first --residency --dev "${DEV:-nvme0n1}" \
         --target-pages-per-s "${TARGET:-115700}" --min-working-set "${MWS:-0}" \
+        "${extra[@]}" \
         --output /work/out.json >"$OUT/$4.log" 2>&1
     local rc=$?
     awk '/^\{$/,/^\}$/' "$OUT/$4.log" > "$OUT/$4.json"
