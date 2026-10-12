@@ -37,6 +37,38 @@ def disk_reads(dev):
     raise SystemExit(f"device {dev} not in /proc/diskstats")
 
 
+def safetensors_tensor(path, needle):
+    """Locate a tensor inside a safetensors blob: 8-byte little-endian header length, then
+    JSON whose data_offsets are relative to the end of that header.
+
+    Used so the measurement targets the real n-gram table's byte range instead of an
+    arbitrary region of the file, which matters because the row stride and the table's
+    alignment against 4 KiB pages are properties of that tensor."""
+    with open(path, "rb") as f:
+        n = int.from_bytes(f.read(8), "little")
+        if not 0 < n < 2**26:
+            return None, f"implausible safetensors header length {n}"
+        hdr = json.loads(f.read(n))
+    base = 8 + n
+    hits = [(k, v) for k, v in hdr.items() if k != "__metadata__" and needle in k]
+    if not hits:
+        return None, f"no tensor matching {needle!r}; have {[k for k in hdr if k != '__metadata__'][:6]}"
+    k, v = max(hits, key=lambda kv: kv[1]["data_offsets"][1] - kv[1]["data_offsets"][0])
+    s, e = v["data_offsets"]
+    return {"name": k, "abs_start": base + s, "abs_end": base + e,
+            "dtype": v.get("dtype"), "shape": v.get("shape")}, None
+
+
+def row_bytes_for(dtype, shape, shape_row=1):
+    DT = {"F8_E4M3": 1, "F8_E5M2": 1, "BF16": 2, "F16": 2, "F32": 4, "I64": 8, "I32": 4, "U8": 1}
+    if dtype not in DT:
+        return None
+    per_row = 1
+    for d in shape[shape_row:]:
+        per_row *= d
+    return DT[dtype] * per_row
+
+
 def _libc():
     import ctypes
     lib = ctypes.CDLL("libc.so.6", use_errno=True)
@@ -197,6 +229,11 @@ def main():
                     help="fadvise DONTNEED each interval, simulating a host with no spare RAM")
     ap.add_argument("--output", default="")
     ap.add_argument("--residency", action="store_true", help="mincore() before and after")
+    ap.add_argument("--tensor", default="",
+                    help="safetensors tensor name substring: targets that byte range and row size")
+    ap.add_argument("--region-start-bytes", type=int, default=-1,
+                    help="exact byte window; preferred over --region-start-gib")
+    ap.add_argument("--region-bytes", type=int, default=-1)
     ap.add_argument("--region-start-gib", type=float, default=0.0,
                     help="confine requests to a region so runs cannot warm each other")
     ap.add_argument("--region-gib", type=float, default=0.0, help="0 = to end of file")
@@ -216,8 +253,29 @@ def main():
     n_pages = (n_rows * args.row_bytes) // bs
     # Region confinement: without it every run reads the same offsets and the second run
     # measures the first run's cache, which is how a "cold" number quietly becomes warm.
-    lo = int(args.region_start_gib * 2**30) // args.row_bytes
-    hi = n_rows if args.region_gib <= 0 else min(n_rows, lo + int(args.region_gib * 2**30) // args.row_bytes)
+    if args.tensor:
+        info, err = safetensors_tensor(args.blob, args.tensor)
+        if err:
+            raise SystemExit(err)
+        rb = row_bytes_for(info["dtype"], info["shape"] or [0, 0]) or args.row_bytes
+        if rb != args.row_bytes and args.row_bytes == 160:      # default: adopt the real one
+            args.row_bytes = rb
+        page_floor = ((info["abs_start"] + bs - 1) // bs) * bs
+        page_ceil = (info["abs_end"] // bs) * bs
+        print(f"  tensor {info['name']} dtype={info['dtype']} shape={info['shape']} "
+              f"row_bytes={args.row_bytes}", file=sys.stderr)
+        print(f"  byte range {info['abs_start']:,}-{info['abs_end']:,}; first usable aligned "
+              f"page at {page_floor:,} ({(page_floor - info['abs_start']) % args.row_bytes} bytes "
+              "into a row -- the table does not start page-aligned, which the gather must handle)",
+              file=sys.stderr)
+        args.region_start_bytes = page_floor
+        args.region_bytes = max(0, page_ceil - page_floor)
+    start_bytes = (args.region_start_bytes if args.region_start_bytes >= 0
+                   else int(args.region_start_gib * 2**30))
+    span_bytes = (args.region_bytes if args.region_bytes >= 0
+                  else (0 if args.region_gib <= 0 else int(args.region_gib * 2**30)))
+    lo = start_bytes // args.row_bytes
+    hi = n_rows if span_bytes <= 0 else min(n_rows, lo + span_bytes // args.row_bytes)
     span = max(1, hi - lo)
     rng = random.Random(args.seed)
 
@@ -366,6 +424,7 @@ def main():
 
     out = {
         "mode": args.mode, "threads": args.threads, "fs_block_bytes": bs,
+        "tensor": args.tensor or None,
         "region_gib": round(span * args.row_bytes / 2**30, 2),
         "region_start_gib": round(args.region_start_gib, 2), "evict_first": args.evict_first,
         "blob": os.path.basename(args.blob), "blob_bytes": size,
