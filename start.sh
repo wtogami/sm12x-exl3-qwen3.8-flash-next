@@ -60,6 +60,21 @@ if [[ "$PLE_STREAM" == 1 && "$PLE_MMAP" == 0 ]]; then
   echo "  note: PLE_STREAM=1 implies PLE_MMAP=1 (checkpoint-mapped storage, CPU gather); setting it" >&2
   PLE_MMAP=1
 fi
+if [[ "$PLE_STREAM" == 1 ]]; then
+  # A streaming gather is host code and cannot live inside a captured CUDA graph: capture would
+  # freeze one row set and replay it forever. Breakable CUDA graphs are what makes it legal --
+  # @eager_break_during_capture on start_prefetch records the callable and re-runs the Python on
+  # every replay. Without it the engine dies at capture time with "Cannot copy between CPU and
+  # CUDA tensors during CUDA graph capture unless the CPU tensor is pinned".
+  # The cost is real and separate: enabling this sets compilation mode to NONE, so throughput must
+  # be compared as {pinned, streaming} x {graphs, breakable} before any delta is attributed to
+  # streaming itself.
+  if [[ -z "${VLLM_USE_BREAKABLE_CUDAGRAPH:-}" ]]; then
+    export VLLM_USE_BREAKABLE_CUDAGRAPH=1
+    echo "  note: PLE_STREAM=1 implies VLLM_USE_BREAKABLE_CUDAGRAPH=1 (the host gather must run" >&2
+    echo "        eagerly on every replay); set it explicitly to override" >&2
+  fi
+fi
 # LONGCTX=1 serves 512K via YaRN 2.0 rope scaling of the 262K-native
 # checkpoint (RULER 97.66 at 523K vs 97.92 at native 262K, no measured
 # throughput cost). LONGCTX=0 stays at the native 262144 window.
@@ -179,6 +194,7 @@ docker run -d --name "$container_name" \
   -e OMP_NUM_THREADS="${CPU_THREADS:-8}" \
   -e PLE_PIN_STRATEGY="${PLE_PIN_STRATEGY}" \
   -e PLE_STREAM="${PLE_STREAM}" \
+  -e VLLM_USE_BREAKABLE_CUDAGRAPH="${VLLM_USE_BREAKABLE_CUDAGRAPH:-0}" \
   -e PLE_ROWCOPY_SO="${PLE_ROWCOPY_SO:-/opt/qwen38/ple_rowcopy.so}" \
   -e CUDA_CACHE_PATH=/root/.cache/cuda \
   -e TRITON_CACHE_DIR=/root/.cache/triton \
