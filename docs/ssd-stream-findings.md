@@ -317,23 +317,44 @@ teardown. And since the serving launch carries no `--enable-sleep-mode`, weights
 are never released at runtime anyway, so even a mis-designed owner could only
 leak, not dangle.
 
-**Silently broken.** The modern-looking equivalent, PEP 688 `__buffer__` /
-`__release_buffer__` on the owner, is a trap. torch releases the export *inside*
-`frombuffer`, so the owner dies immediately while the tensor is still handing out
-that address:
+**Silently broken -- and the evidence for that took two attempts to get right.** The
+modern-looking equivalent, PEP 688 `__buffer__` / `__release_buffer__` on the owner,
+does not work: torch releases the export *inside* `frombuffer`, so the owner dies
+while the tensor still hands out its address.
+
+The first version of this section claimed the proof was a `CUDA error: invalid
+argument` on first read. **That was wrong, and it was the same red herring described
+below** -- the probe's `__release_buffer__` called `cudaFree`, which frees nothing, so
+the error was sticky state rather than a use-after-free. Measured again with the
+correct deallocator, `cudaFreeHost`:
 
 ```
-after alloc + frombuffer:  alloc 8 GiB  ->  cudaFree from __release_buffer__  ->  __del__
-tensor.is_pinned() = True          <- reports success about freed memory
-view same_addr=True                <- reports success about freed memory
-first read  -> CUDA error: invalid argument
+MemAvailable before alloc :  48.56 GiB
+tensor still in scope     :  48.59 GiB      (delta +0.03 -> the 4 GiB is NOT held)
+events                    :  alloc 0x7faec0000000, cudaFreeHost rc=0
+is_pinned while alive     :  False          <- the real observable
+next cudaHostAlloc(4 GiB) :  addr 0x7faec0000000   <- the SAME address, re-handed
+first tensor now reads    :  0xab 0xab 0xab 0xab   <- another owner's bytes
 ```
 
-Note how much of that is a lie: `is_pinned` is True and the view is created
-without complaint, both *after* the buffer was freed. The failure only surfaces on
-first touch, far from the cause. The same `invalid argument` was reproduced
-deliberately by calling `cudaFree` under a live view, which confirms the mechanism
-rather than inferring it.
+So the failure is not a fault, it is **silent corruption**: the buffer is returned to
+the driver while a tensor still references it, reads keep working until the allocator
+re-hands that address, and then the tensor quietly returns someone else's data. The
+earlier clean read (`sentinel=True`) was unreused pages, i.e. luck. `is_pinned()`
+flipping to False is what actually distinguishes released from held.
+
+**A sticky error is the most misleading thing CUDA has done in this investigation.**
+Calling `cudaFree()` on `cudaHostAlloc` memory returns `cudaErrorInvalidValue` and
+frees nothing (`cudaFreeHost` is the deallocator). The missed free is bad enough, but
+the second-order effect cost more debugging time: the failed call leaves an error
+status that the *next* torch CUDA operation reports as `CUDA error: invalid argument`,
+even on a buffer that was never touched. Demonstrated directly -- a bogus `cudaFree`
+followed by an alias read of a separate, valid buffer fails, and the same sequence
+passes once `cudaFreeHost` is used. So "invalid argument" in this area is evidence
+about the last failed call, not about the memory being read; check the deallocator
+before believing any corruption story, including one I wrote earlier in this file.
+`_release()` therefore uses `cudaFreeHost`, checks the return code, and clears the
+error status on failure so a bad teardown cannot impersonate a bug elsewhere.
 
 **A methodology note on the test that got this wrong first.** The preceding run
 deleted the ctypes array and gc'd, saw the read still succeed, and concluded torch
@@ -341,7 +362,12 @@ did not anchor -- but the array came from `from_address`, which is a *non-owning
 view, and nothing in that script ever called `cudaFree`. The memory could not have
 gone away, so the test could not have failed, and its verdict was meaningless in
 both directions. Any lifetime test needs an owner whose destructor is observable;
-otherwise it is measuring nothing.
+otherwise it is measuring nothing. The same mistake recurred immediately after this
+was written: a `MemAvailable` check labelled "memory still held" when the delta of
+`+0.03 GiB` meant the opposite, because the comparison had its sign backwards. A
+measurement whose interpretation is an `if` over two similar-looking numbers needs to
+print the numbers and the conclusion, and the conclusion above was corrected by the
+address-reuse observation rather than by that check.
 
 Practical consequence for a loader patch: allocate with `cudaHostAlloc`, wrap with
 a ctypes-array subclass that owns the pointer, hand it to `torch.frombuffer`, then
