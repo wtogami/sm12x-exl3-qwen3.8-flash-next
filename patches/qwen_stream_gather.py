@@ -97,8 +97,13 @@ class StreamGather:
         self._arena = [torch.empty(nbytes, dtype=torch.uint8, pin_memory=True) for _ in range(2)]
         self._arena_base = [int(a.data_ptr()) for a in self._arena]
         self._dst = torch.empty(nbytes, dtype=torch.uint8, device=device)
-        self._pool = ThreadPoolExecutor(max_workers=self.threads,
-                                        thread_name_prefix="ple-fill")
+        # Two executors on purpose. _pool runs one whole-batch fill at a time (the pipelined
+        # path); _fan spreads that fill's row-copy slices across threads. Sharing one pool means
+        # a fill submits children to the pool it occupies, so 1 + threads tasks exceed
+        # max_workers and correctness depends on the queue draining -- a latent deadlock if a
+        # second fill ever overlaps.
+        self._pool = ThreadPoolExecutor(max_workers=2, thread_name_prefix="ple-fill")
+        self._fan = ThreadPoolExecutor(max_workers=self.threads, thread_name_prefix="ple-fan")
         self._lock = threading.Lock()
         self._pending = None
         self._next_buf = 0
@@ -122,7 +127,7 @@ class StreamGather:
                                      byte_off[lo:hi], hi - lo, self.row_bytes)
 
         t0 = time.perf_counter()
-        list(self._pool.map(work, range(k)))
+        list(self._fan.map(work, range(k)))
         return time.perf_counter() - t0
 
     def submit(self, row_ids: np.ndarray) -> None:
@@ -201,12 +206,13 @@ class StreamGather:
             want = os.pread(self.fd, self.row_bytes, int(rid) * self.row_bytes)
             if len(want) != self.row_bytes:
                 raise OSError(f"direct read short at row {rid}")
-            if want.tobytes() != cpu[i].tobytes():
+            if want != cpu[i].tobytes():   # os.pread already returns bytes
                 bad += 1
         return bad
 
     def close(self):
         self._pool.shutdown(wait=True)
+        self._fan.shutdown(wait=True)
         _libc.munmap(ctypes.c_void_p(self.base), self.size)
         os.close(self.fd)
 
@@ -232,7 +238,9 @@ def _selftest(argv):
     rows_np = None
     if a.trace:
         raw = np.fromfile(a.trace, dtype=np.int32).astype(np.int64)
-        n_rows = os.fstat(os.open(a.table, os.O_RDONLY)).st_size // a.row_bytes
+        _fd = os.open(a.table, os.O_RDONLY)
+        n_rows = os.fstat(_fd).st_size // a.row_bytes
+        os.close(_fd)
         rows_np = np.remainder(raw, n_rows)
     else:
         raise SystemExit("--trace is required: uniform-random testing produced the wrong design twice")
