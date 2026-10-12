@@ -2915,3 +2915,52 @@ The throughput probe died with `ModuleNotFoundError: No module named 'torch'` wh
 `/home/rtx/bisect.py` shadows the stdlib module — and that file imports torch. Nothing about the engine
 was involved. Probes now run `cd /tmp && python3 -I`, which is stated in the driver comment so it does
 not get "simplified" back later.
+
+# The plan already told me not to do this, and I did it anyway
+
+`docs/gg-variant-benchmark-plan.md`, written at 00:49 CDT today — hours before I designed the streaming
+lookup — contains a section "CUDA graph cost, and why it did not gate streaming" whose conclusion is:
+
+> **It does not gate the design, because the design should not split the graph.** ... the gather belongs
+> before replay, writing into a fixed-capacity pinned staging buffer backed by a persistent device
+> buffer, exactly the pattern `PagePrefetcher` already uses for its own inputs ... The graph stays whole
+> and the gather overlaps the GPU executing the previous step.
+>
+> Piecewise graphs ... may not be necessary here at all — which removes the largest implementation risk
+> identified earlier.
+
+I built the opposite: the gather runs *inside* `start_prefetch`, which forced me into breakable graphs,
+which forced `cudagraph_mode=PIECEWISE`, which gives up whole-step FULL graphs for decode. The
+`ENFORCE_EAGER` numbers in that same section show how expensive throwing graphs away can be on this stack
+(−85.8% at c1, −66.4% at c16), which is why the size of the PIECEWISE penalty cannot be guessed at. Two
+things follow, and only one is technical.
+
+The process one: I had a written conclusion in the repo that named the implementation risk I then spent
+tonight paying for, and I did not read it before designing. The reason the section is right is that it
+reasons from where the *inputs* live — `input_ids`, `query_start_loc`, `ngram_context` are all known on
+the host before the step replays, so the gather has no business being inside the captured region at all.
+
+The technical one: that architecture is available and my pieces fit it. The host row copy already exists
+and is proven; a persistent pinned arena plus a persistent device staging buffer, filled with one
+`copy_(non_blocking=True)` issued *between* steps, makes the in-graph work pure index arithmetic over
+DMA-capable device memory — capturable in a FULL graph, no breakable mode, no `PLE_STREAM` implication of
+`VLLM_USE_BREAKABLE_CUDAGRAPH` or `PIECEWISE`, and it also deletes the per-step ids D2H that is v1's
+known cost. The device-side gather kernel already exists for the mapped backend; what changes is which
+addresses it is handed.
+
+## What the 2×2 decides, stated before it runs
+
+The `pinned-breakable-pw` cell is the important one and it has nothing to do with streaming: it is the
+deployed backend with streaming's graph regime, so its delta against `pinned-default` *is* the price of
+v1's graph requirement. Decision rule, registered now:
+
+- pinned under PIECEWISE within the noise of pinned-default → v1's graph cost is not real; ship v1,
+  the pre-replay redesign is an optimisation for the ids D2H only.
+- pinned under PIECEWISE loses materially (the eager measurements suggest it might) → v1 is the wrong
+  architecture regardless of how well it works; build the pre-replay staging path and keep FULL graphs.
+
+Either way the streaming row copy is reusable. What is not reusable is the assumption that a per-step host
+gather has to live inside the model forward.
+
+The `stream-eager` cell is expected to be bad and is kept only as a documented fallback; the eager
+measurement above is already its third data point.
