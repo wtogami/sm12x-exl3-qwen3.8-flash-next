@@ -309,6 +309,45 @@ design, roughly **half a day** including both builds and the C-only instrumentat
 B comparison is the cheap and decision-relevant half -- one build, one env var, and a
 claim about pinned bytes that is already provable from `/proc` in seconds.
 
+## Steady-state scorecard: one cell validated to 0.4%, two missed by exactly 1.64x
+
+3.2 passes, 6,704,725 requests over a 2,097,152-page region. Scorecard against the predictions
+written before the run:
+
+| cell | predicted hits | measured | verdict |
+|---|---|---|---|
+| uncapped | ~70% | **70.0%** from residency (63.0% from device) | validated |
+| 4 GiB cap | ~49% | **12.3%** | missed by 1.64x |
+| 3 GiB cap | ~37% | **−8.5%** (device exceeded requests) | missed by 1.64x |
+
+The uncapped cell is as clean a model confirmation as this project has produced: birthday-predicted
+distinct pages 2,011,416 versus 2,018,806 observed via mincore, a 0.4% error, and hits computed
+from residency land exactly on the pre-registered 70%. The device-derived 63% is biased because
+each distinct page costs 1.233 device pages -- first-pass metadata, which also means the
+"constant 1.16x O_DIRECT tax" from the single-pass matrix was itself a first-pass artifact: over
+3.2 passes `O_DIRECT` measures **0.998 device pages per request**, with the drive absorbing
+nothing across passes.
+
+The capped cells are the finding. Both miss the stationary C/N model by a factor of 1.64 --
+identically, at two different cache sizes, which points at something systematic rather than at
+noise or at a cap that is merely tighter than assumed (residency is measured, not guessed).
+
+Two candidate explanations, and they are distinguishable:
+
+* **Not at stationarity.** C/N is an asymptotic result; 3.2 passes is not many. Test: 10 passes.
+* **btrfs encoded extents.** This file's extents are 99% `encoded`. If the buffered path over
+  encoded extents does not retain pages the way a plain extent does, the effective cache is
+  smaller than residency suggests and the shortfall would be filesystem-specific. Test: the same
+  run against a `chattr +C`, `compress=no` copy of the same blob.
+
+Pre-registered, before data: **if 10 passes brings cap4 to 40-46% and cap3 to 30-34%,** the
+model is right and 32 GiB works as designed. **If they stay at or below ~20%,** C/N does not
+describe this filesystem and a 32 GiB host behaves far more like the cold case: the device
+carries ~88% of the requirement instead of ~60%, which is still inside the measured rate at 8-12
+threads but with no margin at the short-prompt end. **If the NOCOW copy reaches C/N while the
+encoded file does not,** the fix is a storage-layout instruction rather than a redesign, and it
+costs one `chattr +C` at provisioning time.
+
 ## Decision: 32 GiB is the floor, and the predictions that run tests
 
 **Adopted 2026-10-12: the streaming target is a 32 GiB host.** The 16 GiB case is explicitly
