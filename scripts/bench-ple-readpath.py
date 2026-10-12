@@ -26,14 +26,24 @@ import argparse, json, mmap, os, random, resource, sys, threading, time
 SECTOR = 512
 
 
+# /proc/diskstats field order after the three identity columns, 0-based on the split line:
+#   3 reads completed | 4 reads merged | 5 sectors read | 6 ms reading | 7 writes ...
+# The first version of this returned f[5] and f[6] as (reads, sectors), so it divided
+# *milliseconds* by 8 to get page counts and reported a 4 GiB cold read as ~3k pages. The
+# calibration that caught it: dd of exactly 1 GiB with iflag=direct moved f[3] by 8,192 and
+# f[5] by 2,097,152, and f[6] by 2,568. Any counter this team trusts has to be checked
+# against a quantity that is known beforehand.
+DISK_READS_COMPLETED, DISK_SECTORS_READ = 3, 5
+
+
 def disk_reads(dev):
-    """Completed read count and sectors, from /proc/diskstats (the only instrument that
-    works here: page-cache deltas are blind on a host with a 114 GiB cache, and
-    /proc/self/io is blind under libaio)."""
+    """(reads completed, sectors read) for a device, from /proc/diskstats -- the only
+    instrument that works here: page-cache deltas are blind on a host with a 114 GiB
+    cache, and /proc/self/io is blind under libaio."""
     for line in open("/proc/diskstats"):
         f = line.split()
         if f[2] == dev:
-            return int(f[0 + 5]), int(f[0 + 6])   # reads completed, sectors read
+            return int(f[DISK_READS_COMPLETED]), int(f[DISK_SECTORS_READ])
     raise SystemExit(f"device {dev} not in /proc/diskstats")
 
 
@@ -353,7 +363,11 @@ def main():
     for th in pool:
         th.start()
 
-    rwin = min(size, max(1, args.residency_gib) * 2**30)
+    # Probe the region actually touched. Measuring residency from offset 0 while reading at
+    # 20-40 GiB proves nothing about coldness, which is how an earlier run here reported a
+    # "verified cold" start for a region it never looked at.
+    roff = lo * args.row_bytes
+    rwin = min((hi - lo) * args.row_bytes, max(1, args.residency_gib) * 2**30)
     if args.evict_first:
         # Whole-range DONTNEED is the form that works: 2 GiB went to 0.00. Per-page DONTNEED
         # on a page read microseconds earlier does nothing at all, because the folio is still
@@ -431,7 +445,7 @@ def main():
 
     if errors:
         print("  !! worker errors: " + "; ".join(errors[:5]), file=sys.stderr)
-    res1, _ = (mincore_resident(R.fd, rwin, bs) if args.residency else (None, None))
+    res1, _ = (mincore_resident(R.fd, rwin, bs, roff) if args.residency else (None, None))
     el = time.perf_counter() - t_start
     ru1 = resource.getrusage(resource.RUSAGE_SELF)
     cpu_s = (ru1.ru_utime - ru0.ru_utime) + (ru1.ru_stime - ru0.ru_stime)
@@ -465,8 +479,12 @@ def main():
         "target_pages_per_s": args.target_pages_per_s,
         "met_target": bool(got >= args.target_pages_per_s),
         "device_pages_read": int(dev_pages),
+        "device_reads_completed": r1 - r0,
+        "device_mib_read": round((s1 - s0) * SECTOR / 2**20, 1),
+        "device_busy_ms": None,   # f[6], kept out of every rate below -- see the field note
         "measured_hit_rate": round(1 - dev_pages / max(1, requested), 4),
         "residency_window_gib": round(rwin / 2**30, 1) if args.residency else None,
+        "residency_offset_gib": round(roff / 2**30, 2) if args.residency else None,
         "host_resident_pages_before": res0, "host_resident_pages_after": res1,
         "host_cache_gib_used": (round((res1 - res0) * bs / 2**30, 3)
                                 if res0 is not None and res1 is not None else None),

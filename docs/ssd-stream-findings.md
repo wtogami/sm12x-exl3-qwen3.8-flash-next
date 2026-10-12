@@ -1120,32 +1120,49 @@ Three consequences for this repo's own design notes:
   that distinction, and it is the distinction that decides whether the feature runs on a
   discrete RTX at all.
 
-### The device counter cannot see the drive's own cache
+### A counter I trusted without calibrating, and the claim it manufactured
 
-Added while building `scripts/bench-ple-readpath.py`, and it invalidates a class of
-measurement including some of my own earlier reasoning. `/proc/diskstats` separates *host
-page cache* from *device traffic*. It has no idea what the drive does after that. An
-FX900 Pro has gigabytes of DRAM plus an SLC region, so a "cold" random read of a recently
-written 4 GiB region produced **398,978 page requests and 3,329 device read completions**
--- a 99.2% hit rate with `mincore()` reporting essentially nothing resident in the host
-cache. The host did not serve those reads and neither did the media.
+**Retracted: the section here previously claimed the drive's own DRAM cache had absorbed
+4.97 million page requests.** It had not. `disk_reads()` was reading field f[6] of
+`/proc/diskstats` as "sectors read"; f[6] is **milliseconds reading**. Sectors is f[5], and
+reads completed is f[3]. Every device number that instrument produced was therefore
+milliseconds divided by eight, which is why a 20 GiB cold read appeared to touch the device
+27,279 times while showing 76 us median latency -- a latency that was, in fact, the device
+answering, in perfect contradiction to the traffic number sitting next to it.
 
-Three consequences:
+The calibration that settled it, run against a quantity known in advance:
 
-* **A region must be far larger than the drive cache before its numbers mean anything.**
-  The 98%-honest figure for `gg`'s FP8 blob stands because that test swept ~100 GiB, far
-  above any drive cache. But the small-footprint runs on either host are measuring the
-  drive, not the media.
-* **Report the three-way decomposition, not a hit rate.** Requests = host-cache hits
-  (`mincore()` before/after) + device reads (diskstats) + residual, and the residual is
-  onboard cache. The instrument now prints `drive_cache_absorbed_pages` for exactly this.
-  A single "hit rate" number conflates all three, which is how a page-cache design can look
-  25x better than it is.
-* **Design implication, and it is small.** A few gigabytes of onboard cache is the same
-  order as a few gigabytes of host page cache, so under the C/N model it is worth a few
-  percent of the requirement on a 47.684 GiB table. It changes nothing about the choice of
-  access method -- consistent with the conclusion above -- but it must not be *counted* as
-  headroom on a benchmark receipt.
+```
+  dd of exactly 1 GiB, iflag=direct, from an evicted region:
+    f[3] reads completed  +     8,192          (1 GiB in 128 KiB requests)
+    f[5] sectors read     + 2,097,152          <- exactly 1 GiB
+    f[6] ms reading       +     2,568          <- what I was dividing by 8
+
+  corrected instrument, 619 MiB of O_DIRECT reads on a host-cold region:
+    requested 158,560 pages   device 158,560 pages   one request per page, no merging
+    hit rate 0.0   drive-absorbed 0   residency 136,129 -> 4 pages at the right offset
+```
+
+What survives of the original point, and what does not:
+
+* **Physically, drives do have DRAM and SLC caches**, and `diskstats` cannot see them; that
+  much is not in doubt. What was in doubt is whether it had *here*, and the honest answer is
+  the retracted measurement demonstrated nothing. The in-flight test is the direct one --
+  the same 1 GiB region read twice with `O_DIRECT`, host-cold both times, where any second
+  pass served without device traffic can only have come from inside the drive.
+* **The instrumentation discipline is the real lesson and it generalises:** a counter that
+  has never been checked against a known quantity is not evidence, no matter how plausible
+  its output looks. This is the sixth self-inflicted measurement fault today and the first
+  one where the failure produced numbers that were *believable* -- the others at least looked
+  strange. The instrument now carries the field table, a `device_reads_completed` cross-check
+  (requests vs pages: a big divergence means merging, which means the arithmetic changed
+  underneath you), and a residency probe over the region actually touched rather than from
+  offset 0 -- that second bug made "verified cold" mean "looked at somewhere cold".
+* **One earlier claim needs re-verifying rather than inheriting**: the 98%-honest device
+  traffic figure for `gg`'s FP8 blob came from a pre-instrument ad-hoc comparison against
+  fio's own byte count, so it may well be fine -- fio was on the other side of that ratio.
+  It is queued for the same dd-style calibration on `gg` rather than being trusted by
+  association.
 
 ### `posix_fadvise(DONTNEED)` semantics, and one of my controls that could not fail
 
