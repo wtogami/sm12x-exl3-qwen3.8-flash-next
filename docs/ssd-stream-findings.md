@@ -2114,6 +2114,45 @@ measuring stick rather than the thing measured -- after `diskstats` field indice
 `du`-derived compression claim. The pattern is consistent enough to be a rule: when two of my
 instruments disagree, one of them is lying, and the one I notice is not necessarily the culprit.
 
+## The exclusion test: copy-on-write is innocent, so the layout advice collapses to nothing
+
+The controlled D-versus-E pair varied three things at once -- CoW flag, extent count, and whether
+extents were encoded -- which is why its 42.9%-versus-2.7% result proved nothing about cause. The
+exclusion arms fix that by holding the payload incompressible, so btrfs declines to compress either
+arm (verified: both `compsize 100%`, both zero encoded extents) and copy-on-write is the only
+variable left. Uniform access, matched 8 GiB regions, 8 threads, 20,480,000 row requests per cell.
+
+| cell | CoW arm pages/s | CoW device pages | NOCOW pages/s | NOCOW device pages | rate delta |
+|---|---|---|---|---|---|
+| pcache host | 208,731 | 2,097,075 | 216,862 | 2,097,030 | +3.9% |
+| pcache cap 3 GiB | 163,630 | 14,498,906 | 168,396 | 14,497,132 | +2.9% |
+| pcache cap 4 GiB | 181,426 | 12,001,706 | 178,540 | 12,002,263 | -1.6% |
+| odirect host | 140,542 | 20,951,797 | 147,176 | 20,952,369 | +4.7% |
+| odirect cap 3 GiB | 139,124 | 20,951,519 | 145,410 | 20,953,806 | +4.5% |
+| odirect cap 4 GiB | 139,627 | 20,951,511 | 146,282 | 20,952,388 | +4.8% |
+
+Device pages agree to within 0.005% in every paired cell -- page-cache *retention* is untouched by
+the CoW flag -- and rate differences are 2-5% with mixed sign, largest on `O_DIRECT` where there is
+no page cache involved at all. So:
+
+* Copy-on-write costs a few percent of submit-path rate and nothing in retention. The pre-registered
+  branch taken is "cow ~= nocow, therefore the D-versus-E gap was the encoded extents", which
+  rehabilitates the original attribution by elimination rather than by direct measurement.
+* Hit rates reproduce the earlier plain-arm numbers: 89.8% uncapped, 41.4% at 4 GiB, 29.2% at 3 GiB
+  (region 8 GiB, ten passes). The encoded arm measured 2.7%. That gap is real, and it belongs to
+  compression alone.
+* **The practical conclusion is that none of this applies to the FP8 table.** It is stored
+  uncompressed in contiguous extents, CoW costs ~0-5% and the only path where CoW showed a
+  consistent penalty is `O_DIRECT`, which cannot sustain the prefill rate anyway (85.6k pages/s
+  against a 132.7k requirement). So `compress=no` on the mount, and `chattr +C` on a checkpoint
+  subvolume, both buy the FP8 table nothing measurable today.
+
+Recommendation to the user's mount-options question, narrowed by evidence: do not remount and do not
+re-lay-out for the FP8 checkpoint. Build the NOCOW subvolume when a **BF16** checkpoint is actually
+going onto a target host -- BF16 tensors demonstrably compress (embed_tokens and lm_head measured at
+100% inside encoded extents), so that payload inherits the 2.7%-versus-42% retention penalty for
+real, and there the subvolume is worth the copy.
+
 ## One pass of a real trace, at full geometry, inside a capped container: the sizing model holds
 
 A 47.684 GiB exact-geometry fixture, the session's real 36,465,776 (token, head) row ids,
