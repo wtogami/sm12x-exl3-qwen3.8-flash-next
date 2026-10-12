@@ -83,37 +83,50 @@ wait_idle() {   # the device counters are host-wide, so a benchmark must not ove
   echo "  !! engine still busy; device counters would be shared. Aborting this cell."; return 1
 }
 
+# Notes that must NOT live inside a backslash-continued command: a "#" line joining a
+# continued command ends it, so podman received no image and reported
+# "requires at least 1 arg(s), only received 0" for all 16 capped cells.
+#
+# /proc/diskstats is not namespaced, so the device counters inside the container are the
+# host's -- which is only acceptable because wait_idle() gates every cell.
+#
+# The receipt is taken from stdout: the instrument prints the same JSON it writes to
+# --output, and nothing inside the container is mounted writable (SELinux refuses directory
+# bind-mounts on gg).
+#
+# No --tensor here. The n-gram table is 128 shards of 0.37253 GiB spread across 22 blobs, so
+# "the tensor in this file" is either nothing (rc=1: no tensor matching) or one shard, which
+# is far too small to measure cold. Each cell therefore reads a whole blob, and the receipt
+# says which.
 run_host() {  # $1 mode $2 threads $3 tag
-  wait_idle || return 1
-  timeout 1800 python3 scripts/bench-ple-readpath.py --blob "$BLOB" --tensor "$TENSOR" \
-    --mode "$1" --threads "$2" --tokens-per-step "${TOKS:-2048}" --steps "${STEPS:-150}" \
-    --require-cold --evict-first --residency --dev "${DEV:-nvme0n1}" \
-    --target-pages-per-s "${TARGET:-115700}" --min-working-set "$((16*2**30))" \
-    --output "$OUT/$3.json" >"$OUT/$3.log" 2>&1
-  echo "    rc=$?"
-}
-
-run_capped() {  # $1 mode $2 threads $3 gib $4 tag
-  wait_idle || return 1
-  timeout 2400 podman run --rm --memory "${3}g" --memory-swap "${3}g" \
-    -v "$PWD/scripts/bench-ple-readpath.py:/work/bench.py:ro,Z" \
-    # /proc/diskstats is not namespaced, so device counters inside the container are the
-    # host's -- which is what we want here, but only because wait_idle() ran first.
-    -v "$BLOB:/work/blob:ro,Z" \
-    --entrypoint python3 "$IMG" /work/bench.py --blob /work/blob \
+    wait_idle || return 1
+    timeout 1800 python3 scripts/bench-ple-readpath.py --blob "$BLOB" \
       --mode "$1" --threads "$2" --tokens-per-step "${TOKS:-2048}" --steps "${STEPS:-150}" \
-      --require-cold \
-      --evict-first --residency --dev "${DEV:-nvme0n1}" \
-      --target-pages-per-s "${TARGET:-115700}" --min-working-set "$((16*2**30))" \
-      --output /work/out.json >"$OUT/$3.log" 2>&1
-  # The instrument writes its receipt into the container, where nothing is mounted
-  # writable (SELinux refuses directory bind-mounts on gg), so the receipt is taken from
-  # stdout -- the script prints the same JSON it writes. No stray second container run.
-  sed -n '/^{$/,/^}$/p' "$OUT/$3.log" > "$OUT/$3.json" || true
-  echo "    rc=$?  (parsed $(wc -c < "$OUT/$3.json" 2>/dev/null) bytes of json)"
-}
+      --require-cold --evict-first --residency --dev "${DEV:-nvme0n1}" \
+      --target-pages-per-s "${TARGET:-115700}" --min-working-set "${MWS:-0}" \
+      --output "$OUT/$3.json" >"$OUT/$3.log" 2>&1
+    local rc=$?
+    echo "    rc=$rc"
+    [ $rc -eq 0 ] || tail -2 "$OUT/$3.log" | cut -c1-140 | sed 's/^/      /'
+  }
 
-: > "$OUT/cells.txt"
+  run_capped() {  # $1 mode $2 threads $3 gib $4 tag
+    wait_idle || return 1
+    timeout 2400 podman run --rm --memory "${3}g" --memory-swap "${3}g" \
+      -v "$PWD/scripts/bench-ple-readpath.py:/work/bench.py:ro,Z" \
+      -v "$BLOB:/work/blob:ro,Z" \
+      --entrypoint python3 "$IMG" /work/bench.py --blob /work/blob \
+        --mode "$1" --threads "$2" --tokens-per-step "${TOKS:-2048}" --steps "${STEPS:-150}" \
+        --require-cold --evict-first --residency --dev "${DEV:-nvme0n1}" \
+        --target-pages-per-s "${TARGET:-115700}" --min-working-set "${MWS:-0}" \
+        --output /work/out.json >"$OUT/$3.log" 2>&1
+    local rc=$?
+    awk '/^\{$/,/^\}$/' "$OUT/$3.log" > "$OUT/$3.json"
+    echo "    rc=$rc  (parsed $(wc -c < "$OUT/$3.json") bytes of json)"
+    [ -s "$OUT/$3.json" ] || tail -3 "$OUT/$3.log" | cut -c1-140 | sed 's/^/      /'
+  }
+
+  : > "$OUT/cells.txt"
 for th in ${THREADS:-4 8 12 16}; do
   for mode in pcache odirect; do
     tag="${mode}-t${th}-host"; echo "--- $tag ---"
