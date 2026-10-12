@@ -402,6 +402,39 @@ for host-memory probes on a box that also serves:
    that zombie, visible in my own output and misread as host noise;
 4. no host-memory-exhaustive probe at all while the engine is up.
 
+### What `gg`'s steady state actually looks like
+
+Recorded because three separate numbers here look like regressions and are not.
+Measured after a clean stop, a confirmed-idle host (`MemAvailable 122.23 GiB`,
+`Shmem 0.00`, `swap 0.07 GiB`), and a fresh start:
+
+```
+serving:      http=200 within ~270 s of podman start (log: "Model loading took
+              72.24 GiB memory and 194.1 s")
+Shmem:        66.18 GiB          worker pin: 64.000 + 2.000 GiB rw-s /dev/zero
+MemAvailable: ~49.3 GiB with the engine up, ~122 GiB with it stopped
+swap:         ~2.3 GiB at rest (vllm 1454 MiB, VLLM::Worker 526, EngineCore 282)
+during load:  the worker transiently pins an extra 2 GiB (68.000 total), which
+              disappears once serving
+```
+
+Two of those would be read as damage by anyone monitoring during an incident, so
+both were checked directly.
+
+**The transient 68 GiB pin is not a leak.** It is load-time staging; the steady
+figure is 66.18 GiB / `64 + 2`.
+
+**The ~2.3 GiB of swap is not residue from the OOM either.** A restart into a host
+with 122.23 GiB available and 0.07 GiB swapped reproduced it anyway, with the same
+per-process split. It is the engine's own cold anon being reclaimed during model
+load, when the host briefly holds ~121 GiB of anon plus the 66 GiB pin; the kernel
+swaps pages that are then never touched again, and the process is functional
+across a full serving cycle with them outstanding. Reading `SwapFree` as an
+incident signal on this host is a trap -- it measures load-time pressure, not
+damage. (This was misread in session: the swapped pids were indeed new, and "new
+pid, therefore my restart caused it" was the wrong inference. Clearing it required
+no action because there was nothing to clear.)
+
 The engine was restored at 21:42 CDT and verified back to its exact pre-incident
 steady state: `http=200`, `Shmem 66.18 GiB`, worker mappings `64.000 + 2.000 GiB`,
 and three identical greedy requests byte-identical. During load it transiently
