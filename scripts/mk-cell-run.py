@@ -36,10 +36,12 @@ def build(base: list[str], name: str, image: str | None, envs: list[str], args: 
           drop_env: list[str]) -> list[str]:
     """Rewrite `base` (a full podman run argv) into the variant we want, before the image token."""
     # locate the image: first token after the `run` subcommand that is not a flag or a flag's value
-    try:
-        run_i = base.index("run")
-    except ValueError:
-        raise SystemExit("CreateCommand is not a `podman run` line; refusing to guess")
+    # `podman run -d` and `podman create` produce the same flag grammar, and CreateCommand reflects
+    # whichever was used -- accepting only "run" made the generator reject a legitimately created
+    # container over a difference that does not exist.
+    run_i = next((i for i, tok in enumerate(base) if tok in ("run", "create")), None)
+    if run_i is None:
+        raise SystemExit("CreateCommand contains neither `run` nor `create`; refusing to guess")
     takes_value = {"--name", "-e", "--env", "-v", "--volume", "--device", "--network", "--ipc",
                    "--security-opt", "--annotation", "-p", "--publish", "--entrypoint", "--user",
                    "--workdir", "--shm-size", "--ulimit", "--pid", "--hostname", "--cidfile",
