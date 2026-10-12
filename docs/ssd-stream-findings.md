@@ -1718,3 +1718,64 @@ grep -E "^### |WRITE: bw" /nvme1/bench/fillstate.log
 #    and never do this with the engine resident.
 watch -n1 'awk "/^MemAvailable|^Shmem|^SwapFree/{printf \"%-11s %.2f GiB\n\",\$1,\$2/1048576}" /proc/meminfo'
 ```
+
+## Incident, 2026-10-12 ~01:56: my benchmark tool destroyed a production checkpoint shard, and the verification habit caught it
+
+**What happened.** The placement probe I staged tonight was adapted from the SLC-decay script,
+which was written against a scratch file and therefore passed `--size=20g`. Against the 8.1 GiB
+checkpoint blob, **fio extended the file to 20 GiB to satisfy the requested size, overwriting the
+shard's contents** -- not appending padding, as I first assumed. `mtime` moved to 01:56:05, the
+file became exactly 21,474,836,480 bytes, and the md5 recorded at 01:41 no longer matched.
+
+**How it was caught, by accident rather than design.** The next step copied the blob to build a
+control and reported a *different* md5 than the one printed twenty minutes earlier. The
+block-by-block comparison the repair script ran then showed **0 of 33 256 MiB blocks matching**,
+with only 0.6% zero bytes -- so the payload had been replaced, not extended. Had I trusted the
+"obviously it just padded the tail" story, this would have been discovered at the next engine
+restart instead.
+
+**Why recovery was possible at all.** The `chattr +C` control copy made at 01:41 -- built to
+verify that `chattr +C` actually took, as the filesystem plan's fixture gate demands -- was a
+byte-identical snapshot of the pre-damage blob, md5 `05d83cc9…`. The fixture check existed to
+stop me reporting a lie about layout; it doubled as the only good copy. Recovery was therefore:
+verify the reference, stage a copy, verify the staged copy's md5, `mv` it into place atomically.
+
+**Verification after restore, not before it was declared fixed:**
+
+```
+  size 8,594,481,976   md5 05d83cc951f8b7b6acefac0b862c92e4   (matches the 01:41 record)
+  all 22 blobs: file size agrees with its own safetensors header   (0 mismatches)
+  all 22 shards open via safetensors.safe_open the way the loader does  (0 failures)
+  hardened probe re-run: size and md5 identical before and after
+```
+
+**The engine never noticed** -- its weights were already loaded and pinned, which is exactly why
+this class of damage is invisible until a restart. A restart would have failed on a corrupt
+safetensors header.
+
+**Consequences recorded as rules:**
+
+* **`--readonly` and `--size=100%` are mandatory** in any fio invocation aimed at a file this
+  project does not own. `--readonly` makes fio refuse to create or extend rather than silently
+  reshaping the target. The probe script is fixed and was re-run to prove the fix.
+* **Never adapt a benchmark script from a scratch-file context to a production file without
+  re-reading its creation flags.** `--size=20g` is harmless on a file you made and destructive
+  on one you did not.
+* **Record an md5 of any artifact before measuring against it.** The recovery worked because one
+  existed for an unrelated reason; that is luck, not process.
+* **Verify a fixture's identity at every step that consumes it.** Two of tonight's three runs are
+  valid only because the copies were md5-checked as they were built.
+
+**Effect on tonight's findings.** The encoded-vs-NOCOW comparison stands: RUN 1 (01:21-01:40)
+and RUN 2 against the `chattr +C` copy both predate or are independent of the damage, and the
+mechanism result -- `O_DIRECT` growing the page cache 0.51 GiB on encoded extents versus 0.00 on
+plain -- cannot be produced by placement or by file size. **The encoded-but-freshly-written
+control is void**: it measured a 20 GiB file that was mostly not checkpoint data. Layout versus
+placement is therefore still separated only by the cache-growth evidence, not by a control, and
+the redo must copy from a scratch file, not from the production blob.
+
+**Also measured while probing, on the restored file with the hardened tool:** `gg` reads at
+**20.1k qd1 / 131k qd8**, against its historical 19.9k / 121.2k baseline and `burst`'s
+12.7k / 96.4k slow-placement state. So `gg` is in a healthy placement and its drive is not a
+suspect in any of these numbers. The `chattr +C` reference copy is being kept until the next
+engine restart confirms a clean load, then deleted.
