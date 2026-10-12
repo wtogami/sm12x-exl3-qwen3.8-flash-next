@@ -2114,6 +2114,55 @@ measuring stick rather than the thing measured -- after `diskstats` field indice
 `du`-derived compression claim. The pattern is consistent enough to be a rule: when two of my
 instruments disagree, one of them is lying, and the one I notice is not necessarily the culprit.
 
+## What the instruments got wrong while I was using them
+
+Five defects in the read-path instrument, found in one hour by making each one capable of failing.
+They are recorded together because they share a cause: an instrument that cannot disagree with me
+reports whatever I expect.
+
+1. **Trace mode had never run.** `TraceSource.take` used a bare `np` while numpy is imported lazily
+   inside `__init__` -- a `NameError` before the first read. The smoke test existed precisely to
+   catch this and did.
+2. **A failed cell looked like a running one.** Worker threads were not daemons, so an exception in
+   the step loop left them parked on `cv.wait()` and the process never exited. The container sat
+   "Up 21 minutes" reporting nothing while its python had already printed a traceback. Any runner
+   waiting on it would have waited forever, and I read that as a slow measurement.
+3. **`--dev` was an unchecked string.** I passed `nvme1n1` for a file on `nvme0n1p3`. Device
+   counters are the only thing separating a cache hit from a disk read, and a wrong device does not
+   error -- it produces a confident wrong hit rate. The instrument now resolves the blob's backing
+   device and refuses the cell on disagreement. Resolution goes through `/proc/self/mountinfo`,
+   not `st_dev`: btrfs reports an anonymous device number with no `/sys/dev/block` entry, so the
+   principled-looking implementation returned junk and refused *every* legitimate cell on a btrfs
+   host until cross-checked against `df`. Two further off-by-ones in the same function (mount point
+   versus root-within-device, source versus super-options) were caught the same way.
+4. **The dedup saving was inflated 16x.** `rows_total` already counts token x head, and
+   `dedup_saving_frac` divided by `rows_total * rows_per_token` -- reporting 96.7% where brute-force
+   reuse counting says 47.5%. Corrected denominator gives 0.465, which agrees with the independent
+   measurement. `measured_hit_rate` used distinct pages all along, so published hit rates stand.
+5. **`--require-cold` was a claim about a state it could not always reach**, and I had asked for
+   root to fix it on a premise that turned out to be false. Measured directly: with a live mapping,
+   `posix_fadvise(DONTNEED)` leaves 65,536 resident pages at 65,536; with the mapping closed, the
+   same call takes them to 0. `drop_caches` skips in-use pages too, so it would not have helped in
+   the one case that mattered. The real fix needs no privilege -- scan `/proc/*/maps` for processes
+   mapping the blob and refuse the cell. Matching there is by inode plus resolved path, not the
+   device field: `maps` printed `00:23` for a file whose `st_dev` says minor 37, because two mounts
+   cover the same tree, and a key that cannot match builds a guard that never fires.
+
+Retraction: I reported a 96.7% page-dedup saving from the instrument before checking it against the
+47.5% measured by brute force. The instrument was wrong; the earlier number was right.
+
+## Two things about `burst` that change what can be measured there
+
+* A **live vLLM engine has been running on `burst` for 3 days 16 hours** (container `qwen38-exl3`,
+  model `EXL3-K4.25-v1`, port 8001), holding 91.7 GiB of 97.9 GiB device memory while reporting
+  `num_requests_running = 0` and 0.4% CPU. GPU utilisation reads 100% with no requests in flight.
+  Consequences: (i) the CUDA-side half of the streaming module's self-test cannot be timed there
+  without contention, and (ii) any GPU-involving number already taken on `burst` was taken beside
+  this process, so absolute latencies there carry that caveat even though the CPU- and disk-side
+  comparisons were run identically in both arms.
+* `burst` has **995 GiB of RAM**, so an uncapped cell there is effectively an unbounded-cache cell;
+  the low-RAM question can only be answered through cgroup caps, not by the host default.
+
 ## The table is not compressed at all, so the layout thread was aimed at the wrong file
 
 With working controls, the question the last three sections circle resolves simply. Extent coverage
