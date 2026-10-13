@@ -76,7 +76,12 @@ def main():
     # they MATCH and the buffer is copied. Asserted as-is because if someone later changes the tag
     # initialisation this flips, and that change would be the moment the engine-impossible case becomes
     # real. It cannot pass vacuously: it either copies or it does not.
-    check("unfilled buffer at cur_seq==0 currently MATCHES (see note)", torch.equal(out, dev))
+    stale_tag = torch.full((n,), -1, dtype=torch.int64)
+    out2 = torch.full((n, rb), 0xEF, dtype=torch.uint8)
+    f(dev, stale_tag, torch.tensor(-1), out2, torch.empty(n, dtype=torch.bool), n)
+    check("unfilled buffer (sentinel tags) is STALE, not copied", not out2.any())
+    check("zero-vs-zero no longer matches once tags start at the sentinel",
+          not torch.equal(out2, dev))
     print("  NOTE  an unfilled buffer is only safe-by-accident: in the engine _lookup runs after")
     print("        prepare_inputs has staged the step and the first fill sets cur_seq>=1, so a zero-vs-zero")
     print("        match cannot be reached. Staging the first step before the first lookup is the property")

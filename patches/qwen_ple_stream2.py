@@ -92,6 +92,8 @@ class StepStager:
     guarantees freshness.
     """
 
+    STALE_NO_FILL = -1   # see the tag initialisation in __init__
+
     def __init__(self, embedding, wrapper, *, max_rows: int, max_reqs: int, ctx_len: int,
                  threads: int = 24, arenas: int | None = None):
         import sys
@@ -120,11 +122,17 @@ class StepStager:
         # event-guarded for exactly that reason.
         self._host = [torch.empty(self.max_rows, self.row_bytes, dtype=torch.uint8, pin_memory=True)
                       for _ in range(self.arenas)]
-        self.dev = torch.empty(self.max_rows, self.row_bytes, dtype=torch.uint8, device=self.device)
+        self.dev = torch.zeros(self.max_rows, self.row_bytes, dtype=torch.uint8, device=self.device)
         # Per-row sequence tag, on the device, written by the same stream-ordered copies as the rows so a
         # row and its tag can never disagree.
-        self.dev_seq = torch.zeros(self.max_rows, dtype=torch.int64, device=self.device)
-        self.cur_seq = torch.zeros(1, dtype=torch.int64, device=self.device)
+        # STALE_NO_FILL, not 0: every tag starts as "not staged for any step", so a buffer that was
+        # never filled cannot match an unfilled cur_seq and get copied. Async mode proved this is not
+        # paranoia -- every fill raised inside InferenceMode, cur_seq stayed at the initial value, and
+        # zero-vs-zero matched, so the model consumed uninitialized device memory as n-gram features.
+        # The safety property has to live in the tags, not in the ordering of the hooks.
+        self.dev_seq = torch.full((self.max_rows,), self.STALE_NO_FILL, dtype=torch.int64,
+                                  device=self.device)
+        self.cur_seq = torch.full((1,), self.STALE_NO_FILL, dtype=torch.int64, device=self.device)
 
         self._ids_host = torch.empty(self.max_rows, dtype=torch.int64, pin_memory=True)
         # Sized from the model state, not from guesses: an oversized step must be impossible by
@@ -214,10 +222,26 @@ class StepStager:
             self._pool.submit(self._stage_async, n, nr, int(ctx.shape[1]), ev)
             return
         cur = torch.cuda.current_stream(self.device)
+        import time
+        t0 = time.perf_counter()
         n, nr, ev = self._copy_inputs_to_host(input_ids, qsl, ctx, cur)
         ev.synchronize()
-        self._fill(self._ngram_ids_np(n, nr), n_rows)
+        t1 = time.perf_counter()
+        ids = self._ngram_ids_np(n, nr)
+        t2 = time.perf_counter()
+        self._fill(ids, n_rows)
+        t3 = time.perf_counter()
         self.stats["steps"] += 1
+        self.stats["sync_us"] += (t1 - t0) * 1e6      # wait for this step's inputs on the host
+        self.stats["ids_us"] = self.stats.get("ids_us", 0.0) + (t2 - t1) * 1e6   # CPU n-gram ids
+        self.stats["gather_us"] += (t3 - t2) * 1e6    # row gather + H2D enqueue
+        if self.stats["steps"] % 200 == 0:
+            s = self.stats
+            logger.info("PLE stream v2 stats: steps=%d rows=%d d2h=%.0fus ids=%.0fus gather=%.0fus "
+                        "(avg per step: %.0f/%.0f/%.0f us) skips=%d",
+                        s["steps"], s["rows"], s["sync_us"], s["ids_us"], s["gather_us"],
+                        s["sync_us"] / s["steps"], s["ids_us"] / s["steps"],
+                        s["gather_us"] / s["steps"], s["skips"])
 
     def _ngram_ids_np(self, n: int, nr: int):
         import numpy as np
@@ -227,6 +251,17 @@ class StepStager:
         return np.ascontiguousarray(a.reshape(-1)[: n * self._heads()], dtype=np.int64)
 
     def _stage_async(self, n: int, nr: int, ctx_len: int, ev) -> None:
+        try:
+            # Engine tensors are created under torch.inference_mode(); an in-place update to an
+            # inference tensor from a thread that is not in inference mode raises. Async mode produced
+            # 526 of these and staged nothing at all.
+            with torch.inference_mode():
+                self._stage_async_inner(n, nr, ctx_len, ev)
+        except Exception:
+            self.stats["skips"] += 1
+            logger.exception("PLE v2 async staging failed; the lookup zeroes rather than reusing rows")
+
+    def _stage_async_inner(self, n: int, nr: int, ctx_len: int, ev) -> None:
         try:
             ev.synchronize()
             self._fill(self._ngram_ids_np(n, nr), n * self._heads())
