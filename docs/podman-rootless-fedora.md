@@ -62,8 +62,13 @@ CPU-only test suite.
 
 ## GPU passthrough: CDI
 
-`start.sh` asks for the GPU with `--device nvidia.com/gpu=all` (commit
-6d28aab57606), which podman resolves through a CDI spec.
+`start.sh` asks for the GPU with `--device nvidia.com/gpu=${GPU:-all}`, which
+podman resolves through a CDI spec. The GPU number is a CDI entity name --
+`nvidia-ctk` emits one entity per GPU, numbered in `nvidia-smi` order, plus
+per-UUID and `all` entities. Selection happens there, not via
+`NVIDIA_VISIBLE_DEVICES`: that variable is a knob for the legacy prestart hook
+and nothing in a CDI launch reads it, so setting it while injecting `all`
+filters nothing and the engine silently pins `cuda:0`, whichever GPU that is.
 
 ### Install (root, once)
 
@@ -293,9 +298,10 @@ at 0.22s it costs nothing. But it is the wrong answer applied to the wrong file:
 a spec is also an access-control artefact. Narrowing discovery to particular
 GPUs — `nvidia-ctk cdi generate --device-ids 0`, or dropping the `all` entity —
 is how you stop a container reaching GPUs it was never given, and CDI enforces
-that at the device node and cgroup level, unlike `NVIDIA_VISIBLE_DEVICES`,
-which is a soft in-container filter. Rewriting such a spec silently widens GPU
-exposure, on a path the operator did not choose, and the only symptom is a GPU
+that at the device node and cgroup level. `NVIDIA_VISIBLE_DEVICES` enforces
+nothing on this path: under a CDI launch no component reads it, so it is not
+even a soft filter. Rewriting such a spec silently widens GPU exposure,
+on a path the operator did not choose, and the only symptom is a GPU
 showing up in `nvidia-smi`.
 
 So ownership decides the behaviour, recorded as the spec's digest in
@@ -325,9 +331,10 @@ nvidia-ctk cdi generate --device-ids 0 --output=~/.config/cdi/nvidia.yaml      #
 ```
 
 Narrow by device id rather than by deleting the `all` entity. `--device-ids 0`
-still emits an `all` entity scoped to that device, so `start.sh`, which always
-asks for `nvidia.com/gpu=all`, keeps working. Delete `all` instead and podman
-reports the device unresolvable and `start.sh` stops — correctly, but confusingly,
+still emits an `all` entity scoped to that device, so `start.sh` with `GPU`
+unset keeps working, and `GPU=0` works too. `GPU=1` against a spec narrowed to
+device 0 reports the device unresolvable and `start.sh` stops — correctly, since
+a GPU the operator excluded is exactly what was asked for, but confusingly,
 since the spec looks fine.
 
 An existing spec written before this policy existed has no digest and is
@@ -403,7 +410,7 @@ receives the same command line it did before, except where noted:
 
 | | docker | rootless podman |
 | --- | --- | --- |
-| GPU | `--gpus device=$GPU` | `--device nvidia.com/gpu=all` |
+| GPU | `--gpus device=$GPU` | `--device nvidia.com/gpu=$GPU` |
 | CDI provisioning | not run | spec + `containers.conf.d` drop-in |
 | `download.sh` user namespace | none | `--userns=keep-id` |
 | `--user $(id -u):$(id -g)` | unchanged | unchanged |

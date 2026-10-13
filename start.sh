@@ -124,6 +124,16 @@ fi
 # Docker wants --gpus; podman's docker shim rejects its device= syntax and
 # resolves GPUs through CDI instead (see platform-config.sh).
 #
+# The selection happens at the entity name, not through NVIDIA_VISIBLE_DEVICES.
+# That env var is read by the legacy prestart hook, not by podman or crun on a
+# CDI launch, so the previous recipe line --device nvidia.com/gpu=all plus
+# -e NVIDIA_VISIBLE_DEVICES=$GPU gave the container every GPU on the host and
+# the engine pinned cuda:0 regardless of what GPU= was set to. Measured on
+# burst: with NVIDIA_VISIBLE_DEVICES=1 the running container still listed both
+# GPUs, and the worker landed on bus 51:00.0 (nvidia-smi index 0). Asking for
+# nvidia.com/gpu=$GPU instead is enforced at the device node and cgroup level,
+# and a container so launched sees exactly one GPU, renumbered to 0 inside.
+#
 # Do not "unify" these two branches on --device nvidia.com/gpu=$N. The flags are
 # not equivalent: --gpus resolves through whichever mechanism the engine has, so
 # moby maps it onto CDI when a spec exists and falls back to the prestart hook
@@ -140,7 +150,7 @@ fi
 # this one is fatal: without it the container cannot start at all.
 if qwen38_is_podman; then
   qwen38_ensure_cdi
-  GPU_ARGS=(--device nvidia.com/gpu=all -e NVIDIA_VISIBLE_DEVICES="${GPU:-all}")
+  GPU_ARGS=(--device "nvidia.com/gpu=${GPU:-all}")
 else
   GPU_ARGS=(--gpus "device=${GPU:-0}")
 fi
