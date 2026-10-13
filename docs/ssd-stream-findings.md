@@ -3156,3 +3156,58 @@ implying the function is self-defending.
 A `scp` of that test file failed with "No such file or directory" while the file was sitting committed in
 the repo: the command ran without a `cd`, so the relative path resolved against the session's workspace
 root instead of the repo. Absolute paths in remote-copy commands, or `cd` in the same statement.
+
+# v2 works: 2.21 GiB of Shmem, FULL graphs intact, and two of my explanations were wrong
+
+First successful v2 boot: healthy at 170 s, `strict a6cc8fed286b7071` unchanged, zero staging failures, and
+the log confirms the geometry that was sized from config rather than guessed — `32768 rows x 160 B
+(5.0 MiB device + 4 pinned arenas), max 16 reqs x 2 ctx, mode=sync`.
+
+| | pinned (deployed) | v1 | **v2 sync** |
+|---|---|---|---|
+| `cudagraph_mode` | FULL_AND_PIECEWISE | PIECEWISE | **FULL_AND_PIECEWISE** |
+| decode tok/s | 162.8 | 126.7 | **150.7** (−7.4%) |
+| prefill tok/s | 18,211 | 15,382 | **15,462** (−15.1%) |
+| Shmem | 66.18 GiB | 4.44 GiB | **2.21 GiB** |
+| VRAM | 91,992 MiB | 92,032 MiB | 91,508 MiB |
+
+Both predictions were checked before the run, and both held to within the explanation:
+
+* **Shmem ~2.18 predicted, 2.21 observed.** The 0.03 GiB difference is the 21 MB of pinned staging arenas
+  (4 × 5.24 MB). The decomposition — 2.00 GiB embed pin + ~0.2 GiB ordinary, with no table pin and no
+  non-FULL-graph surcharge — is confirmed.
+* **Decode ~160 predicted, 150.7 observed.** Direction right, magnitude not: about two-thirds of v1's
+  decode loss was the graph regime, and roughly 7% is genuinely the streaming work. That 7% is measured
+  against a *baseline in the same graph mode*, which the earlier v1 numbers were not.
+
+## Retraction: breakable graphs were never the variable
+
+I wrote earlier that the first v1 failure happened because `VLLM_USE_BREAKABLE_CUDAGRAPH` was unset and the
+decorator therefore "returned the undecorated function", and that `PLE_STREAM=1` implies setting it. The v2
+run proves that wrong: it sets **no** such env and the log says
+
+```
+[vllm.py:843] Auto-enabling VLLM_USE_BREAKABLE_CUDAGRAPH=1. Set VLLM_USE_BREAKABLE_CUDAGRAPH=0 to opt out.
+```
+
+This architecture is in `default_breakable_cudagraph_architectures()`, so breakable has been on in every run
+tonight, including the first failure. The wrapper frame in that first traceback (`breakable_cudagraph.py:105
+in wrapper`) is itself the evidence I misread — a stripped decorator leaves no wrapper frame. It passed the
+call through because the capture in progress was a **FULL** `torch.cuda.graph` with no breakable context
+around it, which is the branch `if mode == CUDAGraphMode.FULL: return fn(...)`.
+
+Two consequences. The operative variable in all of this is `compilation_config.cudagraph_mode`, not the env
+flag, and `start.sh`'s implication of that env is redundant on this host — kept for now because it is
+harmless and is what makes the regime explicit on architectures where it is *not* the default, but it is
+not load-bearing here and no conclusion should be drawn from its presence. And my claim that "enabling
+breakable forces `CompilationMode.NONE`, so the comparison has two variables" is vacuous in this
+deployment: mode was already NONE. The 2×2 was still the right experiment — it isolated `cudagraph_mode`
+empirically, which is the thing that turned out to matter — but it succeeded for a reason I had stated
+incorrectly. That distinction is the point: a design can be validated while its explanation is wrong, and
+only the re-measurement catches the difference.
+
+The remaining prefill loss (~15%) is most likely `sync` mode: the CPU blocks on a D2H event inside
+`prepare_inputs`, which serialises host and device instead of overlapping them. `mode=async` is the test,
+and it comes with a detector rather than a hope — if a fill misses its step the sequence tags mismatch, the
+mask zeroes those rows, and the strict hash changes. A race in v2 is visible as a wrong answer, which is
+the behaviour the tagging was built to provide.
