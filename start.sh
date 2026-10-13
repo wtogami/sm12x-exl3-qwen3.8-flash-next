@@ -26,8 +26,12 @@ fi
 HF_CACHE="${HF_CACHE:-$HOME/.cache/huggingface}"
 RUNTIME_CACHE="${RUNTIME_CACHE:-$HOME/.cache/qwen38-rtx/${QUANT:-exl3}}"
 mkdir -p "$RUNTIME_CACHE"
-MODEL_PATH="/root/.cache/huggingface/hub/$MODEL_CACHE_NAME/snapshots/$MODEL_REVISION"
-CONFIG_PATH="$HF_CACHE/hub/$MODEL_CACHE_NAME/snapshots/$MODEL_REVISION/config.json"
+# MODEL_SNAPSHOT names an alternative snapshot directory under this repo's
+# cache path - e.g. a converted checkpoint produced by
+# scripts/exl3-605-ngram-convert.py - defaulting to the pinned revision.
+MODEL_SNAPSHOT="${MODEL_SNAPSHOT:-$MODEL_REVISION}"
+MODEL_PATH="/root/.cache/huggingface/hub/$MODEL_CACHE_NAME/snapshots/$MODEL_SNAPSHOT"
+CONFIG_PATH="$HF_CACHE/hub/$MODEL_CACHE_NAME/snapshots/$MODEL_SNAPSHOT/config.json"
 if [[ ! -f "$CONFIG_PATH" ]]; then
   echo "Missing checkpoint. Run QUANT=${QUANT:-exl3} $RECIPE_DIR/download.sh" >&2
   exit 1
