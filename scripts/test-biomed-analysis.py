@@ -45,13 +45,18 @@ health care settings in Egypt. [...] PMID: 38494251""",
 2-hydroxyisobutyryl in SLE reveals protein modification alteration in complement
 and coagulation cascades and platelet activation Pathways. BACKGROUND:
 Post-translational modifications (PTMs) are considered to be an important factor
-in the pathogenesis of Systemic lupus erythematosus (SLE). [...] METHODS: Khib
+in the pathogenesis of Systemic lupus erythematosus (SLE). [...] OBJECTIVE:
+We performed quantitative, comparative, and bioinformatic analysis of Khib
+proteins in Peripheral blood mononuclear cells (PBMCs) of SLE patients and PBMCs
+of healthy controls. METHODS: Khib
 levels in SLE patients and healthy controls were compared based on liquid
 chromatography tandem mass spectrometry, then proteomic analysis was conducted.
 RESULTS: Compared with healthy controls, Khib in SLE patients was up-regulated at
 865 sites of 416 proteins and down-regulated at 630 sites of 349 proteins. [...]
 Bioinformatics analysis showed that Complement and coagulation cascades and
 Platelet activation in immune-related pathways were significantly enriched [...]
+CONCLUSION: Khib in PBMCs of SLE patients was significantly up- or
+down-regulated compared with healthy controls. [...]
 PMID: 37845672""",
  "C": """Reproduction. 2023;165(4):457-474. PCSK9 involves in the high-fat
 diet-induced abnormal testicular function of male mice. [...] we utilized
@@ -250,7 +255,7 @@ def main():
                 print(f"{t['id']} run {run + 1}: {'PASS' if ok else 'FAIL'} ({why})", flush=True)
             if any(r["pass"] for r in per_run): passed += 1
     print(f"\n{a.model}: {passed}/{len(todo)} tasks passed (majority of runs); receipts: {a.output}")
-    return 0 if passed == len(tasks()) else 1
+    return 0 if passed == len(todo) else 1
 
 if __name__ == "__main__":
     sys.exit(main())
