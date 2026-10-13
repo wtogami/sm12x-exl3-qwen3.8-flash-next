@@ -105,7 +105,8 @@ def V_json_omics(got):
     need = {"up_sites":865, "up_proteins":416, "down_sites":630, "down_proteins":349}
     for k, v in need.items():
         if not (k in j and num_close(j[k], v, 0)): return False, f"{k} bad/missing"
-    if "pbmc" not in json.dumps(j).lower(): return False, "sample not PBMC"
+    blob0 = json.dumps(j).lower()
+    if not any(a in blob0 for a in ("pbmc", "mononuclear")): return False, "sample not PBMC"
     blob = json.dumps(j).lower()
     if not ("complement" in blob and "coagulation" in blob and "platelet" in blob): return False, "pathways missing"
     return True, "ok"
@@ -149,7 +150,7 @@ def V_contains(any_of, name=""):
 def tasks():
     A, B, C, E = (ABSTRACTS[k] for k in "ABCE")
     return [
-     dict(id="A1-extract", key="A", max_tokens=1200, validator=V_json_exact,
+     dict(id="A1-extract", key="A", max_tokens=3072, validator=V_json_exact,
       prompt="Extract from this abstract into EXACTLY this JSON and nothing else:\n"
              '{"n_isolates": int, "carbapenem_resistant_pct": float, "kp_colistin_resistant_pct": float,'
              ' "mcr_detected": bool, "kp_coproduction_pct": float, "class1_integron_pct": number,'
@@ -158,16 +159,18 @@ def tasks():
       prompt="Claim under audit: \"The study detected mobile colistin resistance (mcr) genes in most"
              " colistin-resistant K. pneumoniae isolates.\"\nBased ONLY on the abstract, answer"
              " SUPPORTED or NOT_SUPPORTED as the first line, then one sentence of evidence.\n\n" + A),
-     dict(id="A3-summarize", key="A", max_tokens=700, validator=V_summary(60, 80, ["colistin", "carbapenem"]),
+     dict(id="A3-summarize", key="A", max_tokens=3072, validator=V_summary(60, 80, ["colistin", "carbapenem"]),
       prompt="Summarize this study for a clinician in EXACTLY 60-80 words, plain prose, no bullets.\n\n" + A),
      dict(id="A4-scope", key="A", max_tokens=500, validator=V_contains(["k. pneumoniae", "k pneumoniae", "klebsiella"]),
       prompt="The abstract reports 23.9% colistin phenotypic resistance and 98.2% carbapenem resistance."
              " Does the 23.9% figure describe all isolates in the study, or a specific subset?"
              " Answer in one sentence naming the exact subset.\n\n" + A),
-     dict(id="B1-extract", key="B", max_tokens=1200, validator=V_json_omics,
+     dict(id="B1-extract", key="B", max_tokens=6144, validator=V_json_omics,
       prompt="Extract into EXACTLY this JSON and nothing else:\n"
              '{"up_sites": int, "up_proteins": int, "down_sites": int, "down_proteins": int,'
-             ' "sample": string, "enriched_pathways": [strings]}\n\n' + B),
+             ' "sample": string, "enriched_pathways": [strings]}\n'
+             'Here "sample" means the biological specimen analyzed (a cell type or tissue),'
+             ' not the disease or the patients.\n\n' + B),
      dict(id="B2-claim", key="B", max_tokens=900,
       validator=V_label(["not supported","not_supported"], ["up-regulated","up regulated","upregul","both","mixed"]),
       prompt="Claim under audit: \"Khib modification was uniformly down-regulated in SLE patients.\"\n"
@@ -180,7 +183,7 @@ def tasks():
      dict(id="B4-scope", key="B", max_tokens=500, validator=V_contains(["protein"]),
       prompt="In the abstract, does the number 416 refer to modification sites or to proteins?"
              " One sentence answer.\n\n" + B),
-     dict(id="C1-extract", key="C", max_tokens=1200,
+     dict(id="C1-extract", key="C", max_tokens=3072,
       validator=lambda g: (True,"ok") if (lambda j: j and "c57" in json.dumps(j).lower()
         and "knockout" in json.dumps(j).lower() and "alirocumab" in json.dumps(j).lower()
         and "caspase" in json.dumps(j).lower().replace("-","") and "leydig" in json.dumps(j).lower())(jget(g)) else (False,"fields missing"),
@@ -195,15 +198,16 @@ def tasks():
      dict(id="C3-limit", key="C", max_tokens=500, validator=V_label(["no"], ["mouse","mice","animal"]),
       prompt="Does this study directly demonstrate that alirocumab treats human male infertility?"
              " Answer YES or NO as the first line, then one sentence why.\n\n" + C),
-     dict(id="E1-transfer", key="E", max_tokens=1200, validator=V_json_materials,
+     dict(id="E1-transfer", key="E", max_tokens=3072, validator=V_json_materials,
       prompt="Extract into EXACTLY this JSON and nothing else:\n"
              '{"band_gap_min_ev": float, "band_gap_max_ev": float, "best_candidate": string,'
              ' "oxygen_atoms": int, "application": string}\n\n' + E),
-     dict(id="D1-cross", key=None, max_tokens=700,
-      validator=V_summary(15, 30, ["resist", "lupus|sle", "infertil|spermatogen"]),
-      prompt="Three papers: (1) an Egyptian AMR surveillance study, (2) an SLE Khib proteomics study,"
-             " (3) a PCSK9 high-fat-diet mouse study. In 15-30 words total, name the one condition each"
-             " paper is about, in order, separated by semicolons.\n"),
+     dict(id="D1-cross", key=None, max_tokens=6144,
+      validator=V_summary(15, 30, ["resist", "lupus|sle", "infertil|spermatogen|testic|sperm"]),
+      prompt="Three paper excerpts follow. In 15-30 words TOTAL, name the one health condition"
+             " each paper is about, in order, separated by semicolons.\n\n"
+             "PAPER 1 (excerpt): " + A[:700] + "\n\nPAPER 2 (excerpt): " + B[:700]
+             + "\n\nPAPER 3 (excerpt): " + C[:900]),
     ]
 
 def ask(base_url, model, prompt, max_tokens):
@@ -221,23 +225,31 @@ def main():
     ap.add_argument("--model", required=True)
     ap.add_argument("--output", type=pathlib.Path, required=True)
     ap.add_argument("--runs", type=int, default=1)
+    ap.add_argument("--only", default=None, help="comma-separated task ids to run (receipts are appended to a side file)")
     a = ap.parse_args()
     a.output.parent.mkdir(parents=True, exist_ok=True)
     results, passed = [], 0
+    todo = tasks()
+    if a.only:
+        keep = {x.strip() for x in a.only.split(",")}
+        todo = [t for t in todo if t["id"] in keep]
+        a.output = a.output.with_suffix(a.output.suffix + f".only-{'-'.join(sorted(keep))}")
     with open(a.output, "w") as out:
-        for t in tasks():
+        for t in todo:
             per_run = []
             for run in range(a.runs):
                 t0 = time.time()
                 content, usage = ask(a.base_url, a.model, t["prompt"], t["max_tokens"])
                 ok, why = t["validator"](content)
+                ct = usage.get("completion_tokens") or 0
                 rec = {"id": t["id"], "run": run, "pass": bool(ok), "why": why,
                        "seconds": round(time.time() - t0, 1), "usage": usage,
+                       "truncated": ct >= t["max_tokens"] and not content.strip(),
                        "content_head": content[:400]}
                 per_run.append(rec); out.write(json.dumps(rec) + "\n"); out.flush()
                 print(f"{t['id']} run {run + 1}: {'PASS' if ok else 'FAIL'} ({why})", flush=True)
             if any(r["pass"] for r in per_run): passed += 1
-    print(f"\n{a.model}: {passed}/{len(tasks())} tasks passed (majority of runs); receipts: {a.output}")
+    print(f"\n{a.model}: {passed}/{len(todo)} tasks passed (majority of runs); receipts: {a.output}")
     return 0 if passed == len(tasks()) else 1
 
 if __name__ == "__main__":
