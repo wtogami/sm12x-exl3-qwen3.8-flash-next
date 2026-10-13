@@ -3251,3 +3251,38 @@ exposed-fill measurement is not a prediction I'm allowed to reuse for a differen
 The saving grace in all of this is that the failure was **visible**. Garbage features changed greedy output
 and the hash caught it in seconds. That is the property the sequence tagging exists to provide, and it is
 worth more than the throughput either mode would have bought.
+
+# Where v2's cost actually is: the CPU is waiting for the GPU, and the gather is slower than the prototype said
+
+Second sync run reproduced the first tightly — decode 150.5 vs 150.7 tok/s across independent boots (0.13%,
+which is a better repeatability number than anything else measured on this host tonight), prefill 15,885 vs
+15,462 (+2.7%), Shmem 2.21 GiB both times, strict hash unchanged, `skips=0`.
+
+Then the per-phase timers, which I added specifically so this claim would not be a guess. Cumulative at 400
+steps: `d2h=11.8 ms/step, ids=0.24 ms/step, gather=11.4 ms/step` — about **23 ms of host time per step**.
+
+Read the first number correctly: a 16 KB D2H is not 11.8 ms. That interval is `event.synchronize()` on the
+compute stream, so what it measures is **the CPU blocked until the GPU drains the previously launched
+step**. Sync mode therefore serialises host and device: the GPU finishes, the CPU gathers, the GPU starts.
+That is the mechanism behind the −15.1% prefill, and it means the thing to fix is the stall, not the memcpy.
+
+Two follow-ups, in the order I would do them, with the reason each is suspicious:
+
+1. **The stall has no cheap source-side fix.** The obvious move is to stop round-tripping ids and take them
+   from the host. That path does not exist here: `SchedulerOutput.new_token_ids` is documented as
+   *"only used for pipeline parallelism. When PP is not used, new_token_ids will be empty"*, and this
+   `InputBatch` has no `token_ids_cpu` — it stages ids into persistent buffers (`input_ids[:num_tokens]
+   .zero_()` then a scatter). So host-side ids would have to come from `req_states`, which
+   `prepare_inputs` already receives, meaning a host reimplementation of the input gather. Real, but it is
+   a bigger change than "read the buffer you already have".
+
+2. **The gather is implausibly slow and that is more tractable.** Average 11.4 ms/step over ~2,400
+   rows/step. The prototype measured ~1.3 ms warm for 32,768 rows with 24 threads, so the per-row rate here
+   is roughly 70x off — which says fixed per-step overhead (numpy allocations, three device ops, thread-pool
+   dispatch) rather than memory bandwidth. The cumulative counters cannot separate a 32,768-row prefill step
+   from a 16-row decode step; bucketing gather time by row count would, and that is the next instrument
+   change, not an engine change.
+
+Also noted so it isn't believed: my "build assertions passed: 0" line was a bad anchor. The check prints a
+two-space indent; I grepped for four. 12 assertions pass. The new module was in the image all along — its
+log line moved from `:302` to `:341`, which is how I knew to look at my grep instead of the build.
