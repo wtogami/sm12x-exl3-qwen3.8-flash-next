@@ -616,3 +616,40 @@ Constraints to respect when it happens: the capture contains the full prompt tex
 it is the user's decision and the pcap should be deleted after parsing; a recording proxy instead of a
 capture would add a hop in front of the thing doing the reasoning, which is why it was rejected; and
 new traces must be passed with `--trace-provenance` so receipts carry it.
+
+# Verdict update after v2 landed (2026-10-13, early)
+
+Streaming is servable, on a host with less RAM than the table, at a measured cost. What changed since the
+earlier verdicts in this document is that the cost is now attributable to named things instead of to
+"streaming".
+
+**Measured on `gg` (125.68 GiB RAM, RTX PRO 6000 Blackwell), FP8 table, identical graph mode
+(`FULL_AND_PIECEWISE`, breakable auto-enabled by architecture) in every cell:**
+
+| | pinned | v2 streaming (sync) | delta |
+|---|---|---|---|
+| Shmem | 66.18 GiB | **2.21 GiB** | −63.97 GiB |
+| decode | 162.8 tok/s | 150.7 tok/s | −7.4% |
+| prefill | 18,211 tok/s | 15,462 tok/s | −15.1% |
+| greedy output | `a6cc8fed286b7071` | `a6cc8fed286b7071` | identical |
+
+v1 (gather inside the captured region, so `cudagraph_mode=PIECEWISE`) cost −22.2% decode and −15.5%
+prefill, of which **17.8 points of decode were the graph mode alone**, measured with streaming off. That is
+the whole argument for staging before replay, and it is now the reason `PLE_STREAM_V2` exists.
+
+**What "smaller host" means here, stated as a claim and as its limits.** The table no longer needs to be
+pinned, so the RAM floor is roughly the token-embedding pin (2.0 GiB rounded) plus whatever page cache the
+operator wants. The hit-rate curve that justifies a cache budget — 0.744 at 8 GiB, 0.797 at 16 GiB, which
+matches a host that caches the entire table — was measured on **synthetic** corpora, and every number in
+the table above was measured on a 125 GiB host where the whole 47.7 GiB table sits in cache. So:
+
+* Measured: streaming works, is byte-identical on gated prompts, costs 7.4% decode / 15.1% prefill **with
+  a fully warm cache**, and frees 64 GiB.
+* Not measured: a host whose cache is smaller than the working set, where misses go to the device at
+  ~132.7k pages/s required against 85.6k measured for O_DIRECT; a real traffic trace rather than synthetic
+  reuse; and whether the 15.1% prefill loss is dominated by the D2H wait, the CPU gather, or the H2D — the
+  per-phase instrumentation added tonight answers that, and its first reading is in the findings document.
+
+A 32 GiB target therefore rests on the synthetic reuse curve and a warm-cache cost measurement, not on a
+32 GiB host. The preflight says so out loud (`PLE_STREAM_CACHE_WARN_GIB` warns below 16 GiB and the
+warning names its own provenance as synthetic), which is the honest form of a provisional floor.
