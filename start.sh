@@ -4,6 +4,14 @@ RECIPE_DIR="$(cd -- "$(dirname -- "${BASH_SOURCE[0]}")" && pwd)"
 source "$RECIPE_DIR/model-profiles.sh"
 source "$RECIPE_DIR/platform-config.sh"
 GPU_MEMORY_UTILIZATION="${GPU_MEMORY_UTILIZATION:-$DEFAULT_GPU_MEMORY_UTILIZATION}"
+# TP_SIZE>1 runs one vLLM engine across TP_SIZE GPUs (tensor parallel). The
+# n-gram table and the host token embedding are both vocab-parallel shards --
+# each rank pins only its own rows -- so the pinned-memory preflight below
+# sizes demand per rank. --distributed-executor-backend mp, already pinned by
+# this recipe for the PLE worker lifecycle (docs/qualification.md), is also
+# what a single-node TP run uses.
+TP_SIZE="${TP_SIZE:-1}"
+[[ "$TP_SIZE" =~ ^[0-9]+$ ]] && (( TP_SIZE >= 1 )) || { echo "TP_SIZE must be an integer >= 1" >&2; exit 2; }
 if [[ "$PLATFORM_KIND" == spark ]]; then
   for argument in "$@"; do
     case "$argument" in
@@ -80,7 +88,7 @@ if [[ "$PLE_MMAP" == 0 && "$CUSTOM_ENGRAM" == 0 && "${QWEN38_SKIP_MEMCHECK:-0}" 
       MemAvailable:) mem_avail_kib=$value ;;
     esac
   done < /proc/meminfo
-  qwen38_ple_memcheck "$CONFIG_PATH" "${PLE_BYTES_PER_ELEMENT:-2}" "$mem_total_kib" "$mem_avail_kib"
+  qwen38_ple_memcheck "$CONFIG_PATH" "${PLE_BYTES_PER_ELEMENT:-2}" "$mem_total_kib" "$mem_avail_kib" "$TP_SIZE"
 fi
 # A container left over from a previous run still owns the name, and both engines
 # then reject the run with "name is already in use". Removing a dead one is done
@@ -131,8 +139,9 @@ fi
 # the engine pinned cuda:0 regardless of what GPU= was set to. Measured on
 # burst: with NVIDIA_VISIBLE_DEVICES=1 the running container still listed both
 # GPUs, and the worker landed on bus 51:00.0 (nvidia-smi index 0). Asking for
-# nvidia.com/gpu=$GPU instead is enforced at the device node and cgroup level,
-# and a container so launched sees exactly one GPU, renumbered to 0 inside.
+# nvidia.com/gpu=$GPU instead is enforced at the device node and cgroup level:
+# one entity injects exactly one GPU (renumbered to 0 inside), and TP_SIZE>1
+# names several entities so the engine sees cuda:0..TP_SIZE-1.
 #
 # Do not "unify" these two branches on --device nvidia.com/gpu=$N. The flags are
 # not equivalent: --gpus resolves through whichever mechanism the engine has, so
@@ -141,7 +150,7 @@ fi
 # scans. This recipe generates its spec under $HOME, which rootful docker does
 # not read, so switching the docker branch to --device would add a root-time
 # /etc/cdi provisioning step and a new stale-spec failure mode, and would raise
-# the docker floor to 28.2.0 (CDI default-on) to no benefit. Divergence here is
+# the docker floor to 28.3.0 (CDI default-on) to no benefit. Divergence here is
 # deliberate. Docker paths in this repo are untested: no docker host was
 # available, so treat that branch as reasoned-about, not verified.
 #
@@ -150,9 +159,41 @@ fi
 # this one is fatal: without it the container cannot start at all.
 if qwen38_is_podman; then
   qwen38_ensure_cdi
-  GPU_ARGS=(--device "nvidia.com/gpu=${GPU:-all}")
+  if [[ -z "${GPU:-}" || "${GPU}" == all ]]; then
+    GPU_ARGS=(--device "nvidia.com/gpu=${GPU:-all}")
+    gpu_count=
+  elif [[ "${GPU}" == *,* ]]; then
+    # podman resolves a single --device value as a single entity name --
+    # nvidia.com/gpu=0,1 is "no such file or directory" (measured on burst) --
+    # but repeated --device flags stack, so expand the comma list by hand.
+    GPU_ARGS=()
+    IFS=',' read -ra gpu_entities <<< "${GPU}"
+    for gpu_entity in "${gpu_entities[@]}"; do
+      [[ -n "$gpu_entity" ]] || { echo "GPU=\"${GPU}\" contains an empty entity" >&2; exit 2; }
+      GPU_ARGS+=(--device "nvidia.com/gpu=${gpu_entity}")
+    done
+    gpu_count=${#gpu_entities[@]}
+  else
+    GPU_ARGS=(--device "nvidia.com/gpu=${GPU}")
+    gpu_count=1
+  fi
 else
-  GPU_ARGS=(--gpus "device=${GPU:-0}")
+  # moby splits device= on commas itself, so a list passes through; unset
+  # defaults to the first TP_SIZE devices, which for TP_SIZE=1 is "device=0".
+  gpu_device="${GPU:-$(seq 0 $(( TP_SIZE - 1 )) | paste -sd,)}"
+  GPU_ARGS=(--gpus "device=${gpu_device}")
+  if [[ "$gpu_device" == all ]]; then gpu_count=; else
+    # awk, not grep -c/-o: its exit status does not depend on match count, so
+    # it cannot fire pipefail/set -e on a comma-less value like device=0.
+    gpu_count=$(awk -F, '{print NF}' <<< "$gpu_device")
+  fi
+fi
+# TP_SIZE ranks against fewer injected GPUs fails inside vLLM on world size
+# with a wall of multiprocessing text; catch the naming mistake here instead.
+if (( TP_SIZE > 1 )) && [[ -n "${gpu_count:-}" ]] && (( gpu_count < TP_SIZE )); then
+  { echo "TP_SIZE=$TP_SIZE needs at least $TP_SIZE GPUs, but GPU=${GPU:-<default>} injects";
+    echo "$gpu_count. Use GPU=all or a comma list (GPU=0,1), or unset GPU."; } >&2
+  exit 2
 fi
 # The container writes its triton and cuda build caches into RUNTIME_CACHE and
 # runs as root so the image's /root/.cache paths resolve. Under rootless podman
@@ -174,7 +215,7 @@ docker run -d --name "$container_name" \
   -v "$HF_CACHE:/root/.cache/huggingface:ro,z" \
   "${IMAGE:-$DEFAULT_IMAGE}" "$MODEL_PATH" \
   --served-model-name "qwen38-${QUANT:-exl3}" --port "${PORT:-8001}" \
-  --tensor-parallel-size 1 --distributed-executor-backend mp \
+  --tensor-parallel-size "$TP_SIZE" --distributed-executor-backend mp \
   --max-model-len "${MAX_MODEL_LEN:-262144}" \
   --max-num-seqs "${MAX_NUM_SEQS:-16}" \
   --max-num-batched-tokens "${MAX_BATCHED_TOKENS:-${DEFAULT_MAX_BATCHED_TOKENS:-2048}}" \

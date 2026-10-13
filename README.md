@@ -173,6 +173,10 @@ QUANT=exl3-ple8 bash start.sh
 # NVIDIA: use QUANT=nvfp4; RedHatAI: QUANT=nvfp4-redhatai
 # (download.sh, start.sh and stop.sh alike).
 # GPU=1 selects another GPU on a multi-GPU RTX host.
+# TP_SIZE=2 runs one engine tensor-parallel across two GPUs; they must all be
+# injected -- GPU=all or GPU=0,1 (unset GPU also works: docker defaults to the
+# first TP_SIZE devices, podman to all). TP is capped by the 2 KV heads: TP=2
+# puts one KV head on each GPU and is the largest slice without replication.
 ```
 
 Stopping and restarting is a two-step, and `QUANT` selects the container name in

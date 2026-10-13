@@ -163,7 +163,7 @@ qwen38_next_pow2() {
 }
 
 # Preflight the pinned host memory the PLE table will need. With PLE_MMAP=0 the
-# worker page-locks the whole n-gram table (torch.empty(pin_memory=True)) and
+# worker page-locks its shard of the n-gram table (torch.empty(pin_memory=True)) and
 # reads it over UVA, so the binding constraint is host RAM rather than VRAM, and
 # it fails about 40 s into engine initialisation as "torch.AcceleratorError: CUDA
 # error: out of memory" -- which reads like a GPU fault and sends you hunting in
@@ -204,7 +204,7 @@ qwen38_next_pow2() {
 #
 # Demand is read from the checkpoint so a geometry change needs no edit here.
 qwen38_ple_memcheck() {
-  local config="$1" bytes="$2" memtotal_kib="$3" memavail_kib="$4"
+  local config="$1" bytes="$2" memtotal_kib="$3" memavail_kib="$4" tp="${5:-1}"
   local dims ngram_rows ple_dim vocab hidden table_kib embed_kib total_kib
   local table_pin_kib embed_pin_kib demand_kib limit_kib warn_kib reserve_kib
   local table_gib total_gib mem_gib demand_gib table_pin_gib embed_pin_gib want_gib pct
@@ -224,6 +224,17 @@ print(int(text["ngram_vocab_size_base"]), int(text["ple_embed_dim"]),
   # The token embedding table is pinned in host RAM in both PLE modes.
   embed_kib=$(( vocab * hidden * 2 / 1024 ))
   total_kib=$(( table_kib + embed_kib ))
+  # With TP_SIZE>1 both tables are vocab-parallel: the n-gram worker pins its
+  # checkpoint-shard/TP-range overlap (vllm models/qwen4_exp/common/ple.py) and
+  # the host embedding pins the per-rank VocabParallelEmbedding weight
+  # (patches/qwen_host_embedding.py pins layer.weight.shape). Demand is then
+  # tp x round(size/tp) -- rounding is per rank, so two ranks pay 2 x 32 GiB for
+  # a 47.7 GiB FP8 table, not round2(47.7). tp=1 reproduces the single-rank
+  # figures; checkpoint row counts are TP-divisible by design
+  # (make_ngram_vocab_size_divisible_by), so the ceil is exact arithmetic.
+  local table_rank_kib embed_rank_kib
+  table_rank_kib=$(( (table_kib + tp - 1) / tp ))
+  embed_rank_kib=$(( (embed_kib + tp - 1) / tp ))
   # PLE_PIN_STRATEGY must agree with what the image's loader actually does; see
   # patches/port-ple-exact-pin.py. "exact" page-locks the table at its true size via
   # cudaHostAlloc, which does not round. "round2" (the default) is torch's pin_memory
@@ -231,12 +242,12 @@ print(int(text["ngram_vocab_size_base"]), int(text["ple_embed_dim"]),
   # it still goes through pin_memory -- so only the table rounding is conditional.
   local ple_pin_strategy="${PLE_PIN_STRATEGY:-round2}"
   if [[ "$ple_pin_strategy" == "exact" ]]; then
-    table_pin_kib="$table_kib"
+    table_pin_kib=$(( table_rank_kib * tp ))
   else
     ple_pin_strategy="round2"
-    table_pin_kib="$(qwen38_next_pow2 "$table_kib")"
+    table_pin_kib=$(( $(qwen38_next_pow2 "$table_rank_kib") * tp ))
   fi
-  embed_pin_kib="$(qwen38_next_pow2 "$embed_kib")"
+  embed_pin_kib=$(( $(qwen38_next_pow2 "$embed_rank_kib") * tp ))
   demand_kib=$(( table_pin_kib + embed_pin_kib ))
   reserve_kib=$(( memtotal_kib * 5 / 100 ))
   (( reserve_kib < 8 * 1048576 )) && reserve_kib=$(( 8 * 1048576 ))
@@ -291,7 +302,7 @@ print(int(text["ngram_vocab_size_base"]), int(text["ple_embed_dim"]),
     echo "  the table pins ${table_gib} GiB as ${table_pin_gib} GiB instead -- this preflight" >&2
     echo "  cannot see inside the image, so confirm the loader logs the exact-size line." >&2
   fi
-  echo "PLE pinned host memory (strategy ${ple_pin_strategy}): table ${table_gib} GiB pins" \
-     "${table_pin_gib} GiB; with token embeddings ${demand_gib} GiB pinned against" \
-     "${total_gib} GiB of checkpoint, on ${mem_gib} GiB installed (${pct}%)." >&2
+  echo "PLE pinned host memory (strategy ${ple_pin_strategy}, TP ${tp}): table ${table_gib} GiB pins" \
+     "${table_pin_gib} GiB ($(qwen38_gib "$(( table_pin_kib / tp ))")/rank x ${tp}); with token embeddings" \
+     "${demand_gib} GiB pinned against ${total_gib} GiB of checkpoint, on ${mem_gib} GiB installed (${pct}%)." >&2
 }
