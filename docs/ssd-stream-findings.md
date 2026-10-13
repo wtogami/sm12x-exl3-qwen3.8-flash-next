@@ -3211,3 +3211,43 @@ The remaining prefill loss (~15%) is most likely `sync` mode: the CPU blocks on 
 and it comes with a detector rather than a hope — if a fill misses its step the sequence tags mismatch, the
 mask zeroes those rows, and the strict hash changes. A race in v2 is visible as a wrong answer, which is
 the behaviour the tagging was built to provide.
+
+# Async staging failed twice over, and the second failure was the dangerous one
+
+`mode=async` booted, went healthy, and then produced **wrong output**: the probe's `[multilingual]`
+completion came back empty and the strict hash diverged. Two independent causes, only one of which I
+expected.
+
+**The mundane one.** 526 × `RuntimeError: Inplace update to inference tensor outside InferenceMode is not
+allowed.` The engine creates its tensors under `torch.inference_mode()`; the worker thread is not in that
+mode, so every `copy_` into the staging buffers raised. Nothing was ever staged.
+
+**The dangerous one, which the first one exposed.** With every fill failing, `cur_seq` never advanced from
+its initial value. `dev_seq` was initialised to the same value. The mask compared them, found them equal,
+and **copied uninitialized device memory into the model as n-gram features.** My CPU test had described
+exactly this case as *"safe-by-accident … unreachable in the engine because the first fill sets
+`cur_seq>=1`"* — and it took one failing mode to make it reachable. The assumption was about hook ordering,
+and hook ordering is not a safety property.
+
+The fix is in the data, not the placement: row tags start at `STALE_NO_FILL = -1` while the step counter
+starts at `0`, so the two sides **disagree initially** and an unfilled buffer can never match. My first
+attempt at this fix used `-1` for both — which still matches itself — and the test I had written for
+precisely that case failed it, which is the only reason I know. The suite now asserts both halves: the
+initial state is stale, *and* a shared sentinel would match.
+
+## Why async is not worth fixing
+
+Even with inference mode handled, async staging cannot be made correct at this hook. A captured CUDA graph
+cannot wait on an event recorded outside capture, so a fill enqueued by a worker thread after
+`prepare_inputs` returns cannot be ordered before the replay that consumes it. Making it ordered means the
+CPU must wait until the worker has at least *enqueued* its copy — and since the expensive part (the gather)
+happens before that enqueue, the wait is the gather. Async collapses into sync. Recorded so the next reader
+does not spend an evening rediscovering it.
+
+Sync mode is therefore the design, and it is now instrumented per phase — D2H wait, CPU n-gram ids,
+gather+H2D enqueue — because "prefill is 15% slower" is not an explanation, and the prototype's 0.5%
+exposed-fill measurement is not a prediction I'm allowed to reuse for a different shape.
+
+The saving grace in all of this is that the failure was **visible**. Garbage features changed greedy output
+and the hash caught it in seconds. That is the property the sequence tagging exists to provide, and it is
+worth more than the throughput either mode would have bought.
