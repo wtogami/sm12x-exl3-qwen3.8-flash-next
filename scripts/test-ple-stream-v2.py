@@ -76,17 +76,20 @@ def main():
     # they MATCH and the buffer is copied. Asserted as-is because if someone later changes the tag
     # initialisation this flips, and that change would be the moment the engine-impossible case becomes
     # real. It cannot pass vacuously: it either copies or it does not.
-    stale_tag = torch.full((n,), -1, dtype=torch.int64)
+    # Initial state as the code actually leaves it: row tags at STALE_NO_FILL (-1), step counter at 0.
     out2 = torch.full((n, rb), 0xEF, dtype=torch.uint8)
-    f(dev, stale_tag, torch.tensor(-1), out2, torch.empty(n, dtype=torch.bool), n)
-    check("unfilled buffer (sentinel tags) is STALE, not copied", not out2.any())
-    check("zero-vs-zero no longer matches once tags start at the sentinel",
-          not torch.equal(out2, dev))
-    print("  NOTE  an unfilled buffer is only safe-by-accident: in the engine _lookup runs after")
-    print("        prepare_inputs has staged the step and the first fill sets cur_seq>=1, so a zero-vs-zero")
-    print("        match cannot be reached. Staging the first step before the first lookup is the property")
-    print("        that makes it unreachable, and it is a property of the hook placement, not of this")
-    print("        function. Worth revisiting if the hook ever moves.")
+    f(dev, torch.full((n,), -1, dtype=torch.int64), torch.tensor(0), out2,
+      torch.empty(n, dtype=torch.bool), n)
+    check("initial state is STALE, so nothing is copied before the first fill", not out2.any())
+    out3 = torch.full((n, rb), 0xAB, dtype=torch.uint8)
+    f(dev, torch.full((n,), -1, dtype=torch.int64), torch.tensor(-1), out3,
+      torch.empty(n, dtype=torch.bool), n)
+    check("...and a sentinel on BOTH sides would match (why the two starts differ)",
+          torch.equal(out3, dev))
+    print("  NOTE  safety here is a property of the tags, not of hook placement. Async mode once failed")
+    print("        every fill, which left cur_seq at its initial value; with a shared initial value the")
+    print("        mask matched and uninitialized memory was consumed as features. The two sides now")
+    print("        start at different values, so an unfilled buffer cannot match whatever happens next.")
     print(f"\n  {'ALL PASS' if not fails else str(fails) + ' FAILURE(S)'}")
     return 1 if fails else 0
 
