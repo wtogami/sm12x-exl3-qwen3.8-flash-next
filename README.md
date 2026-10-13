@@ -177,6 +177,10 @@ QUANT=exl3-ple8 bash start.sh
 # injected -- GPU=all or GPU=0,1 (unset GPU also works: docker defaults to the
 # first TP_SIZE devices, podman to all). TP is capped by the 2 KV heads: TP=2
 # puts one KV head on each GPU and is the largest slice without replication.
+# TP_SIZE>1 also implies --enable-expert-parallel: the K4.25 EXL3 checkpoint
+# cannot split the 640-wide MoE intermediate dimension at all (block-128
+# Hadamard alignment), so routed experts split by count instead. Override
+# with ENABLE_EXPERT_PARALLEL=0 only to watch it fail.
 ```
 
 Stopping and restarting is a two-step, and `QUANT` selects the container name in

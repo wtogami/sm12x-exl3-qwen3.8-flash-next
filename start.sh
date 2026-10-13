@@ -129,6 +129,25 @@ fi
 if [[ "${MTP_TOKENS:-3}" != 0 ]]; then
   EXTRA_ARGS+=(--speculative-config "{\"method\":\"mtp\",\"num_speculative_tokens\":${MTP_TOKENS:-3}}")
 fi
+# Plain tensor parallel is numerically impossible for this checkpoint's MoE:
+# EXL3 stores weights for a signed block-128 Hadamard congruence quantizer
+# (exl3.py _HADAMARD_BLOCK=128), so every TP-sliced dimension must stay a
+# multiple of 128 -- and moe_intermediate_size is 640 = 5x128, which TP=2
+# halves to 320. Measured on burst: plain TP=2 dies in weight processing as
+# "Invalid EXL3 MoE tensors for expert=0, projection=w1" on both ranks
+# (trellis [160,20,64] vs suh/svh 2560/320). Expert parallel splits the 512
+# routed experts by count instead, leaving every expert 128-aligned; attention
+# and dense layers stay TP-sliced and are all clean multiples of 128
+# (12 heads x 256, kv 256, hidden 2560/1280). TP_SIZE>1 therefore implies
+# EP by default; set ENABLE_EXPERT_PARALLEL=0 to opt out and hit the wall
+# with your eyes open.
+if (( TP_SIZE > 1 )) && [[ "${ENABLE_EXPERT_PARALLEL:-1}" == 1 ]]; then
+  EXTRA_ARGS+=(--enable-expert-parallel)
+elif (( TP_SIZE > 1 )); then
+  echo "  note: ENABLE_EXPERT_PARALLEL=0 with TP_SIZE>1: the EXL3 loader will" >&2
+  echo "        reject MoE shapes (640/TP is not 128-aligned) unless the" >&2
+  echo "        checkpoint geometry changed under you." >&2
+fi
 # Docker wants --gpus; podman's docker shim rejects its device= syntax and
 # resolves GPUs through CDI instead (see platform-config.sh).
 #
