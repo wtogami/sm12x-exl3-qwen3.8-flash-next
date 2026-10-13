@@ -132,7 +132,11 @@ class StepStager:
         # The safety property has to live in the tags, not in the ordering of the hooks.
         self.dev_seq = torch.full((self.max_rows,), self.STALE_NO_FILL, dtype=torch.int64,
                                   device=self.device)
-        self.cur_seq = torch.full((1,), self.STALE_NO_FILL, dtype=torch.int64, device=self.device)
+        # ...and cur_seq starts at 0, one step BEFORE the first real tag, so the two sides disagree
+        # initially. A single sentinel on both sides still matches itself: the first version of this fix
+        # did exactly that and my own test caught it. Safety comes from the mismatch, not from the buffer
+        # happening to contain zeros.
+        self.cur_seq = torch.zeros(1, dtype=torch.int64, device=self.device)
 
         self._ids_host = torch.empty(self.max_rows, dtype=torch.int64, pin_memory=True)
         # Sized from the model state, not from guesses: an oversized step must be impossible by
