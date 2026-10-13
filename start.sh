@@ -80,14 +80,17 @@ if [[ "$PLE_STREAM" == 1 && "$PLE_MMAP" == 0 ]]; then
   PLE_MMAP=1
 fi
 if [[ "$PLE_STREAM" == 1 && "$PLE_STREAM_V2" == 0 ]]; then
-  # A streaming gather is host code and cannot live inside a captured CUDA graph: capture would
-  # freeze one row set and replay it forever. Breakable CUDA graphs are what makes it legal --
-  # @eager_break_during_capture on start_prefetch records the callable and re-runs the Python on
-  # every replay. Without it the engine dies at capture time with "Cannot copy between CPU and
-  # CUDA tensors during CUDA graph capture unless the CPU tensor is pinned".
-  # The cost is real and separate: enabling this sets compilation mode to NONE, so throughput must
-  # be compared as {pinned, streaming} x {graphs, breakable} before any delta is attributed to
-  # streaming itself.
+  # A v1 streaming gather is host code and cannot live inside a captured CUDA graph: capture would
+  # freeze one row set and replay it forever. Breakable graphs are what makes it legal --
+  # @eager_break_during_capture on start_prefetch records the callable and re-runs the Python on every
+  # replay -- and the branch that defeats it is a FULL cudagraph, where the decorator deliberately
+  # passes the call through. Measured cost of that regime: 17.8% of decode (162.8 -> 133.9 tok/s,
+  # spreads 1.1%/1.6%), which is why PLE_STREAM_V2 exists instead of shipping this as the design.
+  #
+  # Corrected after the fact: this env var is NOT what turns breakable on for this model. The
+  # architecture is in default_breakable_cudagraph_architectures() and the engine logs
+  # "Auto-enabling VLLM_USE_BREAKABLE_CUDAGRAPH=1" on its own. Setting it here is belt-and-braces for
+  # architectures where that is not the default; the load-bearing flag is cudagraph_mode below.
   if [[ -z "${VLLM_USE_BREAKABLE_CUDAGRAPH:-}" ]]; then
     export VLLM_USE_BREAKABLE_CUDAGRAPH=1
     echo "  note: PLE_STREAM=1 implies VLLM_USE_BREAKABLE_CUDAGRAPH=1 (the host gather must run" >&2
