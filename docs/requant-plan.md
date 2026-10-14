@@ -130,6 +130,37 @@ capturing Hessians, so mratsim's "expert quantized away as unimportant"
 failure mode cannot occur at the H pass for our model; his residual
 concern (value-range/clipping coverage) remains.
 
+### Prior-art panel: what the base-card author actually used (found 2026-10-14)
+
+wrldsuksgo2mars published his calibration: HF dataset
+`wrldsuksgo2mars/agentic-quant-panel-v1` (canonical corpus
+`flash-corpus-next-v1`, originally built for DeepSeek-V4-Flash-0731).
+Verified locally, SHA256SUMS-checked, at
+`.cache/huggingface/calibration/agentic-quant-panel-v1/`:
+calibration 1,426 prompts / 1,081,027 recorded tokens (~768-token records,
+seed 20260806, SHA-256 source-group bucketing, disjoint heldout);
+five-axis token blend code_agentic 33.3% / general wiki 24.0% / math 20.4%
+/ reasoning_termination 12.1% / structured xLAM 10.2%. His allocation claim
+("4.25bpw, error-selected 5bpw at 3:5:8 gate:up:down") is forensically
+confirmed from our base-card ledger: K5 counts 3528:5880:9408 = exactly
+3:5:8 (base 1176), exactly 25.00% upgraded -> exactly 4.2500 bpw.
+Caveat: the published release is the original corpus; his per-model Qwen
+selection re-tokenized the same recipe (the card is not claimed
+tokenizer-identical to it).
+
+Staged for the deferred study: scripts/req6-pack-panel-calibration.py
+rendered all 1,426 records through the Qwen chat template into the exact
+`-cd` contract (int32 input_ids (1426, 2048) + per-row lengths;
+1,180,869 tokens; row range 566-1269; sha256
+6cf142dc...644b) at `.cache/huggingface/calibration/agentic-quant-panel-v1/panel-qwen-packed-2048.safetensors`.
+A/B recipe (single variable - corpus): identical uniform-6.0 mcg recipe,
+`-cd <panel file> -cr 1426 -cc 2048`, compare orchid (our only regression:
+deterministic 99-word length bias vs base 5/5) + KL-vs-BF16 + tensor RMSE.
+~2x H-capture time vs vendor 250x2048 (~+1-1.5h). Rationale for expecting
+signal: the panel is saturated with exact-format agentic outputs (xLAM
+JSON, structured completions) and was the calibration behind the card that
+beats ours on strict length compliance.
+
 Baseline decision: quantize the reference pair with the PURE vendor
 default - identical to every comparable card and to our existing
 baseline's recipe, which keeps sensitivity measurement apples-to-apples.
