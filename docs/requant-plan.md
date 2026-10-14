@@ -131,5 +131,12 @@ doesn't clearly win, ship the plain default.
   gate 6, retune or drop to MTP2 (perf-column honesty).
 - exllamav3 1.5.1 default codebook is now mul1 — **every conversion
   invocation must pin `-cb mcg`** and gate 1 asserts the marker tensor.
+- VERSION-PAIRING (bit us 2026-10-14 02:14): the prebuilt
+  exv3-runtime/exllamav3_ext.so carries the **1.6.1** binding surface
+  (6-arg ngram_dequant), but the conversion first ran under the 1.5.1
+  python tree (5-arg call) -> TypeError mid-calibration. Python tree and
+  ext .so MUST be the same vendor version; relaunched under exv3-env-161
+  + `-r` resume (work-dir checkpoints made the 40-min ngram pass
+  survive). Verified: every ext symbol 1.6.1 calls exists in the .so.
 - Calibration overfitting: vendor mix doubles as EXL3's ppl dataset (mratsim
   caveat) → judge gates on KL + our biomed/quality suites, never on ppl.
