@@ -52,7 +52,14 @@ Source: `Qwen/Qwen3.8-Flash-Next` bf16 @ `de4b8e4d43b917e7706784d8bb445c9af86a35
    (mtp_bits covers attn+shared+experts), so mtp arrives fully K6-quantized;
    dequant its non-expert linears to BF16 via the exl3-605-shared-dequant
    pattern so the draft matches the base topology (experts quantized,
-   dense bf16) and never touches b12x's ext-dependent dense-exl3 path. Calibration: vendor
+   dense bf16) and never touches b12x's ext-dependent dense-exl3 path.
+   REPAIRS (a)+(b)+(c) DONE 2026-10-14 (scripts/req6-ngram-reinject.py,
+   scripts/req6-mtp-repair.py): 10 dense mtp tensors -> BF16 (q_proj
+   round-trip cos64 0.99979 vs source, rel-RMSE 2.0% = expected K6 err);
+   ledger now 75,934 entries incl. 1,536 mtp experts; exl3-quantized total
+   75,264 = exactly the base-card invariant. Fork schema compatibility
+   verified against exl3.py's parser (nested stored_tensors + quant_format
+   + int bits_per_weight + mcg_multiplier 0xCBAC1FED all expected). Calibration: vendor
    default 250×2048 - with no allocation to steer, the corpus is no
    longer a lever; it still shapes in-tensor rounding (H-weighted
    Viterbi + suh/svh fit), so pin it for reproducibility, not quality.
