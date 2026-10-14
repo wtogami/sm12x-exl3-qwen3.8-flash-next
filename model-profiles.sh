@@ -10,6 +10,16 @@ case "${QUANT:-exl3}" in
     MODEL_REVISION=888306bd3996d6317758c07df50622829259ad17
     PLE_BYTES_PER_ELEMENT=1
     ;;
+  req6)
+    # Option B source: the ORIGINAL bf16 Qwen3.8-Flash-Next, downloaded as
+    # input to our own exllamav3 conversion (mcg codebook, expert-K6 +
+    # dense-bf16 topology). Not a serving profile - served_model_name would
+    # be qwen38-req6 only once a converted snapshot exists. See
+    # docs/requant-plan.md.
+    MODEL_REPO=Qwen/Qwen3.8-Flash-Next
+    MODEL_REVISION=de4b8e4d43b917e7706784d8bb445c9af86a3540
+    PLE_BYTES_PER_ELEMENT=2
+    ;;
   nvfp4)
     MODEL_REPO=nvidia/Qwen3.8-Flash-Next-NVFP4
     # 2026-10-07: re-pinned from 2061e0b0 (unreachable after the repo's
@@ -22,6 +32,6 @@ case "${QUANT:-exl3}" in
     MODEL_REVISION=c8f2fb1b9869f686b214782036123b10ff96d14a
     PLE_BYTES_PER_ELEMENT=2
     ;;
-  *) echo "QUANT must be exl3, exl3-ple8, nvfp4, or nvfp4-redhatai" >&2; exit 2 ;;
+  *) echo "QUANT must be exl3, exl3-ple8, req6, nvfp4, or nvfp4-redhatai" >&2; exit 2 ;;
 esac
 MODEL_CACHE_NAME="models--${MODEL_REPO//\//--}"
