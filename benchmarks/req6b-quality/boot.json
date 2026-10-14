@@ -1,0 +1,29 @@
+{
+  "experiment": "B: uniform-K6 mcg card, agentic-quant-panel-v1 calibration (converted by scripts/req6b-run.sh)",
+  "snapshot": "/root/.cache/huggingface/hub/models--wrldsuksgo2mars--Qwen3.8-Flash-Next-EXL3-K4.25-v1/snapshots/req6b-panel6",
+  "served_model_name": "qwen38-exl3",
+  "endpoint": "http://127.0.0.1:8001",
+  "container_started": "2026-10-14T22:13:53Z",
+  "recorded_utc": "2026-10-14T22:21:58Z (boot log window 22:14-22:16 UTC)",
+  "speculative_config": {"method": "mtp", "num_speculative_tokens": 3},
+  "cudagraph_mode": "FULL_AND_PIECEWISE",
+  "tensor_parallel_size": 2,
+  "enable_expert_parallel": true,
+  "kv_cache_dtype": "fp8",
+  "max_model_len": 524288,
+  "gpu_kv_cache_size_tokens": 4775271,
+  "maximum_concurrency_at_524288": 9.11,
+  "boot_log_lines": [
+    "GPU KV cache size: 4,775,271 tokens",
+    "Maximum concurrency for 524,288 tokens per request: 9.11x"
+  ],
+  "spec_decode_probe": {
+    "method": "3x /v1/completions, seed=787, temperature=0, max_tokens=200; /metrics counters were 0 before probe",
+    "completion_tokens_total": 600,
+    "spec_decode_num_draft_tokens_total": 675,
+    "spec_decode_num_accepted_tokens_total": 375,
+    "acceptance_ratio_accepted_over_draft": 0.5556,
+    "mean_accepted_per_draft_step": 1.667,
+    "draft_steps": 225
+  }
+}
