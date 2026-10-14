@@ -40,9 +40,14 @@ Source: `Qwen/Qwen3.8-Flash-Next` bf16 @ `de4b8e4d43b917e7706784d8bb445c9af86a35
    K4.25 base-card ledger topology. Two post-conversion REPAIRS required
    (converter forces these, vanilla CLI can't opt out):
    (a) n-gram table: converter emits K6 trellis `ngram_embedding.
-   safetensors`; we discard it and re-inject the BF16 source tables as
-   in-shard HF weights (base-card shape; fork serves checkpoint_mapped
-   BF16 - the fork has never served trellis n-gram);
+   safetensors`; fork serves checkpoint_mapped BF16 in-shard weights (the
+   fork has never served trellis n-gram), so we re-inject the 130 BF16
+   source tensors as model-ngram-*.safetensors and register them in the
+   index (scripts/req6-ngram-reinject.py; DONE 2026-10-14, verified
+   bitwise-identical to source, 102.4 GB). The K6 trellis file is STASHED
+   at req6-build/keep/ngram_embedding.K6-mcg.safetensors (37 GB, owner
+   request) for the future "quantized n-gram on host: 38 vs 104 GB pinned
+   RAM / PLE-quant sensitivity" experiment;
    (b) MTP dense linears: `-mb` is one scalar over the whole draft block
    (mtp_bits covers attn+shared+experts), so mtp arrives fully K6-quantized;
    dequant its non-expert linears to BF16 via the exl3-605-shared-dequant
