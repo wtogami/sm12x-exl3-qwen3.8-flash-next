@@ -13,7 +13,7 @@ Source: `Qwen/Qwen3.8-Flash-Next` bf16 @ `de4b8e4d43b917e7706784d8bb445c9af86a35
 | Choice | Value | Why |
 |---|---|---|
 | Codebook | **mcg** (sqg = optional future) | b12x executes mcg; mul1 is the Swift wall (docs/tp2-exl3-605bpw.md). Assert marker in gate 1. |
-| MoE rate | uniform 6 → tuned 5.5–6.0 avg | b12x validator K≤6; Pareto prior art (GLM-4.7: KL .137→.082 4→6bpw; Qwen3.5-397B: tuned 4.61 beat untuned 5.0). |
+| MoE rate | **uniform 6.0** (owner 2026-10-14); tuned mix = deferred study track | b12x validator K≤6; Pareto prior art (GLM-4.7: KL .137→.082 4→6bpw; Qwen3.5-397B: tuned 4.61 beat untuned 5.0). |
 | Dense (attn/GDN/indexer) | **bf16** | our K4.25 card's proven topology; KV/attention sensitivity per mratsim heuristics + gpt-oss/R1 FP4 precedent; dodges b12x dense-exl3's had_r_128 dependency entirely. |
 | Shared experts (width-640) | **bf16** | unsliceable at TP≥2 under the Hadamard-128 guard; bf16 is the base-card topology; costs ~3 GiB/rank, buys exactness. |
 | lm_head | **bf16** | keep the untested quantized-head path out of the hot rod; 1.27 GB. |
@@ -30,14 +30,22 @@ Source: `Qwen/Qwen3.8-Flash-Next` bf16 @ `de4b8e4d43b917e7706784d8bb445c9af86a35
    `scripts/probe-exl3-k6-acceptance.py` — cross-stack numerics vs vendor
    reconstruct + b12x fused-MoE prepare/run at K6 mcg. (Methodology
    already validated on K4/K5: bf16-resolution agreement, 5581ca0.)
-2. **Reference quants**: uniform `-b 4` and `-b 6`, mcg, dense/shared/head
-   unquantized (qmap overrides), work_dir checkpointed for resume.
-3. **Sensitivity measurement**: `eval/model_diff.py -l2/-l3` between the
-   two references (+ reference choice per decision D3 below) → per-tensor
-   KL contributions.
-4. **Allocation**: `util/optimize.py` at target 5.8–6.0 avg, then apply
-   mratsim hand heuristics (he measured manual > optimizer): higher bits
-   on early blocks; nothing above K6 (b12x cap); shared/dense already bf16.
+2. **Uniform 6.0 conversion** (`-b 6 -cb mcg`, dense/shared/head/PLE
+   unquantized, work_dir checkpointed for resume). Calibration: vendor
+   default 250×2048 - with no allocation to steer, the corpus is no
+   longer a lever; it still shapes in-tensor rounding (H-weighted
+   Viterbi + suh/svh fit), so pin it for reproducibility, not quality.
+   (Gate 0 DONE 2026-10-14: 144 files / 360.0 GB content-verified vs
+   trees/de4b8e4d metadata -> benchmarks/req6-source/gate0-verify.log.)
+3. **Quality vs BF16 (D3)**: tensor-level RMSE/cos of reconstructed
+   experts against source BF16 (vendor reconstruct, minutes, 2 GPUs) +
+   `eval/model_diff.py` KL with the BF16 original as ref on CPU-offload
+   (360 GB fits 995 GiB RAM; 10×1024 rows is a few hours - fine).
+   This KL becomes the absolute number of record for future tuning.
+4. *(DEFERRED — tuning study track)*: regenerate 4/5 bpw refs, run
+   `model_diff -l2/-l3` sensitivity, `util/optimize.py` + mratsim
+   heuristics (early blocks up, K6 ceiling). Nothing here is lost by
+   deferral; it costs a later 2-reference re-run.
 5. **Final conversion** at tuned strategy (~hours, Viterbi-bound; 3rd GPU
    at x8 optional here and at gate 3 — AutoSplit, so x8 is ~free).
 6. **Probe engine**: TP2+EP, graphs ON, `MTP_TOKENS=0` first prefill →
