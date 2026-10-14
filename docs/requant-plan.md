@@ -85,6 +85,16 @@ Source: `Qwen/Qwen3.8-Flash-Next` bf16 @ `de4b8e4d43b917e7706784d8bb445c9af86a35
    expected −15..25% decode (bytes under power cap); KV/concurrency
    anchor vs the frontier table. Bonus queued item: TP1 re-run on GPU=1
    (cooler card; owner note 0f177b2).
+8d. *(REPAIR, new)* ledger filter: 1.6.1 records BF16 passthrough
+   modules in tensor_storage; the fork's standard-fused-MoE scanner needs
+   an experts-only ledger (base-card shape) or it silently declines the
+   fast path and the enforce-eager guard fires at the vision tower.
+   scripts/req6-ledger-filter.py (75,934 -> 75,264).
+   GATE 1 PASSED 2026-10-14: real-K6 cross-stack numerics (maxabs <=2e-3
+   = bf16 res), vs-source rel-RMSE 1.79-2.00% across layers/projections/
+   MTP, probe-engine boot TP2+EP GRAPHS ON (capture 4 s), first prefill
+   + "42" smoke clean. The fused-MoE K6 question is answered: YES.
+
 9. **Ship**: commit profile + sidecar snapshots + docs to prod branch
    lineage; K4.25 card retained as fallback.
 
