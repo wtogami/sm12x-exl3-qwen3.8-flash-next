@@ -31,7 +31,23 @@ Source: `Qwen/Qwen3.8-Flash-Next` bf16 @ `de4b8e4d43b917e7706784d8bb445c9af86a35
    reconstruct + b12x fused-MoE prepare/run at K6 mcg. (Methodology
    already validated on K4/K5: bf16-resolution agreement, 5581ca0.)
 2. **Uniform 6.0 conversion** (`-b 6 -cb mcg`, dense/shared/head/PLE
-   unquantized, work_dir checkpointed for resume). Calibration: vendor
+   unquantized, work_dir checkpointed for resume). LAUNCHED 2026-10-14
+   (container req6-convert): `python -m exllamav3.conversion.convert_model
+   -i <src de4b8e4d> -o /hf/req6-build/out -w /hf/req6-build/work -rcp
+   quant/recipe-uniform6.yaml(-gz) -b 6 -hb 16 -mb 6 -vb 16 -cb mcg -cr
+   250 -cc 2048 -d 0,1 -v`. The recipe (74,040 budgeted tensors: 73,728
+   routed experts→6, 312 shared/GDN/attn/indexer→16) exactly mirrors the
+   K4.25 base-card ledger topology. Two post-conversion REPAIRS required
+   (converter forces these, vanilla CLI can't opt out):
+   (a) n-gram table: converter emits K6 trellis `ngram_embedding.
+   safetensors`; we discard it and re-inject the BF16 source tables as
+   in-shard HF weights (base-card shape; fork serves checkpoint_mapped
+   BF16 - the fork has never served trellis n-gram);
+   (b) MTP dense linears: `-mb` is one scalar over the whole draft block
+   (mtp_bits covers attn+shared+experts), so mtp arrives fully K6-quantized;
+   dequant its non-expert linears to BF16 via the exl3-605-shared-dequant
+   pattern so the draft matches the base topology (experts quantized,
+   dense bf16) and never touches b12x's ext-dependent dense-exl3 path. Calibration: vendor
    default 250×2048 - with no allocation to steer, the corpus is no
    longer a lever; it still shapes in-tensor rounding (H-weighted
    Viterbi + suh/svh fit), so pin it for reproducibility, not quality.
