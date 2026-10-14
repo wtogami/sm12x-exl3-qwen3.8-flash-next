@@ -58,6 +58,12 @@ Source: `Qwen/Qwen3.8-Flash-Next` bf16 @ `de4b8e4d43b917e7706784d8bb445c9af86a35
    round-trip cos64 0.99979 vs source, rel-RMSE 2.0% = expected K6 err);
    ledger now 75,934 entries incl. 1,536 mtp experts; exl3-quantized total
    75,264 = exactly the base-card invariant. Fork schema compatibility
+   (e) GHOST KEYS (found by the MTP3 boot failure, 13:50): repair (b) fixed
+   the index but left the replaced trellis payloads physically in shard 13;
+   vLLM's default loader walks FILES, not the index, so any module that
+   exists at load time (draft under MTP) strict-rejects the orphans.
+   scripts/req6-strip-ghost-keys.py removed 40; verified zero file-vs-index
+   ghosts remain across all shards.
    verified against exl3.py's parser (nested stored_tensors + quant_format
    + int bits_per_weight + mcg_multiplier 0xCBAC1FED all expected). Calibration: vendor
    default 250×2048 - with no allocation to steer, the corpus is no
