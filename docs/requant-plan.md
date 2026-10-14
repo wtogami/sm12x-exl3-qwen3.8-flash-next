@@ -52,27 +52,44 @@ Source: `Qwen/Qwen3.8-Flash-Next` bf16 @ `de4b8e4d43b917e7706784d8bb445c9af86a35
 9. **Ship**: commit profile + sidecar snapshots + docs to prod branch
    lineage; K4.25 card retained as fallback.
 
-## Calibration set (the one consequential open choice)
+## Calibration set (D1 - narrowed by prior-art survey, 2026-10-14)
 
-exllamav3 default is 250×2048 generic rows; Swift's sidecar shows exactly
-that. For 512-expert top-10 routing that is ~10k token-activations per
-expert — statistically fine, distribution-wise biased toward whatever the
-corpus covers. Proposal (~512 rows × 2048, mixed, fixed seed, all in
-tree under `calibration/`):
+**Prior art, verified from card READMEs/sidecars:** the entire comparable
+field uses exllamav3's bundled default (250x2048): Swift 6.05 ("standard
+ExLlamaV3 mix"), Infatoshi GLM-5.3 ("default calibration 250x2048"),
+mratsim GLM-4.6/4.7 (default; he warns calibration==ppl-dataset causes
+ppl overfitting, hence KL as the metric and manual heuristics over the
+optimizer). One documented domain outlier: brandonmusic GLM-5.2 built on
+a 12,228-sample legal+general corpus (~1M tokens, SHA-256 journalled).
+Our own K4.25 card's sidecar records calibration:null and its qflashrt
+doc link now 404s, but its ds4rt-lineage recipe is 250x2048 standard.
 
-- 40% generic prose (wiki/books-equivalent) — coverage floor
-- 25% code + tool-use JSON/agentic transcripts — the coding workload
-- 25% biomedical text (PubMed abstracts + OA full-text samples; the
-  biomed gate corpus seeds this) — the paper-analysis workload
-- 10% long-range synthetic (repetition/needle-style) — stabilizer
+**Vendor default anatomy** (exllamav3/conversion/calibration_data.py +
+bundled standard_cal_data, ~5.5 MB fixed corpus): wiki 50, c4 20,
+code 20, multilingual 10, technical 10, tiny 5, RANDOM-vocab rows 20
+(weight/135). Caveat found by inspection: the bundled code.utf8 is
+m68k assembly and technical.utf8 is license text - near-zero coverage of
+modern code or agentic/tool-use distributions.
 
-Gate on this step: after a dry H-capture, dump per-expert activation
-counts and flag starved experts (<500 activations) before committing to
-quantization (mratsim's MoE-calibration caveat).
+**Architecture fact (shrinks the problem):** qwen4_exp (our model_type)
+sets `calibration_all_experts = True` in qwen4_exp.py:306 - the vendor
+converter forces every expert to fire on every calibration token when
+capturing Hessians, so mratsim's "expert quantized away as unimportant"
+failure mode cannot occur at the H pass for our model; his residual
+concern (value-range/clipping coverage) remains.
+
+Baseline decision: quantize the reference pair with the PURE vendor
+default - identical to every comparable card and to our existing
+baseline's recipe, which keeps sensitivity measurement apples-to-apples.
+Optional A/B only if time allows: augment with ~64-128 rows modern
+code/tool-use + biomedical text (the vendor mix contains neither) and
+compare KL on a held-out generic set + biomed gate deltas. If the A/B
+doesn't clearly win, ship the plain default.
 
 ## Decisions needed from owner
 
-- **D1 calibration mix** above vs alternative ratios / more biomedical weight.
+- **D1 calibration**: confirm plain vendor-default baseline (recommended);
+  opt in/out of the modern-code+biomed A/B.
 - **D2 third GPU (x8)**: use for gates 3+5 (faster), or keep 2-GPU + CPU-offload?
 - **D3 KL reference**: bf16 original (ground truth, slow: CPU-offload or
   3-GPU) vs an 8 bpw-H6 intermediate (mratsim practice; rankings hold,
@@ -90,4 +107,5 @@ quantization (mratsim's MoE-calibration caveat).
   gate 6, retune or drop to MTP2 (perf-column honesty).
 - exllamav3 1.5.1 default codebook is now mul1 — **every conversion
   invocation must pin `-cb mcg`** and gate 1 asserts the marker tensor.
-- Calibration-set overfitting to biomed → keep the generic 40% floor.
+- Calibration overfitting: vendor mix doubles as EXL3's ppl dataset (mratsim
+  caveat) → judge gates on KL + our biomed/quality suites, never on ppl.
