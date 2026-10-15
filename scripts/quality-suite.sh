@@ -11,7 +11,7 @@ COMMON=(--base-url "$BASE_URL" --model "$MODEL")
 python3 "$SCRIPT_DIR/test-api-tool-constraints.py" "${COMMON[@]}" --output "$RESULT_DIR/api-tools.jsonl"
 python3 "$SCRIPT_DIR/test-vision-vllm.py" "${COMMON[@]}" --image-counts 1 4 16 --output "$RESULT_DIR/vision.json"
 # Preserve responses and incidental request timings; do not infer performance equivalence.
-python3 "$SCRIPT_DIR/benchmark-workloads.py" "${COMMON[@]}" --suite seven --runs 3 --warmups 0 --output "$RESULT_DIR/seven.jsonl"
+python3 "$SCRIPT_DIR/benchmark-workloads.py" "${COMMON[@]}" --suite seven --runs 12 --warmups 0 --output "$RESULT_DIR/seven.jsonl"
 python3 "$SCRIPT_DIR/benchmark-workloads.py" "${COMMON[@]}" --suite orchid --runs 20 --warmups 0 --output "$RESULT_DIR/orchid.jsonl"
 python3 "$SCRIPT_DIR/test-context-retrieval.py" "${COMMON[@]}" --filler-tokens 8192 240000 --positions 0.05 0.5 0.95 --output "$RESULT_DIR/retrieval.jsonl"
 # Run the pinned full tool-eval-bench suite separately, including Hard Mode.
