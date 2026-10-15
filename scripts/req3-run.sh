@@ -14,5 +14,5 @@ exec python3 -m exllamav3.conversion.convert_model \
   -o /hf/req3-build/out -w /hf/req3-build/work \
   -rcp /hf/req6-build/recipe-uniform3.yaml -b 3 -hb 16 -mb 6 -vb 16 \
   -cd /hf/calibration/agentic-quant-panel-v1/panel-qwen-packed-2048.safetensors \
-  -cr 1426 -cc 2048 -cb mcg -d 0,1 ${RESUME[*]:-}"
+  -cr 1426 -cc 2048 -cb mcg -d 0 ${RESUME[*]:-}"
 echo "req3-convert launched ${RESUME[*]:-fresh}"
