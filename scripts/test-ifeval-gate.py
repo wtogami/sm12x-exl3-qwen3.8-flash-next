@@ -36,7 +36,7 @@ tot_inst = ok_inst_strict = ok_inst_loose = ok_prompt_strict = ok_prompt_loose =
 with open(a.output, "w") as f:
     for row in rows:
         body = json.dumps({"model": a.model, "temperature": 0, "max_tokens": 2048,
-                           "messages": [{"role": "user", "content": row["prompt"]}]}, ).encode()
+                           "chat_template_kwargs": {"enable_thinking": False}, "messages": [{"role": "user", "content": row["prompt"]}]}, ).encode()
         t0 = time.time()
         req = urllib.request.Request(a.base_url + "/v1/chat/completions", body, headers={"Content-Type": "application/json"})
         with urllib.request.urlopen(req, timeout=900) as r:

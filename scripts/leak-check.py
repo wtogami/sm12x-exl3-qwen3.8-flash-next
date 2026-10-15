@@ -49,10 +49,18 @@ ife = [json.loads(l) for l in open("/hf/evals/ifeval/ifeval.jsonl")]
 for r in ife:
     out.append({"src": "ifeval", "id": r["key"], "overlap": worst(r["prompt"])})
 
+bcb = []
+try:
+    bcb = [json.loads(s) for s in open("/hf/evals/bigcodebench/hard.jsonl")]
+except FileNotFoundError:
+    print("WARN no bcb file")
+for r in bcb:
+    out.append({"src": "bcb-hard", "id": r["task_id"], "overlap": worst(r["instruct_prompt"] + "\n" + r.get("question", ""))})
+
 with open(a.out, "w") as f:
     json.dump(out, f)
 from collections import Counter
-for src in ("pubmedqa", "ifeval"):
+for src in ("pubmedqa", "ifeval", "bcb-hard"):
     c = Counter(x["overlap"] for x in out if x["src"] == src)
     print(src, "overlap distribution:", dict(c))
     flagged = [x for x in out if x["src"] == src and x["overlap"] >= 16]

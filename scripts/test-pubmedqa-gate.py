@@ -22,7 +22,7 @@ def ask(row):
     ctx = " ".join(row["context"]["contexts"])[:9000]
     prompt = f"Question: {row['question']}\n\nContext: {ctx}"
     body = json.dumps({"model": a.model, "temperature": 0, "max_tokens": 1024,
-                       "messages": [{"role": "system", "content": SYS}, {"role": "user", "content": prompt}]}).encode()
+                       "chat_template_kwargs": {"enable_thinking": False}, "messages": [{"role": "system", "content": SYS}, {"role": "user", "content": prompt}]}).encode()
     t0 = time.time()
     req = urllib.request.Request(a.base_url + "/v1/chat/completions", body, headers={"Content-Type": "application/json"})
     with urllib.request.urlopen(req, timeout=600) as r:

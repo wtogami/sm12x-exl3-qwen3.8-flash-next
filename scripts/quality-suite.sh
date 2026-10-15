@@ -22,9 +22,16 @@ in_image() { # gate-script receipt-file limit-envvar
   docker run --rm --network=host \
     -v "${HF_CACHE:-$HOME/.cache/huggingface}:/hf:z" -v "$SCRIPT_DIR:/s:z" -v "$(realpath "$RESULT_DIR"):/r:z" \
     -e PYTHONPATH=/hf/pip-extras --entrypoint python3 localhost/qwen38-rtx:local \
-    "/s/$script" --base-url "$BASE_URL" --model "$MODEL" --output "/r/$out" $limarg
+    "/s/$script" --base-url "$BASE_URL" --model "$MODEL" --output "/r/$out" $limarg "${@:4}"
 }
 in_image test-pubmedqa-gate.py pubmedqa.jsonl PQA_LIMIT
 in_image test-ifeval-gate.py ifeval.jsonl IFE_LIMIT
+
+# BigCodeBench-Hard: generate against engine, score in network-isolated container
+in_image test-bcb-gate.py bcb-gen.jsonl BCB_LIMIT --stage gen
+docker run --rm --network=none \
+  -v "${HF_CACHE:-$HOME/.cache/huggingface}:/hf:z" -v "$SCRIPT_DIR:/s:z" -v "$(realpath "$RESULT_DIR"):/r:z" \
+  --entrypoint python3 localhost/qwen38-bcb:local \
+  /s/test-bcb-gate.py --stage score --gen-file /r/bcb-gen.jsonl --output /r/bcb.jsonl
 
 # Run the pinned full tool-eval-bench suite separately, including Hard Mode.
