@@ -5,7 +5,7 @@ set -u
 LOG=~/.cache/huggingface/gg-watch.log
 OPT="-o BatchMode=yes -o ConnectTimeout=10 -o ServerAliveInterval=30"
 say(){ echo "[$(date +%m-%d_%H:%M)] $*" >>"$LOG"; }
-replays(){ timeout 20 nvidia-smi -q 2>/dev/null | grep -aA0 "Replays Since Reset" | awk -F: '{gsub(/ /,"",$2); printf "%s ",$2}'; echo; }
+replays(){ awk '/GPU 0000/{g=$0} /Replays Since Reset/{split($0,a,":"); gsub(/ /,"",a[2]); printf "%s", a[2] " "}' <<<"$(timeout 20 nvidia-smi -q)"; echo; }
 wait_done(){ # name
   local n=$1
   for i in $(seq 1 480); do
