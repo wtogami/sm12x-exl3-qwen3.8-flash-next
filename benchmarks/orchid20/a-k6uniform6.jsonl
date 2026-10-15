@@ -1,0 +1,1 @@
+{"record": "meta", "schema": "qwen38-workloads-v1", "args": {"base_url": "http://127.0.0.1:8001", "model": "qwen38-exl3", "suite": "orchid", "runs": 20, "warmups": 0, "seed": 787, "collect_mtp_metrics": false, "metrics_wait": 11, "output": "benchmarks/orchid20/a-k6uniform6.jsonl"}, "timing": "client SSE chunks; decode excludes initial burst; raw token IDs retained"}
