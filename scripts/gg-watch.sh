@@ -1,11 +1,13 @@
 #!/usr/bin/env bash
-# Completion watcher for the gg quant chain, running on burst.
-# Chain: gg-ref5 -> launch gg-ref3 -> gg engine restore. Logs PCIe replay counters per tick.
+# Completion watcher: gg-ref5 -> gg engine restore; req4 -> req3 on burst.
+# PCIe replay telemetry: two numbers per tick = GPU0 then GPU1 (nvidia-smi order).
+# Signal-integrity watch focuses on GPU0; GPU1 values are context only.
 set -u
 LOG=~/.cache/huggingface/gg-watch.log
 OPT="-o BatchMode=yes -o ConnectTimeout=10 -o ServerAliveInterval=30"
 say(){ echo "[$(date +%m-%d_%H:%M)] $*" >>"$LOG"; }
-replays(){ awk '/GPU 0000/{g=$0} /Replays Since Reset/{split($0,a,":"); gsub(/ /,"",a[2]); printf "%s", a[2] " "}' <<<"$(timeout 20 nvidia-smi -q)"; echo; }
+replays(){ # first number = GPU0 (the card under signal-integrity watch)
+ awk '/GPU 0000/{g=$0} /Replays Since Reset/{split($0,a,":"); gsub(/ /,"",a[2]); printf "%s", a[2] " "}' <<<"$(timeout 20 nvidia-smi -q)"; echo; }
 wait_done(){ # name
   local n=$1
   for i in $(seq 1 480); do
