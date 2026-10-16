@@ -26,11 +26,13 @@ while true; do
     r1=$(replay); d=$(( r1 - r0 ))
     if (( d > 0 )); then
       CAP=$(( CAP - 10 )); (( CAP < 300 )) && CAP=300
-      echo "$CAP" > /tmp/power-cap; log "inference window u=${uavg}% replay +${d} -> cap ${CAP}W (cooldown)"
+      echo "$CAP" > /tmp/power-cap; sudo -n nvidia-smi -pl "$CAP" -i 0 >/dev/null 2>&1; sudo -n nvidia-smi -pl "$CAP" -i 1 >/dev/null 2>&1
+      log "inference window u=${uavg}% replay +${d} -> cap ${CAP}W APPLIED (cooldown)"
       sleep 300
     else
       CAP=$(( CAP + 10 )); (( CAP > 450 )) && CAP=450
-      echo "$CAP" > /tmp/power-cap; log "inference window u=${uavg}% replay +0 -> cap ${CAP}W"
+      echo "$CAP" > /tmp/power-cap; sudo -n nvidia-smi -pl "$CAP" -i 0 >/dev/null 2>&1; sudo -n nvidia-smi -pl "$CAP" -i 1 >/dev/null 2>&1
+      log "inference window u=${uavg}% replay +0 -> cap ${CAP}W APPLIED"
     fi
   else
     log "window skipped (u=${uavg}% stable=${stable} ready=$(ready && echo y || echo n)) cap stays ${CAP}W"
