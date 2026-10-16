@@ -43,7 +43,7 @@ ladder(){ # tag
 say "== PHASE 1: x20 defect probes at 450W"
 for spec in "k6v req6-uniform6 2" "k425 73a050c27b8c488c65acd6d1c74e45ff02be5fab 2"; do
   set -- $spec; local_lb=$(replay0)
-  boot "$SNAP/$2" "$3" || { [[ $3 == 2 ]] && { say "$1 TP2 boot failed, TP1 fallback"; boot "$SNAP/$2" 1 || { say "HALT: $1 boot failed both"; exit 1; }; } || { say "HALT: $1 boot failed"; exit 1; }; }
+  boot "$2" "$3" || { [[ $3 == 2 ]] && { say "$1 TP2 boot failed, TP1 fallback"; boot "$2" 1 || { say "HALT: $1 boot failed both"; exit 1; }; } || { say "HALT: $1 boot failed"; exit 1; }; }
   r=$(replay0); [[ "$r" == "$local_lb" ]] || { say "HALT-BY-REPLAY during $1 boot ($local_lb->$r)"; ./stop.sh >/dev/null 2>&1; exit 2; }
   probe "$1-probe20"
   r=$(replay0); [[ "$r" == "$local_lb" ]] || { say "HALT-BY-REPLAY during $1 probe ($local_lb->$r)"; ./stop.sh >/dev/null 2>&1; exit 2; }
@@ -56,7 +56,7 @@ scripts/power-phase.sh set 300 >>"$LOG" 2>&1 || { say "FATAL: could not set 300W
 for spec in "tuned565-panel tuned565-panel 2" "tuned565-vanilla tuned565-vanilla 2" "k6v req6-uniform6 2" "k425 73a050c27b8c488c65acd6d1c74e45ff02be5fab 2"; do
   set -- $spec
   say "ladder boot $1"
-  boot "$SNAP/$2" "$3" || { say "HALT: $1 ladder boot failed"; exit 1; }
+  boot "$2" "$3" || { say "HALT: $1 ladder boot failed"; exit 1; }
   local_lb=$(replay0)
   ladder "$1"
   r=$(replay0); [[ "$r" == "$local_lb" ]] || { say "HALT-BY-REPLAY during $1 ladder window ($local_lb->$r)"; exit 2; }
