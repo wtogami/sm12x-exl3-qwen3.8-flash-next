@@ -203,6 +203,14 @@ qwen38_next_pow2() {
 # just under the highest share that has actually served.
 #
 # Demand is read from the checkpoint so a geometry change needs no edit here.
+qwen38_pinned_holders_present() {
+  # 0 = some live process/container plausibly holds pinned/mlocked memory.
+  docker ps -q 2>/dev/null | grep -q . && return 0
+  local sum
+  sum=$(awk '/^SummLocked:/{s+=$2} END{print s+0}' /proc/[0-9]*/status 2>/dev/null)
+  (( ${sum:-0} > 8388608 ))   # >8 GiB locked by live processes
+}
+
 qwen38_ple_memcheck() {
   local config="$1" bytes="$2" memtotal_kib="$3" memavail_kib="$4" tp="${5:-1}"
   local dims ngram_rows ple_dim vocab hidden table_kib embed_kib total_kib
@@ -283,9 +291,31 @@ print(int(text["ngram_vocab_size_base"]), int(text["ple_embed_dim"]),
     # momentarily below it -- another engine holding its pinned table, or caches
     # not yet reclaimed after a restart. Refusing here blocked a profile that was
     # serving at that moment, so the hard gate stays with installed RAM.
-    echo "WARNING: this profile pins ${demand_gib} GiB but the host reports only $(
-      qwen38_gib "$memavail_kib") GiB available. Free memory or drop another" >&2
-    echo "  serving container before starting, or this will fail when the table is pinned." >&2
+    if qwen38_pinned_holders_present; then
+      echo "WARNING: this profile pins ${demand_gib} GiB but the host reports only $(
+        qwen38_gib "$memavail_kib") GiB available, and a live process/container holds" >&2
+      echo "  locked memory. Start will likely fail when the table is pinned; drop the" >&2
+      echo "  other engine first." >&2
+    else
+      # No holder: the shortfall is teardown lag (kernel still releasing a dead
+      # engine's cudaHostAlloc pages) or reclaimable cache. Wait it out before
+      # proceeding, so container launches never start inside the unpin window.
+      local pin_wait="${PIN_WAIT:-180}" waited=0 now_kib=$memavail_kib
+      echo "NOTE: pinned-RAM demand ${demand_gib} GiB exceeds MemAvailable $(
+        qwen38_gib "$memavail_kib") GiB with no live holder; waiting up to ${pin_wait}s" >&2
+      echo "  for post-teardown unpin to settle (PIN_WAIT=0 disables)..." >&2
+      while (( waited < pin_wait )) && (( demand_kib > now_kib )); do
+        sleep 5; waited=$(( waited + 5 ))
+        now_kib=$(awk '/^MemAvailable:/{print $2}' /proc/meminfo)
+      done
+      if (( demand_kib > now_kib )); then
+        echo "WARNING: still only $(qwen38_gib "$now_kib") GiB available after ${waited}s" >&2
+        echo "  (Mlocked=$(awk '/^Mlocked:/{print $2/1048576}' /proc/meminfo) GiB). Starting anyway;" >&2
+        echo "  expect pin failure unless memory frees." >&2
+      else
+        echo "NOTE: headroom recovered to $(qwen38_gib "$now_kib") GiB after ${waited}s; proceeding." >&2
+      fi
+    fi
   fi
   if (( demand_kib > warn_kib )); then
     echo "WARNING: this profile pins ${demand_gib} GiB, ${pct}% of the ${mem_gib} GiB installed." >&2

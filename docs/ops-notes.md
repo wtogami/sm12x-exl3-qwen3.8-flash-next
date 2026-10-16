@@ -16,3 +16,13 @@ Right recipes:
 
 No code change: the refusal is the feature. The trap is only in combining a
 manual stop + immediate start + pipe-masked exit codes.
+
+## Pinned-RAM unpin window between engine swaps (2026-10-15)
+TP2 K-series engines pin ~130 GiB (round2). After `stop.sh`, the kernel releases
+those pages asynchronously; MemAvailable can stay low for minutes. A `start.sh`
+(or gate container launch) issued inside that window can fail with no useful
+error (observed: K6-v2 lane, 19:13). start.sh now distinguishes the two causes:
+holder present -> legacy warn (never blocks a serving host); no holder -> waits
+up to `PIN_WAIT` seconds (default 180) for headroom to recover before proceeding.
+``PIN_WAIT=0`` restores old behavior. Watch `engine-logs/` snapshots (60 s) for
+the next swap anomaly.
