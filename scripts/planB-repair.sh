@@ -12,7 +12,7 @@ for i in $(seq 1 600); do
 done
 podman logs "$NAME" 2>&1 | grep -qa "Finished compiling" || { echo "FAIL: no completion marker in 5h"; exit 1; }
 echo "[$(date +%m-%d_%H:%M)] compiled; repair chain"
-podman run --rm -v "$CACHE:/hf:z" -v /nvme1:/nvme1:z -v "$R/scripts:/s:z" --entrypoint sh localhost/qwen38-rtx:local -c "
+podman run --rm --device nvidia.com/gpu=1 -v "$CACHE:/hf:z" -v /nvme1:/nvme1:z   # gpu=1: mtp-repair needs cuda; grant K3V card (free at repair time) so we never collide with a TP2 engine on gpu0 -v "$R/scripts:/s:z" --entrypoint sh localhost/qwen38-rtx:local -c "
 export PYTHONPATH=/hf/exv3-env-161:/hf/exv3-runtime:/hf/pip-extras
 export LD_LIBRARY_PATH=/usr/local/lib/python3.12/dist-packages/torch/lib:\$LD_LIBRARY_PATH
 set -e

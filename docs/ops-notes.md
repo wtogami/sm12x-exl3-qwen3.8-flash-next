@@ -30,3 +30,7 @@ the next swap anomaly.
   must wrap with `trap 'scripts/power-phase.sh set-restore...' EXIT INT TERM` so an
   aborted ladder never strands caps at 300W; guard re-reads /tmp/power-cap each cycle
   and would pull a higher limit back, but the trap restores immediately.
+- Resume is parameter-locked: `convert -r` rejects any `in_dir` change via the header of
+  in-flight intermediates (`out/ngram_embedding.safetensors`: "existing header does not match").
+  To retarget source path mid-build: delete the stale intermediate, then resume (module ckpt is
+  path-free). Never edit a running watcher script — kill, patch, rearm (bash reads by byte offset).
