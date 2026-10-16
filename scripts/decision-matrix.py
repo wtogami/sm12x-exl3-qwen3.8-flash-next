@@ -10,7 +10,7 @@ CARDS = [  # label, receipts dir, fidelity file (None = use card-specific)
     ("K5",  "benchmarks/req5-quality-v2", "benchmarks/fidelity/k5-rmse.jsonl"),
     ("K6",  "benchmarks/req6b-quality-v2", "benchmarks/fidelity/req6b-rmse.jsonl"),
     ("K6V", "benchmarks/req6-quality-v2", "benchmarks/fidelity/req6-rmse.jsonl"),
-    ("base","benchmarks/base-quality-v2", None),
+    ("4.25bpw","benchmarks/base-quality-v2", None),
 ]
 def load(d, p):
     f = pathlib.Path(d)/p
