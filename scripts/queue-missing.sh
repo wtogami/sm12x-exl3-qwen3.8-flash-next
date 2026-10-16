@@ -41,7 +41,9 @@ ladder(){ # tag
   say "ladder done: $1"; }
 
 say "== PHASE 1: x20 defect probes at 450W"
+if [[ -f benchmarks/k6v-probe20-probe-biomed/biomed20.jsonl && -f benchmarks/k425-probe20-probe-biomed/biomed20.jsonl ]]; then say "phase 1 already complete; skipping"; SKIP1=1; else SKIP1=0; fi
 for spec in "k6v req6-uniform6 2" "k425 73a050c27b8c488c65acd6d1c74e45ff02be5fab 2"; do
+  [[ $SKIP1 == 1 ]] && break
   set -- $spec; local_lb=$(replay0)
   boot "$2" "$3" || { [[ $3 == 2 ]] && { say "$1 TP2 boot failed, TP1 fallback"; boot "$2" 1 || { say "HALT: $1 boot failed both"; exit 1; }; } || { say "HALT: $1 boot failed"; exit 1; }; }
   r=$(replay0); [[ "$r" == "$local_lb" ]] || { say "HALT-BY-REPLAY during $1 boot ($local_lb->$r)"; ./stop.sh >/dev/null 2>&1; exit 2; }

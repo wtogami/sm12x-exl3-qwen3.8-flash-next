@@ -9,7 +9,7 @@ R=/home/opencode/sm12x-exl3-qwen3.8-flash-next
 MODE=${1:?usage: set <watts>|restore}
 if [[ $MODE == restore ]]; then W=${POWER_RESTORE_W:-450}; else W=${2:?watts}; fi
 echo "$W" > /tmp/power-cap                    # guard enforces limit <= marker
-for i in 0 1; do nvidia-smi -i $i -pl "$W" >/dev/null; done
+for i in 0 1; do sudo -n nvidia-smi -i $i -pl "$W" >/dev/null 2>&1 || nvidia-smi -i $i -pl "$W" >/dev/null; done
 sleep 1
 got=$(nvidia-smi --query-gpu=power.limit --format=csv,noheader,nounits | tr '\n' ' ')
 echo "[$(date +%m-%d_%H:%M)] power-phase $MODE -> ${W}W (marker=$(cat /tmp/power-cap), limits: $got)" \
