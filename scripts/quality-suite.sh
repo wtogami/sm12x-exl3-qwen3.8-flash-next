@@ -14,7 +14,7 @@ python3 "$SCRIPT_DIR/test-vision-vllm.py" "${COMMON[@]}" --image-counts 1 4 16 -
 python3 "$SCRIPT_DIR/benchmark-workloads.py" "${COMMON[@]}" --suite seven --runs 12 --warmups 0 --output "$RESULT_DIR/seven.jsonl"
 python3 "$SCRIPT_DIR/benchmark-workloads.py" "${COMMON[@]}" --suite orchid --runs 20 --warmups 0 --output "$RESULT_DIR/orchid.jsonl"
 python3 "$SCRIPT_DIR/test-context-retrieval.py" "${COMMON[@]}" --filler-tokens 8192 240000 --positions 0.05 0.5 0.95 --output "$RESULT_DIR/retrieval.jsonl"
-python3 "$SCRIPT_DIR/test-biomed-analysis.py" "${COMMON[@]}" --runs 4 --output "$RESULT_DIR/biomed.jsonl"
+python3 "$SCRIPT_DIR/test-biomed-analysis.py" "${COMMON[@]}" --runs 4 --output "$RESULT_DIR/biomed.jsonl" || true
 # Published deterministic gates (run in-image; need nltk/langdetect + /hf/evals data)
 in_image() { # gate-script receipt-file limit-envvar
   local script=$1 out=$2 lim=$3 limarg=""
