@@ -43,3 +43,7 @@ the next swap anomaly.
   splits), NOT disk contention: K3V-free control window P3 (01:34-01:42) measured 172 s/layer
   == loaded phases P2/P4/P5 (153-171). Earlier "contention tax" attribution was wrong.
   /nvme1 retarget stays justified for dual-converter scenarios, not for measure speed.
+- Watcher budgets must exceed WORST-CASE job time, not expected: panel repair watcher's 5h
+  budget (600x30s) expired at 09:09 while the 6-bit recipe convert compiled at 11:16 -> silent
+  gap, idle GPUs, manual repair. K5V-on-gg uses 960x30s (8h) vs ~7h job: fine, but recheck
+  budgets whenever job class changes (bitrate/disk/cap).
