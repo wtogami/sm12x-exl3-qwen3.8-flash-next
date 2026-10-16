@@ -18,9 +18,12 @@ for line in open(a.cal_panel):
     d = json.loads(line)
     if isinstance(d.get("prompt"), str): cal_texts.append(d["prompt"])
     for m in (d.get("messages") or []): cal_texts.append(m.get("content") or "")
-for fn, sep in [("wiki.utf8", "</doc>\n"), ("tiny.utf8", "<|endoftext|>")]:
+for fn in ("wiki.utf8","tiny.utf8","c4.utf8","code.utf8","multilingual.utf8","technical.utf8"):
+    sep = None
     p = f"{a.cal_vendor_dir}/{fn}"
-    try: cal_texts += open(p, encoding="utf8").read().split(sep)
+    try:
+        txt = open(p, encoding="utf8").read()
+        cal_texts += txt.split("</doc>\n") if sep == "</doc>\n" else ([txt] if sep is None and fn in ("code.utf8","technical.utf8") else txt.split("\n"))
     except FileNotFoundError: print("WARN missing", p)
 print("cal text units:", len(cal_texts))
 
