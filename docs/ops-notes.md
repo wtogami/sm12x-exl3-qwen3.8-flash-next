@@ -26,3 +26,7 @@ holder present -> legacy warn (never blocks a serving host); no holder -> waits
 up to `PIN_WAIT` seconds (default 180) for headroom to recover before proceeding.
 ``PIN_WAIT=0`` restores old behavior. Watch `engine-logs/` snapshots (60 s) for
 the next swap anomaly.
+- Power phases: `scripts/power-phase.sh set 300` / `restore` (450 default). Perf ladder
+  must wrap with `trap 'scripts/power-phase.sh set-restore...' EXIT INT TERM` so an
+  aborted ladder never strands caps at 300W; guard re-reads /tmp/power-cap each cycle
+  and would pull a higher limit back, but the trap restores immediately.
