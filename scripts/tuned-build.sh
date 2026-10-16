@@ -34,7 +34,9 @@ assert counts == {3}, counts
 print(f"measurement OK: base={m['base']['dir']} bpw={m['base']['bpw']} alts={alts} groups={len(m['groups'])} base_kld={m['base_kld']:.5f}")
 PY
 echo "phase2: optimize to 5.65 (dirs inherited from measurement - no -i)..."
-docker run --rm --device nvidia.com/gpu=0 --device nvidia.com/gpu=1 -v "$CACHE:/hf:z" -v "$R:/s:z" --entrypoint sh localhost/qwen38-rtx:local \
+# GPU0 ONLY: K3V convert may still hold GPU1 (Plan B overlap added post-writing);
+# optimize has no -d flag and defaults to cuda:0 -> never grant it more than it uses.
+docker run --rm --device nvidia.com/gpu=0 -v "$CACHE:/hf:z" -v "$R:/s:z" --entrypoint sh localhost/qwen38-rtx:local \
   -c "$ENVP python3 -m exllamav3.conversion.optimize_model -m /hf/tuned-build/measurement.json -b 5.65 -o /hf/tuned-build/out"
 echo "phase3: verify assembled card (structure + rate histogram from ledger)..."
 docker run --rm -v "$CACHE:/hf:z" --entrypoint python3 localhost/qwen38-rtx:local -c '
