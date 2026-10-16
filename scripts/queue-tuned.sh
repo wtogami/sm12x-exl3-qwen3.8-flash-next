@@ -8,6 +8,12 @@ R=/home/opencode/sm12x-exl3-qwen3.8-flash-next
 CACHE="${HF_CACHE:-$HOME/.cache/huggingface}"
 LOG="$CACHE/tuned-build/build.log"; say(){ echo "[$(date +%m-%d_%H:%M)] QT: $*" >>"$LOG"; }
 cd "$R"
+# single-instance guard (triple-race 14:18 stalled all lanes)
+if [[ -f /tmp/qt.pid ]] && kill -0 "$(cat /tmp/qt.pid)" 2>/dev/null; then
+  echo "[$(date +%m-%d_%H:%M)] QT: already running ($(cat /tmp/qt.pid)); refusing second instance" >> "$HOME/.cache/huggingface/tuned-build/build.log"
+  exit 1
+fi
+echo $$ > /tmp/qt.pid
 replay0(){ timeout 20 nvidia-smi -q 2>/dev/null | grep -a "Replays Since Reset" | head -1 | awk -F: '{gsub(/ /,"",$2); print $2}'; }
 BASE=$(replay0); say "queue start; replay baseline GPU0=$BASE"
 # Owner ruling 2026-10-16 08:30: a single replay during conversion DMA = noise, proceed.
