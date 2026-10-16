@@ -39,3 +39,7 @@ the next swap anomaly.
   exec); (c) LIVE bash parked mid-file = FROZEN — kill watcher, edit, re-arm. planB-repair.sh
   is in class (c) from 01:42 until REPAIR-OK; tuned-build.sh enters class (c) the moment the
   measure watchdog triggers it (~03:15).
+- MEASURE PACE IS LAYER-INTRINSIC (~3x cost past layer ~13: attention/QSA + level-2 group
+  splits), NOT disk contention: K3V-free control window P3 (01:34-01:42) measured 172 s/layer
+  == loaded phases P2/P4/P5 (153-171). Earlier "contention tax" attribution was wrong.
+  /nvme1 retarget stays justified for dual-converter scenarios, not for measure speed.
