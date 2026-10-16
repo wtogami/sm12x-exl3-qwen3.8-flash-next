@@ -35,7 +35,8 @@ for w in range(0, NL - 4):
 prof = best[1]
 avg = avg_of(prof)
 
-out = dict(tensors={k: (prof[layer_of(k)] if k in experts else v) for k, v in tensors.items()},
+out = dict(target_bpw=round(TARGET,4), achieved_bpw=round(avg,4),
+           tensors={k: (prof[layer_of(k)] if k in experts else v) for k, v in tensors.items()},
            head_bits=16)
 with open("/nvme1/sc/recipe-tuned565.yaml", "w") as f:
     f.write(f"# heuristic tuned recipe (plan A): LM-expert avg {avg:.3f} bpw; dense 16; ends-first\n")
