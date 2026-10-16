@@ -25,14 +25,18 @@ while true; do
   if ready && (( uavg >= 70 )) && (( stable == 1 )); then
     r1=$(replay); d=$(( r1 - r0 ))
     if (( d > 0 )); then
+      ADJUST=$(cat /tmp/power-adjust 2>/dev/null || echo on)
+      if [[ "$ADJUST" == off ]]; then log "inference window u=${uavg}% replay +${d} -> ALERT only (adjust off; cap left at operator-set $(cat /tmp/power-cap 2>/dev/null || echo '?')W)"; else
       CAP=$(( CAP - 10 )); (( CAP < 300 )) && CAP=300
       echo "$CAP" > /tmp/power-cap; sudo -n nvidia-smi -pl "$CAP" -i 0 >/dev/null 2>&1; sudo -n nvidia-smi -pl "$CAP" -i 1 >/dev/null 2>&1
-      log "inference window u=${uavg}% replay +${d} -> cap ${CAP}W APPLIED (cooldown)"
+      log "inference window u=${uavg}% replay +${d} -> cap ${CAP}W APPLIED (cooldown)"; fi
       sleep 300
     else
+      ADJUST=$(cat /tmp/power-adjust 2>/dev/null || echo on)
+      if [[ "$ADJUST" == off ]]; then log "inference window u=${uavg}% replay +0 -> clean (adjust off)"; else
       CAP=$(( CAP + 10 )); (( CAP > 450 )) && CAP=450
       echo "$CAP" > /tmp/power-cap; sudo -n nvidia-smi -pl "$CAP" -i 0 >/dev/null 2>&1; sudo -n nvidia-smi -pl "$CAP" -i 1 >/dev/null 2>&1
-      log "inference window u=${uavg}% replay +0 -> cap ${CAP}W APPLIED"
+      log "inference window u=${uavg}% replay +0 -> cap ${CAP}W APPLIED"; fi
     fi
   else
     log "window skipped (u=${uavg}% stable=${stable} ready=$(ready && echo y || echo n)) cap stays ${CAP}W"
