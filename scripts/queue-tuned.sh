@@ -14,6 +14,8 @@ if [[ -f /tmp/qt.pid ]] && kill -0 "$(cat /tmp/qt.pid)" 2>/dev/null; then
   exit 1
 fi
 echo $$ > /tmp/qt.pid
+# cross-tier EP plan fix (see patches/port-exl3-tier-key.py)
+export EXTRA_MOUNTS="$HOME/.cache/huggingface/engine-overlay/exl3.py:/usr/local/lib/python3.12/dist-packages/vllm/model_executor/layers/quantization/exl3.py:ro,z"
 replay0(){ timeout 20 nvidia-smi -q 2>/dev/null | grep -a "Replays Since Reset" | head -1 | awk -F: '{gsub(/ /,"",$2); print $2}'; }
 BASE=$(replay0); say "queue start; replay baseline GPU0=$BASE"
 # Owner ruling 2026-10-16 08:30: a single replay during conversion DMA = noise, proceed.

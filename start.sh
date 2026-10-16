@@ -24,6 +24,8 @@ if [[ "$PLATFORM_KIND" == spark ]]; then
   }
 fi
 HF_CACHE="${HF_CACHE:-$HOME/.cache/huggingface}"
+EXTRA_MOUNT_ARGS=()
+if [[ -n "${EXTRA_MOUNTS:-}" ]]; then read -ra EXTRA_MOUNT_ARGS <<< "$EXTRA_MOUNTS"; fi
 RUNTIME_CACHE="${RUNTIME_CACHE:-$HOME/.cache/qwen38-rtx/${QUANT:-exl3}}"
 mkdir -p "$RUNTIME_CACHE"
 # MODEL_SNAPSHOT names an alternative snapshot directory under this repo's
@@ -236,6 +238,7 @@ docker run -d --name "$container_name" \
   -e QWEN38_B12X_NVFP4="${B12X_NVFP4:-0}" \
   -v "$RUNTIME_CACHE:/root/.cache:z" \
   -v "$HF_CACHE:/root/.cache/huggingface:ro,z" \
+  "${EXTRA_MOUNT_ARGS[@]}" \
   "${IMAGE:-$DEFAULT_IMAGE}" "$MODEL_PATH" \
   --served-model-name "qwen38-${QUANT:-exl3}" --port "${PORT:-8001}" \
   --tensor-parallel-size "$TP_SIZE" --distributed-executor-backend mp \
