@@ -43,6 +43,7 @@ run_lane(){ # snapshot_dir result_dir
     sleep 10; i=$((i+1)); [[ $i -gt 60 ]] && { say "STOP: $1 engine not ready in 10min"; return 1; }
   done
   say "$1 engine ready"
+  LB=$(replay0); say "lane baseline GPU0 replays=$LB (engine window opens)"
   MODEL=qwen38-exl3 RESULT_DIR="benchmarks/$2" BASE_URL=http://127.0.0.1:8001 bash scripts/quality-suite.sh >>"$LOG" 2>&1 \
     && say "SUITE OK: $2" || say "WARN suite nonzero: $2 (read receipts)"
   rm -rf "benchmarks/$2-probe-biomed"; mkdir -p "benchmarks/$2-probe-biomed"
@@ -51,8 +52,8 @@ run_lane(){ # snapshot_dir result_dir
     >>"$LOG" 2>&1 || true
   say "biomed20 done: $2"
   local r; r=$(replay0)
-  say "post-lane GPU0 replays=$r (baseline $BASE)"
-  [[ "$r" == "$BASE" ]] || { say "HALT-BY-REPLAY: new increase ($BASE -> $r); queue stopping, no 300W phase"; ./stop.sh >/dev/null 2>&1; exit 2; }
+  say "post-lane GPU0 replays=$r (lane baseline $LB; global $BASE)"
+  [[ "$r" == "$LB" ]] || { say "HALT-BY-REPLAY: increase INSIDE inference window ($LB -> $r); queue stopping"; ./stop.sh >/dev/null 2>&1; exit 2; }
 }
 
 run_lane tuned565-panel   tuned565-panel-quality-v2   || { say "queue aborted lane1"; exit 3; }
