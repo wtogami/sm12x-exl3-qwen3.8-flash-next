@@ -10,7 +10,9 @@ LOG="$CACHE/tuned-build/build.log"; say(){ echo "[$(date +%m-%d_%H:%M)] QT: $*" 
 cd "$R"
 replay0(){ timeout 20 nvidia-smi -q 2>/dev/null | grep -a "Replays Since Reset" | head -1 | awk -F: '{gsub(/ /,"",$2); print $2}'; }
 BASE=$(replay0); say "queue start; replay baseline GPU0=$BASE"
-[[ "$BASE" == "0" ]] || { say "STOP: nonzero baseline — owner rule"; exit 1; }
+# Owner ruling 2026-10-16 08:30: a single replay during conversion DMA = noise, proceed.
+# Semantics now: halt only on NEW increases beyond this captured baseline during inference.
+[[ "$BASE" =~ ^[0-9]+$ ]] || { say "STOP: unreadable replay baseline"; exit 1; }
 
 # 1) wait for both REPAIR-OK sentinels (max ~10 h)
 for i in $(seq 1 1200); do
@@ -43,7 +45,7 @@ run_lane(){ # snapshot_dir result_dir
   say "biomed20 done: $2"
   local r; r=$(replay0)
   say "post-lane GPU0 replays=$r (baseline $BASE)"
-  [[ "$r" == "0" ]] || { say "HALT-BY-REPLAY: increase detected ($BASE -> $r); queue stopping, no 300W phase"; ./stop.sh >/dev/null 2>&1; exit 2; }
+  [[ "$r" == "$BASE" ]] || { say "HALT-BY-REPLAY: new increase ($BASE -> $r); queue stopping, no 300W phase"; ./stop.sh >/dev/null 2>&1; exit 2; }
 }
 
 run_lane tuned565-panel   tuned565-panel-quality-v2   || { say "queue aborted lane1"; exit 3; }
