@@ -47,3 +47,4 @@ the next swap anomaly.
   budget (600x30s) expired at 09:09 while the 6-bit recipe convert compiled at 11:16 -> silent
   gap, idle GPUs, manual repair. K5V-on-gg uses 960x30s (8h) vs ~7h job: fine, but recheck
   budgets whenever job class changes (bitrate/disk/cap).
+- Power limits: plain nvidia-smi -pl can only RAISE to the operator floor (450); lowering to 300 needs sudo, which is available passwordless (sudo -n nvidia-smi). power-phase.sh now uses it. Never declare a power wall without trying sudo -n.
