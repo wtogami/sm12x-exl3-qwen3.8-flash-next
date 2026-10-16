@@ -34,3 +34,8 @@ the next swap anomaly.
   in-flight intermediates (`out/ngram_embedding.safetensors`: "existing header does not match").
   To retarget source path mid-build: delete the stale intermediate, then resume (module ckpt is
   path-free). Never edit a running watcher script — kill, patch, rearm (bash reads by byte offset).
+- Script-edit hazard classes (bash reads by byte offset): (a) running container = immune
+  (cmdline frozen at create); (b) watchdog not yet triggered = safe (opens file fresh at
+  exec); (c) LIVE bash parked mid-file = FROZEN — kill watcher, edit, re-arm. planB-repair.sh
+  is in class (c) from 01:42 until REPAIR-OK; tuned-build.sh enters class (c) the moment the
+  measure watchdog triggers it (~03:15).
