@@ -20,7 +20,14 @@ for i in $(seq 1 1200); do
   sleep 30
 done
 [[ -f "$CACHE/tuned565-panel-build/REPAIR-OK" && -f "$CACHE/tuned565-vanilla-build/REPAIR-OK" ]] || { say "STOP: tuned cards not REPAIR-OK within budget — investigate before running"; exit 1; }
-say "both tuned cards REPAIR-OK; starting qualification"
+say "both tuned cards REPAIR-OK; qualification gate"
+# wait for GPU lanes to be free of converters (K4V etc) so TP2 @0.88 has full VRAM
+for i in $(seq 1 480); do
+  BUSY=$(podman ps --format '{{.Names}}' | grep -ac "convert" || true)
+  [[ "$BUSY" == "0" ]] && break; sleep 30
+done
+[[ "$(podman ps --format '{{.Names}}' | grep -ac convert || true)" == "0" ]] || { say "STOP: converters still running after 4h"; exit 1; }
+say "GPUs quiet; starting qualification"
 
 # 2) snapshot links
 SNAP="$CACHE/hub/models--wrldsuksgo2mars--Qwen3.8-Flash-Next-EXL3-K4.25-v1/snapshots"
