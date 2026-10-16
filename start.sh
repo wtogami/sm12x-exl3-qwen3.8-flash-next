@@ -25,7 +25,7 @@ if [[ "$PLATFORM_KIND" == spark ]]; then
 fi
 HF_CACHE="${HF_CACHE:-$HOME/.cache/huggingface}"
 EXTRA_MOUNT_ARGS=()
-if [[ -n "${EXTRA_MOUNTS:-}" ]]; then read -ra EXTRA_MOUNT_ARGS <<< "$EXTRA_MOUNTS"; fi
+if [[ -n "${EXTRA_MOUNTS:-}" ]]; then EXTRA_MOUNT_ARGS=(-v "${EXTRA_MOUNTS}"); fi
 RUNTIME_CACHE="${RUNTIME_CACHE:-$HOME/.cache/qwen38-rtx/${QUANT:-exl3}}"
 mkdir -p "$RUNTIME_CACHE"
 # MODEL_SNAPSHOT names an alternative snapshot directory under this repo's
