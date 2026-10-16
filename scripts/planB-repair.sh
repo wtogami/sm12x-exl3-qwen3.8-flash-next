@@ -4,7 +4,7 @@ set -u
 RATE=${1:?}; DIR="req${RATE}v-build"; NAME="req${RATE}v-convert"
 CACHE="${HF_CACHE:-$HOME/.cache/huggingface}"
 R=/home/opencode/sm12x-exl3-qwen3.8-flash-next
-SRC=/hf/hub/models--Qwen--Qwen3.8-Flash-Next/snapshots/de4b8e4d43b917e7706784d8bb445c9af86a3540
+SRC=/nvme1/src/qwen38-bf16   # ngram re-injection reads source: use isolated disk
 echo "[$(date +%m-%d_%H:%M)] repair watcher start for $NAME"
 for i in $(seq 1 600); do
   podman logs "$NAME" 2>&1 | grep -qa "Finished compiling" && break
@@ -12,7 +12,7 @@ for i in $(seq 1 600); do
 done
 podman logs "$NAME" 2>&1 | grep -qa "Finished compiling" || { echo "FAIL: no completion marker in 5h"; exit 1; }
 echo "[$(date +%m-%d_%H:%M)] compiled; repair chain"
-podman run --rm -v "$CACHE:/hf:z" -v "$R/scripts:/s:z" --entrypoint sh localhost/qwen38-rtx:local -c "
+podman run --rm -v "$CACHE:/hf:z" -v /nvme1:/nvme1:z -v "$R/scripts:/s:z" --entrypoint sh localhost/qwen38-rtx:local -c "
 export PYTHONPATH=/hf/exv3-env-161:/hf/exv3-runtime:/hf/pip-extras
 export LD_LIBRARY_PATH=/usr/local/lib/python3.12/dist-packages/torch/lib:\$LD_LIBRARY_PATH
 set -e

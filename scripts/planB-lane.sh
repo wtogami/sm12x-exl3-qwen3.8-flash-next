@@ -8,14 +8,15 @@ R=/home/opencode/sm12x-exl3-qwen3.8-flash-next
 CACHE="${HF_CACHE:-$HOME/.cache/huggingface}"
 RATE=${1:?usage: planB-lane.sh 3|4|5}
 DIR="req${RATE}v-build"; NAME="req${RATE}v-convert"
-SRC=/hf/hub/models--Qwen--Qwen3.8-Flash-Next/snapshots/de4b8e4d43b917e7706784d8bb445c9af86a3540
+SRC=/nvme1/src/qwen38-bf16   # source copy on second NVMe (I/O isolation, 2026-10-16)
 LOG="$CACHE/planB-$DIR.log"; say(){ echo "[$(date +%m-%d_%H:%M)] $*" >>"$LOG"; }
 [[ -f "$CACHE/$DIR/REPAIR-OK" ]] && { echo "already done"; exit 0; }
+[[ -d /nvme1/src/qwen38-bf16 ]] || { echo "FATAL: /nvme1 source copy missing" >&2; exit 1; }
 mkdir -p "$CACHE/$DIR/out" "$CACHE/$DIR/work"
 RESUME=(); [[ -f "$CACHE/$DIR/work/ckpt/job.json" ]] && RESUME=(-r)
 podman rm -f "$NAME" 2>/dev/null
 podman run -d --name "$NAME" --device nvidia.com/gpu=1 \
-  -v "$CACHE:/hf:z" --entrypoint sh localhost/qwen38-rtx:local -c "
+  -v "$CACHE:/hf:z" -v /nvme1:/nvme1:z --entrypoint sh localhost/qwen38-rtx:local -c "
 export PYTHONPATH=/hf/exv3-env-161:/hf/exv3-runtime:/hf/pip-extras
 export LD_LIBRARY_PATH=/usr/local/lib/python3.12/dist-packages/torch/lib:\$LD_LIBRARY_PATH
 exec python3 -m exllamav3.conversion.convert_model \
