@@ -1,0 +1,149 @@
+{"task_id": "BigCodeBench/100", "record": "measurement", "status": "fail", "detail": "FAILED (failures=1)", "gen_seconds": 1.66}
+{"task_id": "BigCodeBench/1003", "record": "measurement", "status": "fail", "detail": "FAILED (errors=1)", "gen_seconds": 1.51}
+{"task_id": "BigCodeBench/1004", "record": "measurement", "status": "fail", "detail": "FAILED (errors=4)", "gen_seconds": 1.02}
+{"task_id": "BigCodeBench/1006", "record": "measurement", "status": "fail", "detail": "FAILED (failures=1)", "gen_seconds": 1.33}
+{"task_id": "BigCodeBench/1008", "record": "measurement", "status": "pass", "detail": "", "gen_seconds": 0.75}
+{"task_id": "BigCodeBench/101", "record": "measurement", "status": "fail", "detail": "FAILED (errors=4)", "gen_seconds": 2.98}
+{"task_id": "BigCodeBench/1012", "record": "measurement", "status": "fail", "detail": "FAILED (failures=3)", "gen_seconds": 1.63}
+{"task_id": "BigCodeBench/1013", "record": "measurement", "status": "pass", "detail": "", "gen_seconds": 0.8}
+{"task_id": "BigCodeBench/1015", "record": "measurement", "status": "fail", "detail": "FAILED (errors=4)", "gen_seconds": 1.27}
+{"task_id": "BigCodeBench/1019", "record": "measurement", "status": "fail", "detail": "FAILED (failures=1)", "gen_seconds": 1.91}
+{"task_id": "BigCodeBench/1020", "record": "measurement", "status": "pass", "detail": "", "gen_seconds": 0.77}
+{"task_id": "BigCodeBench/1022", "record": "measurement", "status": "pass", "detail": "", "gen_seconds": 1.2}
+{"task_id": "BigCodeBench/1039", "record": "measurement", "status": "fail", "detail": "FAILED (failures=3)", "gen_seconds": 1.67}
+{"task_id": "BigCodeBench/1040", "record": "measurement", "status": "timeout", "detail": "60s", "gen_seconds": 3.24}
+{"task_id": "BigCodeBench/1042", "record": "measurement", "status": "fail", "detail": "FAILED (errors=5)", "gen_seconds": 1.22}
+{"task_id": "BigCodeBench/1053", "record": "measurement", "status": "fail", "detail": "FAILED (errors=4)", "gen_seconds": 2.07}
+{"task_id": "BigCodeBench/1057", "record": "measurement", "status": "fail", "detail": "FAILED (failures=3)", "gen_seconds": 1.52}
+{"task_id": "BigCodeBench/1077", "record": "measurement", "status": "fail", "detail": "FAILED (errors=5)", "gen_seconds": 2.13}
+{"task_id": "BigCodeBench/108", "record": "measurement", "status": "fail", "detail": "FAILED (failures=1, errors=4)", "gen_seconds": 2.38}
+{"task_id": "BigCodeBench/1085", "record": "measurement", "status": "pass", "detail": "", "gen_seconds": 0.96}
+{"task_id": "BigCodeBench/1124", "record": "measurement", "status": "pass", "detail": "", "gen_seconds": 1.22}
+{"task_id": "BigCodeBench/1129", "record": "measurement", "status": "fail", "detail": "FAILED (errors=4)", "gen_seconds": 1.35}
+{"task_id": "BigCodeBench/1137", "record": "measurement", "status": "fail", "detail": "FAILED (errors=5)", "gen_seconds": 2.05}
+{"task_id": "BigCodeBench/120", "record": "measurement", "status": "fail", "detail": "FAILED (failures=2)", "gen_seconds": 1.13}
+{"task_id": "BigCodeBench/123", "record": "measurement", "status": "fail", "detail": "FAILED (failures=1)", "gen_seconds": 1.98}
+{"task_id": "BigCodeBench/124", "record": "measurement", "status": "fail", "detail": "FAILED (failures=2)", "gen_seconds": 1.25}
+{"task_id": "BigCodeBench/129", "record": "measurement", "status": "pass", "detail": "", "gen_seconds": 2.25}
+{"task_id": "BigCodeBench/13", "record": "measurement", "status": "pass", "detail": "", "gen_seconds": 2.83}
+{"task_id": "BigCodeBench/139", "record": "measurement", "status": "pass", "detail": "", "gen_seconds": 0.67}
+{"task_id": "BigCodeBench/147", "record": "measurement", "status": "fail", "detail": "FAILED (failures=2)", "gen_seconds": 1.1}
+{"task_id": "BigCodeBench/15", "record": "measurement", "status": "fail", "detail": "FAILED (failures=1)", "gen_seconds": 1.71}
+{"task_id": "BigCodeBench/161", "record": "measurement", "status": "fail", "detail": "FAILED (failures=1)", "gen_seconds": 1.71}
+{"task_id": "BigCodeBench/162", "record": "measurement", "status": "pass", "detail": "", "gen_seconds": 1.0}
+{"task_id": "BigCodeBench/17", "record": "measurement", "status": "fail", "detail": "FAILED (failures=3)", "gen_seconds": 1.13}
+{"task_id": "BigCodeBench/177", "record": "measurement", "status": "fail", "detail": "FAILED (failures=2, errors=1)", "gen_seconds": 1.34}
+{"task_id": "BigCodeBench/184", "record": "measurement", "status": "pass", "detail": "", "gen_seconds": 2.1}
+{"task_id": "BigCodeBench/187", "record": "measurement", "status": "fail", "detail": "FAILED (failures=1)", "gen_seconds": 1.27}
+{"task_id": "BigCodeBench/19", "record": "measurement", "status": "pass", "detail": "", "gen_seconds": 0.71}
+{"task_id": "BigCodeBench/199", "record": "measurement", "status": "pass", "detail": "", "gen_seconds": 2.18}
+{"task_id": "BigCodeBench/208", "record": "measurement", "status": "fail", "detail": "FAILED (failures=1, errors=1)", "gen_seconds": 1.79}
+{"task_id": "BigCodeBench/211", "record": "measurement", "status": "fail", "detail": "FAILED (errors=5)", "gen_seconds": 0.83}
+{"task_id": "BigCodeBench/214", "record": "measurement", "status": "fail", "detail": "FAILED (failures=1)", "gen_seconds": 0.74}
+{"task_id": "BigCodeBench/227", "record": "measurement", "status": "env", "detail": "ModuleNotFoundError: No module named 'librosa'", "gen_seconds": 3.79}
+{"task_id": "BigCodeBench/239", "record": "measurement", "status": "fail", "detail": "FAILED (errors=1)", "gen_seconds": 2.14}
+{"task_id": "BigCodeBench/241", "record": "measurement", "status": "fail", "detail": "FAILED (errors=5)", "gen_seconds": 1.12}
+{"task_id": "BigCodeBench/267", "record": "measurement", "status": "fail", "detail": "FAILED (failures=5)", "gen_seconds": 0.83}
+{"task_id": "BigCodeBench/273", "record": "measurement", "status": "fail", "detail": "FAILED (failures=1, errors=3)", "gen_seconds": 1.86}
+{"task_id": "BigCodeBench/274", "record": "measurement", "status": "fail", "detail": "FAILED (errors=6)", "gen_seconds": 2.39}
+{"task_id": "BigCodeBench/287", "record": "measurement", "status": "fail", "detail": "FAILED (failures=5)", "gen_seconds": 1.21}
+{"task_id": "BigCodeBench/302", "record": "measurement", "status": "pass", "detail": "", "gen_seconds": 1.46}
+{"task_id": "BigCodeBench/308", "record": "measurement", "status": "pass", "detail": "", "gen_seconds": 1.31}
+{"task_id": "BigCodeBench/310", "record": "measurement", "status": "fail", "detail": "FAILED (failures=1)", "gen_seconds": 1.29}
+{"task_id": "BigCodeBench/313", "record": "measurement", "status": "fail", "detail": "FAILED (errors=5)", "gen_seconds": 2.48}
+{"task_id": "BigCodeBench/324", "record": "measurement", "status": "fail", "detail": "FAILED (failures=4)", "gen_seconds": 0.86}
+{"task_id": "BigCodeBench/326", "record": "measurement", "status": "fail", "detail": "FAILED (failures=3)", "gen_seconds": 0.95}
+{"task_id": "BigCodeBench/34", "record": "measurement", "status": "pass", "detail": "", "gen_seconds": 0.85}
+{"task_id": "BigCodeBench/341", "record": "measurement", "status": "fail", "detail": "FAILED (failures=1)", "gen_seconds": 1.63}
+{"task_id": "BigCodeBench/346", "record": "measurement", "status": "fail", "detail": "FAILED (errors=1)", "gen_seconds": 0.62}
+{"task_id": "BigCodeBench/360", "record": "measurement", "status": "fail", "detail": "FAILED (failures=2)", "gen_seconds": 2.05}
+{"task_id": "BigCodeBench/367", "record": "measurement", "status": "fail", "detail": "FAILED (failures=2, errors=2)", "gen_seconds": 0.95}
+{"task_id": "BigCodeBench/368", "record": "measurement", "status": "fail", "detail": "FAILED (errors=1)", "gen_seconds": 0.61}
+{"task_id": "BigCodeBench/37", "record": "measurement", "status": "pass", "detail": "", "gen_seconds": 1.38}
+{"task_id": "BigCodeBench/374", "record": "measurement", "status": "fail", "detail": "FAILED (failures=2)", "gen_seconds": 1.25}
+{"task_id": "BigCodeBench/399", "record": "measurement", "status": "fail", "detail": "FAILED (failures=1)", "gen_seconds": 0.92}
+{"task_id": "BigCodeBench/401", "record": "measurement", "status": "env", "detail": "ModuleNotFoundError: No module named 'flask_mail'", "gen_seconds": 0.97}
+{"task_id": "BigCodeBench/409", "record": "measurement", "status": "fail", "detail": "FAILED (errors=1)", "gen_seconds": 1.42}
+{"task_id": "BigCodeBench/417", "record": "measurement", "status": "pass", "detail": "", "gen_seconds": 1.42}
+{"task_id": "BigCodeBench/418", "record": "measurement", "status": "pass", "detail": "", "gen_seconds": 1.74}
+{"task_id": "BigCodeBench/424", "record": "measurement", "status": "fail", "detail": "FAILED (failures=2)", "gen_seconds": 1.31}
+{"task_id": "BigCodeBench/443", "record": "measurement", "status": "fail", "detail": "FAILED (failures=2, errors=1)", "gen_seconds": 3.22}
+{"task_id": "BigCodeBench/445", "record": "measurement", "status": "pass", "detail": "", "gen_seconds": 1.61}
+{"task_id": "BigCodeBench/454", "record": "measurement", "status": "fail", "detail": "FAILED (errors=1)", "gen_seconds": 1.0}
+{"task_id": "BigCodeBench/458", "record": "measurement", "status": "fail", "detail": "FAILED (failures=1)", "gen_seconds": 2.48}
+{"task_id": "BigCodeBench/461", "record": "measurement", "status": "fail", "detail": "FAILED (failures=2)", "gen_seconds": 2.8}
+{"task_id": "BigCodeBench/477", "record": "measurement", "status": "pass", "detail": "", "gen_seconds": 1.47}
+{"task_id": "BigCodeBench/486", "record": "measurement", "status": "fail", "detail": "FAILED (failures=2)", "gen_seconds": 2.22}
+{"task_id": "BigCodeBench/492", "record": "measurement", "status": "fail", "detail": "FAILED (failures=5)", "gen_seconds": 1.44}
+{"task_id": "BigCodeBench/501", "record": "measurement", "status": "fail", "detail": "FAILED (errors=4)", "gen_seconds": 1.77}
+{"task_id": "BigCodeBench/502", "record": "measurement", "status": "pass", "detail": "", "gen_seconds": 1.19}
+{"task_id": "BigCodeBench/503", "record": "measurement", "status": "fail", "detail": "FAILED (failures=2, errors=4)", "gen_seconds": 0.79}
+{"task_id": "BigCodeBench/509", "record": "measurement", "status": "fail", "detail": "FAILED (failures=1)", "gen_seconds": 2.39}
+{"task_id": "BigCodeBench/511", "record": "measurement", "status": "fail", "detail": "FAILED (errors=6)", "gen_seconds": 2.27}
+{"task_id": "BigCodeBench/513", "record": "measurement", "status": "fail", "detail": "FAILED (errors=10)", "gen_seconds": 2.13}
+{"task_id": "BigCodeBench/526", "record": "measurement", "status": "fail", "detail": "FAILED (failures=2, errors=1)", "gen_seconds": 1.07}
+{"task_id": "BigCodeBench/528", "record": "measurement", "status": "fail", "detail": "FAILED (failures=2)", "gen_seconds": 1.8}
+{"task_id": "BigCodeBench/530", "record": "measurement", "status": "pass", "detail": "", "gen_seconds": 1.84}
+{"task_id": "BigCodeBench/532", "record": "measurement", "status": "pass", "detail": "", "gen_seconds": 2.11}
+{"task_id": "BigCodeBench/553", "record": "measurement", "status": "fail", "detail": "FAILED (errors=3)", "gen_seconds": 1.07}
+{"task_id": "BigCodeBench/560", "record": "measurement", "status": "fail", "detail": "FAILED (errors=3)", "gen_seconds": 1.39}
+{"task_id": "BigCodeBench/567", "record": "measurement", "status": "fail", "detail": "FAILED (failures=1, errors=4)", "gen_seconds": 1.13}
+{"task_id": "BigCodeBench/574", "record": "measurement", "status": "fail", "detail": "FAILED (failures=1)", "gen_seconds": 1.43}
+{"task_id": "BigCodeBench/579", "record": "measurement", "status": "fail", "detail": "FAILED (failures=1)", "gen_seconds": 2.12}
+{"task_id": "BigCodeBench/582", "record": "measurement", "status": "fail", "detail": "FAILED (failures=1)", "gen_seconds": 0.95}
+{"task_id": "BigCodeBench/583", "record": "measurement", "status": "env", "detail": "ModuleNotFoundError: No module named 'Crypto'", "gen_seconds": 1.4}
+{"task_id": "BigCodeBench/587", "record": "measurement", "status": "pass", "detail": "", "gen_seconds": 1.79}
+{"task_id": "BigCodeBench/590", "record": "measurement", "status": "fail", "detail": "FAILED (errors=3)", "gen_seconds": 0.87}
+{"task_id": "BigCodeBench/592", "record": "measurement", "status": "fail", "detail": "FAILED (failures=1)", "gen_seconds": 1.88}
+{"task_id": "BigCodeBench/593", "record": "measurement", "status": "fail", "detail": "FAILED (failures=4)", "gen_seconds": 1.14}
+{"task_id": "BigCodeBench/594", "record": "measurement", "status": "fail", "detail": "FAILED (failures=2, errors=2)", "gen_seconds": 1.7}
+{"task_id": "BigCodeBench/618", "record": "measurement", "status": "fail", "detail": "FAILED (failures=2, errors=1)", "gen_seconds": 1.83}
+{"task_id": "BigCodeBench/636", "record": "measurement", "status": "fail", "detail": "FAILED (failures=1, errors=1)", "gen_seconds": 0.76}
+{"task_id": "BigCodeBench/637", "record": "measurement", "status": "pass", "detail": "", "gen_seconds": 1.6}
+{"task_id": "BigCodeBench/654", "record": "measurement", "status": "fail", "detail": "FAILED (failures=1, errors=1)", "gen_seconds": 2.24}
+{"task_id": "BigCodeBench/655", "record": "measurement", "status": "fail", "detail": "**********************************************************************", "gen_seconds": 1.33}
+{"task_id": "BigCodeBench/657", "record": "measurement", "status": "fail", "detail": "FAILED (errors=1)", "gen_seconds": 1.06}
+{"task_id": "BigCodeBench/678", "record": "measurement", "status": "pass", "detail": "", "gen_seconds": 1.57}
+{"task_id": "BigCodeBench/720", "record": "measurement", "status": "fail", "detail": "FAILED (failures=2)", "gen_seconds": 1.16}
+{"task_id": "BigCodeBench/723", "record": "measurement", "status": "fail", "detail": "FAILED (failures=2)", "gen_seconds": 1.24}
+{"task_id": "BigCodeBench/752", "record": "measurement", "status": "pass", "detail": "", "gen_seconds": 1.58}
+{"task_id": "BigCodeBench/760", "record": "measurement", "status": "pass", "detail": "", "gen_seconds": 2.74}
+{"task_id": "BigCodeBench/763", "record": "measurement", "status": "pass", "detail": "", "gen_seconds": 1.41}
+{"task_id": "BigCodeBench/765", "record": "measurement", "status": "fail", "detail": "FAILED (failures=3)", "gen_seconds": 1.19}
+{"task_id": "BigCodeBench/771", "record": "measurement", "status": "fail", "detail": "FAILED (failures=3)", "gen_seconds": 1.44}
+{"task_id": "BigCodeBench/777", "record": "measurement", "status": "pass", "detail": "", "gen_seconds": 1.27}
+{"task_id": "BigCodeBench/785", "record": "measurement", "status": "fail", "detail": "FAILED (errors=3)", "gen_seconds": 1.59}
+{"task_id": "BigCodeBench/800", "record": "measurement", "status": "fail", "detail": "FAILED (errors=5)", "gen_seconds": 1.34}
+{"task_id": "BigCodeBench/82", "record": "measurement", "status": "env", "detail": "ModuleNotFoundError: No module named 'flask_login'", "gen_seconds": 1.86}
+{"task_id": "BigCodeBench/826", "record": "measurement", "status": "pass", "detail": "", "gen_seconds": 1.15}
+{"task_id": "BigCodeBench/845", "record": "measurement", "status": "pass", "detail": "", "gen_seconds": 1.39}
+{"task_id": "BigCodeBench/854", "record": "measurement", "status": "pass", "detail": "", "gen_seconds": 0.72}
+{"task_id": "BigCodeBench/857", "record": "measurement", "status": "fail", "detail": "FAILED (failures=1)", "gen_seconds": 1.48}
+{"task_id": "BigCodeBench/865", "record": "measurement", "status": "fail", "detail": "FAILED (failures=2)", "gen_seconds": 1.4}
+{"task_id": "BigCodeBench/870", "record": "measurement", "status": "pass", "detail": "", "gen_seconds": 1.2}
+{"task_id": "BigCodeBench/879", "record": "measurement", "status": "fail", "detail": "FAILED (errors=5)", "gen_seconds": 2.47}
+{"task_id": "BigCodeBench/89", "record": "measurement", "status": "fail", "detail": "FAILED (failures=1)", "gen_seconds": 2.6}
+{"task_id": "BigCodeBench/897", "record": "measurement", "status": "pass", "detail": "", "gen_seconds": 0.77}
+{"task_id": "BigCodeBench/906", "record": "measurement", "status": "pass", "detail": "", "gen_seconds": 1.25}
+{"task_id": "BigCodeBench/914", "record": "measurement", "status": "fail", "detail": "FAILED (errors=5)", "gen_seconds": 1.76}
+{"task_id": "BigCodeBench/915", "record": "measurement", "status": "fail", "detail": "FAILED (errors=4)", "gen_seconds": 1.23}
+{"task_id": "BigCodeBench/916", "record": "measurement", "status": "fail", "detail": "FAILED (errors=4)", "gen_seconds": 0.89}
+{"task_id": "BigCodeBench/917", "record": "measurement", "status": "fail", "detail": "FAILED (failures=1)", "gen_seconds": 2.39}
+{"task_id": "BigCodeBench/92", "record": "measurement", "status": "pass", "detail": "", "gen_seconds": 1.15}
+{"task_id": "BigCodeBench/928", "record": "measurement", "status": "pass", "detail": "", "gen_seconds": 0.91}
+{"task_id": "BigCodeBench/93", "record": "measurement", "status": "fail", "detail": "FAILED (failures=1)", "gen_seconds": 1.77}
+{"task_id": "BigCodeBench/942", "record": "measurement", "status": "fail", "detail": "FAILED (failures=1)", "gen_seconds": 1.41}
+{"task_id": "BigCodeBench/945", "record": "measurement", "status": "fail", "detail": "FAILED (errors=3)", "gen_seconds": 1.85}
+{"task_id": "BigCodeBench/952", "record": "measurement", "status": "fail", "detail": "FAILED (failures=1, errors=1)", "gen_seconds": 0.99}
+{"task_id": "BigCodeBench/955", "record": "measurement", "status": "fail", "detail": "FAILED (failures=3)", "gen_seconds": 4.07}
+{"task_id": "BigCodeBench/963", "record": "measurement", "status": "fail", "detail": "FAILED (failures=2)", "gen_seconds": 1.45}
+{"task_id": "BigCodeBench/964", "record": "measurement", "status": "fail", "detail": "FAILED (failures=1)", "gen_seconds": 2.57}
+{"task_id": "BigCodeBench/969", "record": "measurement", "status": "pass", "detail": "", "gen_seconds": 0.89}
+{"task_id": "BigCodeBench/971", "record": "measurement", "status": "pass", "detail": "", "gen_seconds": 1.72}
+{"task_id": "BigCodeBench/985", "record": "measurement", "status": "fail", "detail": "FAILED (errors=6)", "gen_seconds": 2.37}
+{"task_id": "BigCodeBench/988", "record": "measurement", "status": "fail", "detail": "FAILED (errors=9)", "gen_seconds": 1.66}
+{"task_id": "BigCodeBench/99", "record": "measurement", "status": "pass", "detail": "", "gen_seconds": 0.7}
+{"task_id": "BigCodeBench/990", "record": "measurement", "status": "pass", "detail": "", "gen_seconds": 1.57}
+{"task_id": "BigCodeBench/998", "record": "measurement", "status": "pass", "detail": "", "gen_seconds": 1.46}
+{"task_id": "BigCodeBench/999", "record": "measurement", "status": "pass", "detail": "", "gen_seconds": 1.12}
+{"record": "summary", "total": 148, "passed": 45, "pass_at_1": 0.3041, "statuses": {"fail": 98, "pass": 45, "timeout": 1, "env": 4}}
