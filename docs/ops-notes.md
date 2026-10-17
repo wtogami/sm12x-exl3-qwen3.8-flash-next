@@ -48,3 +48,10 @@ the next swap anomaly.
   gap, idle GPUs, manual repair. K5V-on-gg uses 960x30s (8h) vs ~7h job: fine, but recheck
   budgets whenever job class changes (bitrate/disk/cap).
 - Power limits: plain nvidia-smi -pl can only RAISE to the operator floor (450); lowering to 300 needs sudo, which is available passwordless (sudo -n nvidia-smi). power-phase.sh now uses it. Never declare a power wall without trying sudo -n.
+
+## pkill self-match, occurrence #3 (2026-10-17 15:51)
+Bracketed pattern (`baseline-k[l].sh`) does not save you when the SAME command line
+also contains the unbracketed literal (e.g. `p="scripts/sc/baseline-kl.sh"` in a
+heredoc two statements later). The pkill line must live in a shell invocation whose
+args contain no plain form of the target string at all — or kill by PID from `ps`.
+Two shells and one queued script died to this tonight before the trio re-armed clean.
