@@ -11,7 +11,7 @@ ALT="/hf/req5-build/out /hf/req6b-build/out"
 CD=/hf/calibration/agentic-quant-panel-v1/panel-qwen-packed-2048.safetensors
 S=/hf/hub/models--wrldsuksgo2mars--Qwen3.8-Flash-Next-EXL3-K4.25-v1/snapshots/73a050c27b8c488c65acd6d1c74e45ff02be5fab
 run(){ # name basedir-as-/hf-path
-  [[ -d ${2/#\/hf/$CACHE} ]] || { say "SKIP $1 (missing $2)"; return; }
+  [[ -d ${2/\/hf/./} ]] || { say "SKIP $1 (missing $2)"; return; }
   docker run --rm --device nvidia.com/gpu=0 -v "$CACHE:/hf:z" --entrypoint sh localhost/qwen38-rtx:local \
     -c "$ENVP python3 -m exllamav3.conversion.measure_model -i $2 $ALT -r $SRC -l 0 -cc 512 -cd $CD -o /hf/sc-measure/basekld-$1.json" >>"$LOG" 2>&1 \
     && grep -ao '"base_kld": [0-9.]*' "$CACHE/sc-measure/basekld-$1.json" | tail -1 | sed 's/^/KL: /' >>"$LOG" \
