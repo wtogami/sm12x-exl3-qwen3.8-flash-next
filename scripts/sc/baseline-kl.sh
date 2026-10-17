@@ -17,7 +17,7 @@ run(){ # name basedir
     && grep -ao '"base_kld": [0-9.]*' "$CACHE/sc-measure/basekld-$1.json" | tail -1 | sed 's/^/KL: /' >>"$LOG" \
     && say "done $1" || say "FAIL $1"; }
 # wait for RB4 to finish its doomed boot polls so GPU0 is un-squatted
-for i in $(seq 1 240); do grep -qa "RB4 COMPLETE" "$LOG" && break; sleep 30; done
+# gate removed 16:10: RB4 aborted by owner (engine two-tier limit); GPU0 is free now
 say "starting base-KLD trio"
 run vendor425 "$S"
 run measured425 "$CACHE/measured425-build/out"
