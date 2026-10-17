@@ -1,0 +1,126 @@
+{
+  "schema": "qwen38-prefill-depth.v3",
+  "nonce": "c20e70c74a0c429990a2ab738cbec6c5",
+  "method": "C1 exact-length unique prompts; client request to first streamed token; server tokenization and one-token handoff included; no prefix reuse",
+  "model": "qwen38-exl3",
+  "quant_profile": "exl3",
+  "kv_cache_dtype": "fp8",
+  "runs_per_point": 3,
+  "points": [
+    {
+      "prompt_tokens": 131072,
+      "effective_prompt_tokens_per_second": {
+        "median": 8329.714004326745,
+        "min": 8314.277242414664,
+        "max": 8359.829820604187
+      },
+      "ttft_seconds": {
+        "median": 15.735474222994526,
+        "min": 15.678788062999956,
+        "max": 15.764689603005536
+      },
+      "runs": [
+        {
+          "prompt_tokens": 131072,
+          "ttft_seconds": 15.678788062999956,
+          "effective_prompt_tokens_per_second": 8359.829820604187
+        },
+        {
+          "prompt_tokens": 131072,
+          "ttft_seconds": 15.735474222994526,
+          "effective_prompt_tokens_per_second": 8329.714004326745
+        },
+        {
+          "prompt_tokens": 131072,
+          "ttft_seconds": 15.764689603005536,
+          "effective_prompt_tokens_per_second": 8314.277242414664
+        }
+      ]
+    },
+    {
+      "prompt_tokens": 261632,
+      "effective_prompt_tokens_per_second": {
+        "median": 7992.418549000515,
+        "min": 7975.1967508572625,
+        "max": 8016.145908625078
+      },
+      "ttft_seconds": {
+        "median": 32.73502237100911,
+        "min": 32.63812847000372,
+        "max": 32.80571102799149
+      },
+      "runs": [
+        {
+          "prompt_tokens": 261632,
+          "ttft_seconds": 32.63812847000372,
+          "effective_prompt_tokens_per_second": 8016.145908625078
+        },
+        {
+          "prompt_tokens": 261632,
+          "ttft_seconds": 32.73502237100911,
+          "effective_prompt_tokens_per_second": 7992.418549000515
+        },
+        {
+          "prompt_tokens": 261632,
+          "ttft_seconds": 32.80571102799149,
+          "effective_prompt_tokens_per_second": 7975.1967508572625
+        }
+      ]
+    },
+    {
+      "prompt_tokens": 523264,
+      "effective_prompt_tokens_per_second": {
+        "median": 7558.836596302698,
+        "min": 7554.7219978416415,
+        "max": 7559.901118414683
+      },
+      "ttft_seconds": {
+        "median": 69.22546787900501,
+        "min": 69.21572012700199,
+        "max": 69.26317078901047
+      },
+      "runs": [
+        {
+          "prompt_tokens": 523264,
+          "ttft_seconds": 69.22546787900501,
+          "effective_prompt_tokens_per_second": 7558.836596302698
+        },
+        {
+          "prompt_tokens": 523264,
+          "ttft_seconds": 69.21572012700199,
+          "effective_prompt_tokens_per_second": 7559.901118414683
+        },
+        {
+          "prompt_tokens": 523264,
+          "ttft_seconds": 69.26317078901047,
+          "effective_prompt_tokens_per_second": 7554.7219978416415
+        }
+      ]
+    }
+  ],
+  "server": {
+    "source": "docker inspect",
+    "container": "qwen38-exl3",
+    "host": "burst",
+    "architecture": "x86_64",
+    "image": "localhost/qwen38-rtx:local",
+    "running": true,
+    "started_at": "2026-10-16T20:33:27.303974505-05:00",
+    "ple_mode": "host-offload",
+    "cpu_offload": true,
+    "checkpoint_mapped": false,
+    "speculative_config": {
+      "method": "mtp",
+      "num_speculative_tokens": 3
+    },
+    "mtp_tokens": 3,
+    "served_model_name": "qwen38-exl3",
+    "max_num_seqs": "16",
+    "max_num_batched_tokens": "2048",
+    "max_model_len": "524288",
+    "kv_cache_dtype": "fp8",
+    "gpu_memory_utilization": "0.88",
+    "tensor_parallel_size": "2",
+    "claims_disagree": []
+  }
+}
