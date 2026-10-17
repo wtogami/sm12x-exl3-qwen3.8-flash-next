@@ -9,9 +9,9 @@ ENVP='export PYTHONPATH=/hf/exv3-env-161:/hf/exv3-runtime:/hf/pip-extras; export
 SRC=/hf/hub/models--Qwen--Qwen3.8-Flash-Next/snapshots/de4b8e4d43b917e7706784d8bb445c9af86a3540
 ALT="/hf/req5-build/out /hf/req6b-build/out"
 CD=/hf/calibration/agentic-quant-panel-v1/panel-qwen-packed-2048.safetensors
-S=$CACHE/hub/models--wrldsuksgo2mars--Qwen3.8-Flash-Next-EXL3-K4.25-v1/snapshots/73a050c27b8c488c65acd6d1c74e45ff02be5fab
-run(){ # name basedir
-  [[ -d $2 ]] || { say "SKIP $1 (missing $2)"; return; }
+S=/hf/hub/models--wrldsuksgo2mars--Qwen3.8-Flash-Next-EXL3-K4.25-v1/snapshots/73a050c27b8c488c65acd6d1c74e45ff02be5fab
+run(){ # name basedir-as-/hf-path
+  [[ -d ${2/#\/hf/$CACHE} ]] || { say "SKIP $1 (missing $2)"; return; }
   docker run --rm --device nvidia.com/gpu=0 -v "$CACHE:/hf:z" --entrypoint sh localhost/qwen38-rtx:local \
     -c "$ENVP python3 -m exllamav3.conversion.measure_model -i $2 $ALT -r $SRC -l 0 -cc 512 -cd $CD -o /hf/sc-measure/basekld-$1.json" >>"$LOG" 2>&1 \
     && grep -ao '"base_kld": [0-9.]*' "$CACHE/sc-measure/basekld-$1.json" | tail -1 | sed 's/^/KL: /' >>"$LOG" \
@@ -20,6 +20,6 @@ run(){ # name basedir
 # gate removed 16:10: RB4 aborted by owner (engine two-tier limit); GPU0 is free now
 say "starting base-KLD trio"
 run vendor425 "$S"
-run measured425 "$CACHE/measured425-build/out"
-if [[ -f "$CACHE/measured459-build/REPAIR-OK" ]]; then run measured459 "$CACHE/measured459-build/out"; else say "WARN measured459 no REPAIR-OK; measuring out dir as-is"; run measured459 "$CACHE/measured459-build/out"; fi
+run measured425 "/hf/measured425-build/out"
+if [[ -f "$CACHE/measured459-build/REPAIR-OK" ]]; then run measured459 "/hf/measured459-build/out"; else say "WARN measured459 no REPAIR-OK; measuring out dir as-is"; run measured459 "/hf/measured459-build/out"; fi
 say "BASE-KLD TRIO COMPLETE"
