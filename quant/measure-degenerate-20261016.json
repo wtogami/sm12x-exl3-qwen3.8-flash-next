@@ -1,0 +1,13 @@
+{
+  "model": "/nvme1/src/qwen38-bf16",
+  "rows": 10,
+  "length": 1024,
+  "draws": 1,
+  "mode": "shaped",
+  "trace": null,
+  "h_rows": 64,
+  "rfn_ref": null,
+  "rfn_scale": null,
+  "rfn": "0.29,0.145",
+  "results": []
+}

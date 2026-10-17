@@ -152,7 +152,11 @@ Staged for the deferred study: scripts/req6-pack-panel-calibration.py
 rendered all 1,426 records through the Qwen chat template into the exact
 `-cd` contract (int32 input_ids (1426, 2048) + per-row lengths;
 1,180,869 tokens; row range 566-1269; sha256
-6cf142dc...644b) at `.cache/huggingface/calibration/agentic-quant-panel-v1/panel-qwen-packed-2048.safetensors`.
+6cf142dc5f8a9b9b2bf6d22801927bb2890b1e9d75186def986abb8c352f644b) at
+`.cache/huggingface/calibration/agentic-quant-panel-v1/panel-qwen-packed-2048.safetensors`.
+That cache path is a location, not the only copy: the file is byte-reproducible from the
+public HF dataset above via this repo's `scripts/req6-pack-panel-calibration.py`, so the
+hash — not the local file — is the reference.
 A/B recipe (single variable - corpus): identical uniform-6.0 mcg recipe,
 `-cd <panel file> -cr 1426 -cc 2048`, compare orchid (our only regression:
 deterministic 99-word length bias vs base 5/5) + KL-vs-BF16 + tensor RMSE.
