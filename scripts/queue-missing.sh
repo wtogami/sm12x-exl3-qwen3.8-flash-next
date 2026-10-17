@@ -61,7 +61,7 @@ for spec in "tuned565-panel tuned565-panel 2" "tuned565-vanilla tuned565-vanilla
   boot "$2" "$3" || { say "HALT: $1 ladder boot failed"; exit 1; }
   local_lb=$(replay0)
   ladder "$1"
-  r=$(replay0); [[ "$r" == "$local_lb" ]] || { say "HALT-BY-REPLAY during $1 ladder window ($local_lb->$r)"; exit 2; }
+  r=$(replay0); [[ "$r" == "$local_lb" ]] || { say "HALT-BY-REPLAY during $1 ladder window ($local_lb->$r)"; ./stop.sh >/dev/null 2>&1; exit 2; }
 done
 ./stop.sh >/dev/null 2>&1
 scripts/power-phase.sh restore >>"$LOG" 2>&1; trap - EXIT
