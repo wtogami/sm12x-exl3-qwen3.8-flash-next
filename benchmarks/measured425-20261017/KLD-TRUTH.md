@@ -7,9 +7,22 @@
 | K4 uniform | 4.0 | **0.02086** | — | — |
 | measured425 (l3 knapsack) | 4.2465 | 0.02149 | 0.01414 | 1.52 |
 | measured459 (l3 knapsack) | 4.5868 | 0.01984 | 0.01377 | 1.44 |
-| vendor425 (per-expert K4/K5) | 4.25 | not locally measurable | — | — |
+| vendor425 (per-expert K4/K5) | 4.25 | **0.01433** | — | — |
 
-Headline: **plain uniform K4 (4.0 bits) beats measured425 (4.25 bits)**. The
+UPDATE 18:33 (same day): the keystone became measurable after all. The tree
+blocker was MultiLinear's uniform-BITRATE fusion assert (block_sparse_mlp.py
+fuses all experts of a projection into one batch regardless of rate spread);
+patches/port-exl3-dense-moe.py adds EXV3_FORCE_DENSE=1, which routes quantized
+MoE through the fork's own documented dense per-expert fallback (identical
+math, ~same wall time: 14 min). Vendor true KLD = 0.01433 at 4.25 bits —
+31% BETTER than uniform K4 and 33% better than measured425 at the same budget.
+Published per-expert allocation genuinely works; my panel-knapsack l3 solve
+genuinely does not (0.0215 is worse than plain K4). The engine-side attempt
+below stands as the record of why THAT route was dead; the number came home
+through the converter tree.
+
+Headline (pre-keystone, superseded for vendor but still true for measured):
+**plain uniform K4 (4.0 bits) beats measured425 (4.25 bits)**. The
 additive knapsack model is 1.4–1.5x optimistic AND, at these budgets, the
 projection-level allocation freedom it optimizes is worth less than simply
 raising the uniform rate. The measured-card program is dead on quality grounds,
