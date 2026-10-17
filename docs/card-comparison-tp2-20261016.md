@@ -1,0 +1,215 @@
+# TP2 Card Comparison: Quality and Performance of the EXL3 Fleet at 300 W
+
+**Eight quantized checkpoints of Qwen3.8-Flash-Next** — the K3–K6 uniform ladder, the
+vendor K4.25 mixed card, and the two 2026-10-16 "tuned@5.65" recipe cards — judged under
+one serving stack on 2x RTX PRO 6000 Blackwell (TP2+EP, FP8 KV cache, MTP3 speculative
+decoding, YaRN 512K context, GPU-memory-utilization 0.88). Quality legs ran at 450 W; the
+matched performance ladder ran at a hard **300 W cap** with 2 Hz power sampling, under the
+protocol used for the 2026-10-13 baseline so results are directly comparable. Companion
+docs: [performance-comparison.md](performance-comparison.md),
+[quality-comparison.md](quality-comparison.md), the running decision log in
+[`benchmarks/decision-20261015.md`](../benchmarks/decision-20261015.md).
+
+**Headline: the published gates are a saturated wash across every card from K4 upward —
+the discrimination lives entirely in the repeated-trial defect probes and the
+bandwidth-bound concurrency band. The vendor K4.25 card reproduces its Oct-13 speed
+(C8 723 vs 711, +1.7%) and beats all challengers at C2–C8, at 523K prefill, and at
+deep-context decode, while being defect-clean at TP2 (20/20). The tuned@5.65 recipe
+cards buy nothing measurable on any axis, each carry one deterministic defect, and are
+the largest footprints in the fleet. K6V (uniform-6, vanilla-calibrated) is the clean,
+reproducible runner-up at a quantified ~8–10% tax in the mid-concurrency band.
+Recommendation: stay on 4.25bpw for latency-bandwidth serving; defect claims are now
+config-scoped by policy, which is why the incumbent's historic C1 failure does not count
+against it at TP2.**
+
+## Cards under test
+
+| Card | Experts (avg bpw) | Non-expert LM tensors | Calibration | Provenance |
+|---|---|---|---|---|
+| **K4.25** (vendor) | mixed K4/K5, 4.25 | BF16 | vendor (panel-like) | HF `wrldsuksgo2mars/…-EXL3-K4.25-v1` @ `73a050c`; optimizer run not reproducible from this repo |
+| **K6V** | uniform 6.0 | uniform 6 | vanilla (converter default mix) | built here, `req6-uniform6` |
+| **tuned565-panel** | all @6, central 17 of 48 layers @5 → 5.6458 | 16 (head/dense) | panel corpus | built here, recipe `-rcp` + repair pass |
+| **tuned565-vanilla** | identical integer recipe | 16 | vanilla corpus | built here |
+
+Context rows (K3/K4/K5/K6, uniform panel ladder) appear in the quality tables where they
+sharpen a point; they were not perf-laddered. On-disk totals (hardlinked blob dirs, shared
+~95 GiB pinned ngram/PLE table counted once per card): **K4.25 168 G, K6V 193 G, tuned 224 G.**
+The tuned cards are *larger* than uniform-6 despite cheaper experts because the recipe ran
+head/dense tensors at 16 bits; the per-tensor rate file is `/nvme1/sc/recipe-tuned565.yaml`.
+
+## Quality: gates saturated, defects decisive
+
+All legs greedy/temperature-0, validators read visible content only, engine fork with the
+mixed-tier TP2 overlay where required; every receipt is stamped with the served snapshot.
+
+| card | PQA-1000 | IFEval-541 | BCB-Hard-148 | seven/84 | orchid μ | ×20 biomed | deterministic defect (TP2) |
+|---|---|---|---|---|---|---|---|
+| K3 | 77.5 | 86.1 | 27.0 | 70 | 100.00 | — | — |
+| K4 | 78.1 | 84.8 | 29.0 | 73 | 99.60 | — | — |
+| K5 | 77.6 | 85.2 | 31.1 | 69 | 99.95 | — | — |
+| K6 | 77.8 | 85.2 | 31.1 | 76 | 99.95 | — | A3-truncation (×4, panel) |
+| **K6V** | 77.8 | 86.0 | 30.4 | 77 | 99.85 | **13/13, 0/260 trunc** | **NONE** |
+| **K4.25** | 78.1 | 84.5 | 29.7 | 75 | 100.10 | **13/13, 0/260 trunc** | **NONE** (see Thoughts 2) |
+| tuned-panel | 78.1 | **86.7** | 31.1 | 72 | 99.65 | 12/13, **20/260 trunc** | B3-design 0/20 (truncation) |
+| tuned-vanilla | 77.9 | 86.5 | **31.8** | 74 | 99.85 | 12/13, 0/260 trunc | C1-extract 0/20 ("fields missing") |
+
+**Reading the gates.** PQA spread across eight cards is 0.6 pt, IFEval 2.2 pt with no
+bit-monotonicity, BCB saturates at ~31 from K5 up. SQNR climbs ~2.8 dB per bit
+(K3 7.1 → K6V 15.7 dB) and buys **zero** measurable behavior above ~4 bits. Any ranking
+claimed off these gates is noise-mining; the tuned cards' nominal IFEval/BCB leads are
+within the cross-night drift we measured on the perf side and are not treated as real.
+
+**Reading the ×20 defect probes.** This is where cards separate, and the pattern is
+coherent: across 520 repeated deterministic runs on clean cards (K6V + K4.25, both TP2)
+we observed **zero** failures; every 5.65–6-bit card with mixed integer rates produced
+**exactly one** knife-edge task at 0/20 (K6 panel-class adds a known A3-truncation at
+max_tokens). Two observations follow:
+
+1. **The cliffs are knife-edge, not graded.** A card failing one task 20/20 while its
+   neighbors pass it 20/20 is a decision-boundary artifact of that specific integer
+   allocation, not a smooth quality gradient. It is invisible to the aggregate gates
+   (one task out of 13 biomed, out of thousands of gate items) and catastrophic for
+   single-shot serving on that task.
+2. **Defects are numerics-path properties, not card properties.** K4.25's historic
+   C1-extract failure (deterministic at TP1) **did not replicate at TP2+EP** — 20/20
+   clean tonight. The same weights, different attention/EP numerics, different cliff
+   outcome. Policy going forward, already adopted in the decision log: *no defect claim
+   ships without the serving config attached, and any TP1 finding must be re-probed
+   before it is scored against a TP2-served card.* Corollary that cuts the other way:
+   the tuned cards' defects were probed at TP2 and **are** real for the intended serving
+   config.
+
+The corpus axis (panel vs vanilla calibration, K6 vs K6V single-variable) remains a gate
+wash; its only behavioral signature is which knife-edge ticket gets drawn — panel cards
+gravitate to truncation-class failures, vanilla cards to extraction-class.
+
+## Performance: matched 300 W ladder (TP2+EP, MTP3, FP8 KV)
+
+Protocol identical to Oct-13: real SSE streaming timing, 256 output tokens/sequence,
+3 runs/point medians; prefill TTFT at 131,072 / 261,632 / 523,264 tokens; context-depth
+ladder 16K→523K with fresh+warm positions. Receipts:
+[`benchmarks/ladder-20261016/`](../benchmarks/ladder-20261016/) (decode/prefill JSONs,
+context JSONLs, 2 Hz power CSVs, link/replay footer in `links.txt`).
+
+**Concurrency decode (aggregate tok/s, median):**
+
+| card | C1 | C2 | C4 | C8 | C16 |
+|---|---|---|---|---|---|
+| K4.25 (Oct-13 baseline) | 167 | 293 | 446 | 711 | 987 |
+| **K4.25 (tonight)** | 167 | 282 | 452 | **723** | 996 |
+| tuned565-panel | **170** | 264 | 429 | 645 | **1026** |
+| tuned565-vanilla | 164 | 264 | 418 | 651 | 1017 |
+| K6V | 170 | 285 | 435 | 653 | 1015 |
+
+**Prefill TTFT (s) — standalone battery ‖ context ladder at depth:**
+
+| card | ‖ 131K | 261K | 523K | ‖ 16K | 64K | 128K | 255K | 511K | decode @511K (tps) |
+|---|---|---|---|---|---|---|---|---|---|
+| K4.25 (tonight) | ‖ **15.3** | **31.7** | **66.9** | ‖ **1.9** | **7.6** | **15.4** | **31.8** | **66.9** | **364** |
+| K4.25 (Oct-13) | ‖ 15.6 | 33.4 | 71.8 | ‖ — | — | — | — | — | — |
+| tuned565-panel | ‖ 15.6 | 32.4 | 68.5 | ‖ 1.9 | 7.8 | 15.9 | 32.6 | 68.6 | 347 |
+| tuned565-vanilla | ‖ 15.7 | 32.5 | 68.6 | ‖ 1.9 | 7.8 | 15.9 | 32.7 | 68.8 | 350 |
+| K6V | ‖ 15.7 | 32.7 | 69.2 | ‖ 2.0 | 7.9 | 16.1 | 33.0 | 69.3 | 340 |
+
+**Repeatability (why we can believe any of it).** The Oct-13 leg exists to calibrate
+cross-night drift on the *same card*: C1 exact, C4 +1.3%, C8 +1.7%, C16 +0.9%. Decode is
+reproducible to ~2%. TTFT is the softer metric — tonight's 4.25 ran 4–7% under its own
+Oct-13 TTFT. Lesson enforced below: **no cross-session prefill comparisons**; the
+in-session table is the only one that decides anything.
+
+**The physics.** C2–C8 decode is expert-bandwidth-bound, and the table behaves exactly as
+bytes-per-token predicts: K4.25 streams 4.25/5.65 ≈ 0.75x the expert bytes of the tuned
+cards and wins the band by ~10% (sub-linear, as expected with compute overlap). The tuned
+cards' nominal 5.65 vs K6V's 6.0 expert rate should have handed them a small win there —
+it doesn't (645–651 vs 653, a wash) because the recipe's 16-bit head/dense tensors eat
+back the expert savings; the same mechanism explains the fleet-max 224 G footprint. At
+C16 the KV-cache and scheduling pressure dominates and the ordering flips mildly
+(1015–1026 vs 996); note K6V matches the tuned cards there within ~1% while being clean,
+which absorbs the tuned cards' last remaining edge. At C1 everything is tied (±4%).
+
+## Instrumentation and incident log
+
+- **Power**: hard 300 W cap during ladder legs via `scripts/power-phase.sh` + marker guard
+  (`/tmp/power-cap`, `sudo -n`); trap restores 450 W on every exit path. Verified 300.0 W
+  sustained on both GPUs under load.
+- **PCIe replays (GPU0 error-counter watcher)**: 6 lifetime events at end of night
+  (GPU1: 0), link widths stable x16/x16. All five earlier events coincided with
+  conversion-time host DMA; **event #6 landed inside an inference window** (18:55–19:15,
+  tuned-vanilla ladder) and tripped the designed circuit breaker, halting the ladder.
+  Owner ruling: single in-window event = noise, proceed with log-only monitoring; the two
+  remaining legs ran with replays flat. Interpretation: watch, don't stop; a burst trend
+  still voids a run.
+- **Two harness bugs found and fixed, both benign to banked data** (commits in
+  `quant-exp1`): the halt path left the engine loaded (45 min idle; now stops the
+  engine), and an `until`-loop inheriting its loop-body status produced false `BOOT FAIL`s
+  that silently skipped legs (the "LADDER COMPLETE (4/4)" misprint that exposed it;
+  completion is now receipt-counted). A skipped leg can no longer be reported as done.
+- **Mixed-tier TP2 overlay**: the tuned cards are the first dual-tier (6/5) cards ever
+  served on TP2+EP; this required the `port-exl3-tier-key` patch (adds `layer_bitrates`
+  to the rank-sliced runtime cache key, `patches/port-exl3-tier-key.py` → engine overlay
+  `exl3.py`, mounted via `EXTRA_MOUNTS` in `start.sh`). It held for ~2 h of load,
+  qualification, ×20 probes and the full ladder on both tuned cards. **Owner review is
+  still pending before anything ships on it.**
+
+## Thoughts
+
+1. **The tuned@5.65 experiment is a clean negative result, and its failure mode is
+   structural, not unlucky.** Quality is saturated above ~4 bits, so the recipe was
+   buying fidelity nobody can spend; the budget it spent instead landed on the two
+   axes that decide serving — bytes (it lost ~10% of the bandwidth band and grew the
+   footprint past uniform-6) and knife-edge allocation (one deterministic defect each,
+   0/20, per card). "More bits in the right places" has no observable payoff on this
+   model until the right places *and* the wrong places are both measured — which is what
+   a working `measure_model` would have provided; the fork build emitted `dkld=0.0` on
+   all 432 candidates, i.e. the recipe was heuristic, not optimized. The heuristic is
+   retired.
+2. **Defect probes are the only quality instrument with resolution on this fleet, and
+   they must stay config-scoped.** The gates' dynamic range is exhausted; the ×20 repeat
+   design catches real 1-in-thousands cliffs. The K4.25 C1 flip (deterministic failure at
+   TP1, 20/20 clean at TP2) is the strongest evidence we have that these cliffs are
+   numerics-path artifacts — treat every single-config defect claim as provisional until
+   reproduced at the serving config.
+3. **Provenance is the incumbent's one real weakness.** The 4.25 card wins on every perf
+   axis and its own numbers reproduce — but *its construction does not*. It came from an
+   optimizer run we cannot re-execute; we cannot enumerate its per-tensor rates, cannot
+   re-derive it after an upstream format change, and cannot rule out that its speed and
+   its (TP1) defect history share one root cause. K6V exists precisely as the hedge:
+   fully reproducible build, cleanest defect sheet, identical C1/C16 behavior, −8–10% at
+   C4–C8. That spread is the *measured price of provenance*, and it is now a number you
+   can spend deliberately.
+4. **The C16 flip deserves one honest caveat.** The challengers' +3% over the incumbent
+   at C16 is the single metric where low bytes lose — plausibly a KV/scheduling
+   interaction rather than a weights effect, and the regime where the incumbent's
+   card-size advantage (168 vs 193/224 G, i.e. more KV room at equal util) helps least.
+   If a future workload is C16-saturated batch, re-run the ladder at higher concurrency
+   and with util tuned per card before deciding.
+
+## Recommendations
+
+1. **Serving default: stay on K4.25 @ TP2+EP.** Fastest or tied on every axis except
+   C16 (−3%), defect-clean at the serving config, smallest footprint. Re-run the ×20
+   probe after any engine/numerics change — its clean sheet is config-scoped.
+2. **K6V is the designated fallback** wherever the vendor card's irreproducible
+   provenance is a risk; the tax is quantified at −8–10% C4–C8, ~1% C16, wash at C1, and
+   its build pipeline is fully in-repo.
+3. **Close the tuned/recipe lane.** No further conversions, no SQNR spend, no mixed-pool
+   revival until `measure_model` produces non-degenerate measurements on this arch. The
+   deferred "4.25-as-9th-alt" probe stays deferred behind that same gate.
+4. **Policy: defect claims carry their serving config; prefill claims carry their
+   session.** Cross-night TTFT drift of up to 7% was measured on an identical card.
+5. **Hardware: keep the replay watcher at 5-min cadence, log-only.** One in-window event
+   (6 lifetime, x16/x16 stable) is monitored, not actionable; escalate only on a burst.
+6. **Review gate for the mixed-tier overlay** (`port-exl3-tier-key`) before it ships on
+   anything — it worked all night, but it is the runtime path for a card class no
+   upstream code has ever exercised on TP2.
+
+## Receipts
+
+Perf ladder (all four cards, 300 W): `benchmarks/ladder-20261016/` — `*-decode.json`,
+`*-prefill.json`, `*-context.jsonl`, `*-power.csv`, `links.txt`. Oct-13 baseline:
+`benchmarks/bench-x16-20261013/tp2-ep-*.json`. Quality v2 suites:
+`benchmarks/tuned565-{panel,vanilla}-quality-v2*/`, `benchmarks/*-probe20-probe-biomed/`.
+Decision log: `benchmarks/decision-20261015.md`. Tooling:
+`scripts/queue-{missing,ladder2}.sh`, `scripts/power-phase.sh`, `scripts/quality-table.py`,
+`patches/port-exl3-tier-key.py`. Ops lessons: `docs/ops-notes.md`. Branch `quant-exp1`
+through commit `dd06e0d`; GitHub push pending owner credentials.
