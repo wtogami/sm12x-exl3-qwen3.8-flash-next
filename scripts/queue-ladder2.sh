@@ -11,7 +11,13 @@ boot(){ ./stop.sh >/dev/null 2>&1; sleep 8
   QUANT=exl3 TP_SIZE="$2" GPU_MEMORY_UTILIZATION=0.88 REPLACE=1 MODEL_SNAPSHOT="$1" \
     EXTRA_MOUNTS="$CACHE/engine-overlay/exl3.py:/usr/local/lib/python3.12/dist-packages/vllm/model_executor/layers/quantization/exl3.py:ro,z" \
     ./start.sh >>"$LOG" 2>&1
-  local i=0; until curl -sf --max-time 5 "$URL/v1/models" >/dev/null; do sleep 10; i=$((i+1)); [[ $i -gt 150 ]] && return 1; done; }
+  local i=0
+  until curl -sf --max-time 5 "$URL/v1/models" >/dev/null; do
+    sleep 10; i=$((i+1))
+    if [[ $i -gt 150 ]]; then return 1; fi
+  done
+  return 0   # until inherits last BODY status ([[ ]] false -> 1) without this!
+}
 ladder(){ local tag=$1 sp
   sp=$(nvidia-smi --query-gpu=timestamp,index,power.draw,clocks.sm,utilization.gpu --format=csv,noheader -lms 500 > "$B/$tag-power.csv" 2>/dev/null & echo $!)
   python3 scripts/benchmark-decode.py --base-url "$URL/v1" --model qwen38-exl3 --profile exl3 --mtp-tokens 3 \
@@ -38,4 +44,4 @@ done
 ./stop.sh >/dev/null 2>&1
 scripts/power-phase.sh restore >>"$LOG" 2>&1; trap - EXIT
 echo "$(date -Is) links: $(nvidia-smi --query-gpu=pcie.link.width.current --format=csv,noheader | tr '\n' ' ') replays: $(nvidia-smi -q | grep -a 'Replays Since Reset' | grep -aoE '[0-9]+' | tr '\n' ' ')" > "$B/links.txt"
-say "LADDER COMPLETE (4/4)"
+n=$(ls "$B"/*-decode.json 2>/dev/null | wc -l); say "LADDER RUN DONE ($n/4 cards have decode receipts)"
