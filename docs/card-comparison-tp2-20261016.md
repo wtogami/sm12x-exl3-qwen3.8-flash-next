@@ -203,9 +203,11 @@ which absorbs the tuned cards' last remaining edge. At C1 everything is tied (±
 1. **Serving default: stay on K4.25 @ TP2+EP.** Fastest or tied on every axis except
    C16 (−3%), defect-clean at the serving config, smallest footprint. Re-run the ×20
    probe after any engine/numerics change — its clean sheet is config-scoped.
-2. **K6V is the designated fallback** wherever the vendor card's irreproducible
-   provenance is a risk; the tax is quantified at −8–10% C4–C8, ~1% C16, wash at C1, and
-   its build pipeline is fully in-repo.
+2. **K6V as designated fallback — RETRACTED 2026-10-17 (night):** the fallback
+   posture was withdrawn with the experiment and all built cards, K6V included,
+   were deleted; the vendor K4.25-v1 + PLE-FP8-v1 snapshots are the protected
+   serving assets. The quantified K6V tax (−8–10% C4–C8, ~1% C16, wash at C1)
+   stands as measurement record only.
 3. **Close the tuned/recipe lane.** No further conversions, no SQNR spend, no mixed-pool
    revival until `measure_model` produces non-degenerate measurements on this arch. The
    deferred "4.25-as-9th-alt" probe stays deferred behind that same gate.

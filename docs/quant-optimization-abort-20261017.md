@@ -110,12 +110,3 @@ is the reliable instrument.
   the provenance record).
 - Panel calibration corpus with hash-pinned provenance.
 
-## Fallback posture
-
-UPDATED at cleanup (2026-10-17): the on-disk insurance cards (uniform K5,
-K6V) were deleted with the experiment per owner decision. If the vendor
-snapshot ever becomes unavailable: **rebuild uniform K5 from the public
-BF16 checkpoint** (re-downloadable, hash-pinned) using the committed
-`quant/recipe-uniform5` lineage + `scripts/` build tooling, or serve the
-PLE-FP8-v1 vendor variant. The primary vendor snapshot is hash-pinned in the
-repo dir; re-verify against `PROVENANCE` before any redeploy.
