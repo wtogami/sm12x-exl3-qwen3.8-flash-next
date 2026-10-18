@@ -174,6 +174,22 @@ finals, `core-suite-20261007/` and `c16-repeat-20261007/` carry no
 `VLLM_PLE_CPU_OFFLOAD`: the PLE mode of these specific blocks is inferred
 from the platform default rather than recorded.
 
+### README profile visibility (2026-10-18)
+
+The `nvfp4-redhatai` profile was removed from the README's profile table and
+run hints on 2026-10-18 because of this unresolved C16 stall: it is the only
+build that fails to scale past C8, and neither the engine-side cause nor a
+workaround has been established. The profile itself is unchanged and fully
+supported — `QUANT=nvfp4-redhatai` still works in `download.sh`, `start.sh`
+and `stop.sh`, and the checkpoint pin in `model-profiles.sh`, the
+CompressedTensors PLE patch, the profiler enum and every receipt here, in
+[quality-comparison.md](quality-comparison.md) and in
+[qualification.md](qualification.md) remain in place. The README now lists
+only the profiles it can recommend without a scaling caveat; RedHatAI stays
+documented here as the compressed-tensors format reference, where its
+measured strengths (nvidia-matching prefill, EXL3-matching quality) still
+stand. Re-add it to the README if the C16 path is ever explained or fixed.
+
 ## End-to-end eval legs (wall-clock, 16-way concurrent requests)
 
 | Leg | EXL3 | nvidia | RHA | exl3-ple8 |

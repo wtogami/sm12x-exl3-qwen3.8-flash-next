@@ -19,13 +19,13 @@ for the defaults; C16 throughput tradeoffs are recorded below.
 > 512K, FP8 KV, host-offloaded PLE table (`PLE_MMAP=0`; discrete RTX
 > cannot dereference checkpoint mappings — Spark (GB10) defaults to mmap).
 >
-> **Current measurements** — image `8294c3c914c0`, 600 W, all four
-> checkpoints measured 2026-10-07:
+> **Current measurements** — image `8294c3c914c0`, 600 W, measured
+> 2026-10-07:
 > [docs/quality-comparison.md](docs/quality-comparison.md) (EXL3 vs NVIDIA
-> NVFP4 vs RedHatAI NVFP4 vs the exl3-ple8 FP8-PLE variant; paired
+> NVFP4 vs the exl3-ple8 FP8-PLE variant; paired
 > McNemar stats, 10-run tool-eval study) ·
 > [docs/performance-comparison.md](docs/performance-comparison.md) (power
-> ladder, SM clock-lock sweep, four-way concurrency scaling) ·
+> ladder, SM clock-lock sweep, cross-checkpoint concurrency scaling) ·
 > [docs/qualification.md](docs/qualification.md) (full dated record).
 >
 > **Historical:** the benchmark tables further down in this file (and the
@@ -39,7 +39,6 @@ for the defaults; C16 throughput tradeoffs are recorded below.
 | `exl3` | [EXL3 K4.25](https://huggingface.co/wrldsuksgo2mars/Qwen3.8-Flash-Next-EXL3-K4.25-v1) | BF16, about 95 GiB | 3 / 2 |
 | `exl3-ple8` | [EXL3 K4.25 PLE FP8](https://huggingface.co/wrldsuksgo2mars/Qwen3.8-Flash-Next-EXL3-K4.25-PLE-FP8-v1) | FP8 with shared scale, about 48 GiB | 3 / 2 |
 | `nvfp4` | [NVIDIA NVFP4](https://huggingface.co/nvidia/Qwen3.8-Flash-Next-NVFP4) | FP8 with shared scale, about 48 GiB | 2 / 2 |
-| `nvfp4-redhatai` | [RedHatAI NVFP4](https://huggingface.co/RedHatAI/Qwen3.8-Flash-Next-NVFP4) | BF16, about 95 GiB | 3 / 2 |
 
 On RTX the PLE table is page-locked in host RAM, so its size is a host memory
 requirement, not a GPU one, and PyTorch rounds every pinned allocation up to a
@@ -59,7 +58,8 @@ PLE table. The shipping default is **`exl3`** with the platform PLE storage
 mode (RTX: host-offloaded resident table; Spark: mmap). Choose `exl3-ple8` to
 save about 47.7 GiB of checkpoint payload, reduce download/storage
 requirements, or fit more PLE rows in the available file cache on a lower-RAM
-system. The 2026-10-07 four-way comparison (`docs/quality-comparison.md`)
+system. The 2026-10-07 cross-checkpoint comparison
+(`docs/quality-comparison.md`)
 found the two statistically tied on GSM8K, IFEval and tool-calling: the
 quantized expert weights carry the model's quality and the n-gram PLE table
 tolerates FP8, so the half-size table is a memory win, not a quality tax
@@ -170,8 +170,7 @@ requirements. Checkpoint weights are downloaded separately.
 bash stop.sh
 QUANT=exl3-ple8 bash download.sh
 QUANT=exl3-ple8 bash start.sh
-# NVIDIA: use QUANT=nvfp4; RedHatAI: QUANT=nvfp4-redhatai
-# (download.sh, start.sh and stop.sh alike).
+# NVIDIA: use QUANT=nvfp4 (download.sh, start.sh and stop.sh alike).
 # GPU=1 selects another GPU on a multi-GPU RTX host.
 # TP_SIZE=2 runs one engine tensor-parallel across two GPUs; they must all be
 # injected -- GPU=all or GPU=0,1 (unset GPU also works: docker defaults to the
@@ -202,8 +201,7 @@ QUANT=exl3-ple8 REPLACE=1 bash start.sh     # stop-and-replace in one step
 ```
 
 The OpenAI-compatible endpoint is `http://127.0.0.1:8001/v1`, with served
-aliases `qwen38-exl3`, `qwen38-exl3-ple8`, `qwen38-nvfp4` and
-`qwen38-nvfp4-redhatai`. Tool calls use
+aliases `qwen38-exl3`, `qwen38-exl3-ple8` and `qwen38-nvfp4`. Tool calls use
 `qwen3_coder`; reasoning uses `qwen3`. Send
 `"chat_template_kwargs":{"enable_thinking":false}` for the non-thinking mode
 used in performance tests. The full tool-quality suite uses thinking enabled.
@@ -357,10 +355,11 @@ The [Dockerfile](Dockerfile) pins the base image and B12x revision. The
 [patches](patches) now carry the EXL3 namespace/MTP-mapping loader port, the
 qflashrt FP8-PLE annotation for EXL3 hybrids, exact host token embeddings, the
 optional B12x vocabulary projection and NVFP4 expert bridges, the
-CompressedTensors PLE branch that lets RedHatAI's checkpoint start under
-vLLM v0.31, and the strict-hash checkpoint-mapped PLE backport (upstream
-PRs 58439+58835 re-derived for v0.31.0). The QSA FP8 main-cache backport
-shipped upstream in v0.31.0 and was dropped, as were the former MTP remap,
+CompressedTensors PLE branch that lets compressed-tensors NVFP4 checkpoints
+start under vLLM v0.31, and the strict-hash checkpoint-mapped PLE backport
+(upstream PRs 58439+58835 re-derived for v0.31.0). The QSA FP8 main-cache
+backport shipped upstream in v0.31.0 and was dropped, as were the former MTP
+remap,
 FP8 draft weights, ModelOpt PLE selection and structured-output ports
 (upstream code since v0.30/v0.31).
 [Provenance](PROVENANCE.md) distinguishes borrowed benchmark contracts from new
@@ -370,8 +369,8 @@ The v0.1.0 runtime receipts retain the original image IDs. The follow-on
 v0.2.0 release adds mmap support and its reviewed validation fixes, with full
 `exl3-ple8` mmap qualification on RTX; v0.3.0/v0.3.1 add native Spark support
 and the resident-mode repair. The current branch completes two engine
-rebases (v0.30.0, then released-v0.31.0) and carries the 2026-10-07 four-way
-RTX comparison in `docs/` — rebased release images are not yet published.
+rebases (v0.30.0, then released-v0.31.0) and carries the 2026-10-07 RTX
+comparison in `docs/` — rebased release images are not yet published.
 Historical RTX evidence is retained.
 
 ## Reproduce qualification
