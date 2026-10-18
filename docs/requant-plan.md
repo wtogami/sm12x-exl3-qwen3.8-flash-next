@@ -1,5 +1,11 @@
 # Option B: requantize Qwen/Qwen3.8-Flash-Next ourselves (plan)
 
+> **SUPERSEDED 2026-10-17.** This plan ran to completion (K6V built + qualified)
+> and was then closed by the owner's final decision. No ship step executed; the
+> "K4.25 card retained as fallback" posture below is withdrawn (see
+> decision-20261015.md and docs/quant-optimization-abort-20261017.md). The
+> document stands as engineering record only.
+
 Goal: a K≈6 EXL3 card of our own that runs the b12x fast path
 (graphs + MTP + EP) at the existing topology's quality ceiling, sized for
 2× RTX PRO 6000 Blackwell at 300 W, serving 512K (YaRN-2) as the default
