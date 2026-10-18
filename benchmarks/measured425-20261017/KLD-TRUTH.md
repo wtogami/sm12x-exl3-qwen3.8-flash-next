@@ -67,12 +67,16 @@ every 4-4.6 bpw allocation is behaviorally interchangeable on our gates, and the
 cheapest member of the band (uniform K4, 4.0 bits, KLD 0.0209) is also the
 cheapest to serve. Vendor 4.25 remains default; no rebuild is justified.
 
-## Artifacts (all byte-stable, regenerable)
-- sc-measure/basekld-{vendor425(failed),measured425,measured459,k4}.json
-- sc-measure/bf16-logits.pt (top-64+lse dump of the 64-row panel stream)
-- sc-measure/engine-lp-{vendor425,k4}.pt (harvested top-20 prompt_logprobs)
-- snapshots/k4 symlink (req4-build/out) in the K4.25-v1 repo dir for engine boots
-- scripts/sc/{bf16-logitdump,kl-engine-harvest,kl-estimate}.py + gpu0-kltree.sh
-
-## Closure
-Quality program closed 2026-10-17 evening (owner): vendor 4.25 is the terminal card; band above ~4.25 bits is behaviorally flat (see decision-20261015.md evening entry). This file is the final true-KLD ledger.
+## Artifacts (post-cleanup 2026-10-17)
+Host-side scratch was deleted with the experiment cleanup; the durable record
+lives in git:
+- `benchmarks/kld-receipts-20261017/` - gzipped raw measure_model JSONs
+  (panel l2/l3, vanilla l3, all basekld-* incl. vendor dense-path, analyses)
+  and the consolidated build.log.
+- `quant/recipe-*.yaml.gz`, `patches/`, `scripts/sc/` - everything needed to
+  regenerate any number here (panel corpus retained on burst at
+  `calibration/agentic-quant-panel-v1/`, sha256 `6cf142dc...f644b`).
+- Deleted unrecoverably (by design, artifacts of the rejected engine route):
+  `bf16-logits.pt`, `engine-lp-{k4,vendor425}.pt`, all built experiment cards
+  (ladder, vanilla, measured, tuned, ref-rebuilds), BF16 checkpoints on both
+  hosts. Vendor K4.25-v1 + PLE-FP8-v1 snapshots are untouched production assets.

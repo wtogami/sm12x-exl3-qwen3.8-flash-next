@@ -105,14 +105,17 @@ is the reliable instrument.
 - Engine tier-capability contract + capability-aware emitter (boot-safe by
   construction).
 - Dense-path measurement patch (vendor-class cards measurable forever after).
-- measured425/measured459 cards + recipes as offline artifacts
-  (`MEASURED-*-KEPT.md`), plus `quant/recipe-measuredl2-425.yaml.gz` (a
-  bootable l2 recipe, solved pre-verdict).
+- Recipes as git artifacts (`quant/recipe-measured*.yaml.gz`); the built
+  cards themselves were deleted at cleanup (`MEASURED-*-KEPT.md` notes remain
+  the provenance record).
 - Panel calibration corpus with hash-pinned provenance.
 
 ## Fallback posture
 
-If the vendor snapshot ever becomes unavailable: **uniform K5 @ TP2**
-(quality-equivalent at +18% expert VRAM, TP1 512K lost) with K6V as the
-TP2-only quality reserve. The vendor snapshot itself is hash-pinned in the
+UPDATED at cleanup (2026-10-17): the on-disk insurance cards (uniform K5,
+K6V) were deleted with the experiment per owner decision. If the vendor
+snapshot ever becomes unavailable: **rebuild uniform K5 from the public
+BF16 checkpoint** (re-downloadable, hash-pinned) using the committed
+`quant/recipe-uniform5` lineage + `scripts/` build tooling, or serve the
+PLE-FP8-v1 vendor variant. The primary vendor snapshot is hash-pinned in the
 repo dir; re-verify against `PROVENANCE` before any redeploy.
