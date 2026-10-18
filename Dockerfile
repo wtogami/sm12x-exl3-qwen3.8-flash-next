@@ -1,9 +1,8 @@
 # syntax=docker/dockerfile:1.7
 ARG EXL3_SOURCE_IMAGE=ghcr.io/tpurtell/glm-5.3-flash-exl3-4bpw-2x-rtx@sha256:48e254d94f58137c8707e6044cde4528c6af3fdd9702726b9b362e9b0e0b4629
-# vllm/vllm-openai:v0.31.0 (official multiarch images, CUDA 13.0; upstream now
-# contains the QSA FP8 KV cache (PR 55557), so only the mmap PLE backport
-# remains vendored).
-ARG VLLM_BASE_IMAGE=docker.io/vllm/vllm-openai@sha256:a4a4c0437bf7240089da5f08aa370c4aee17ae5290f7a3b468825ee26c4c3a6b
+# vllm/vllm-openai:v0.32.0 (official multiarch images, CUDA 13.0; pinned to the
+# tag digest reported by the registry).
+ARG VLLM_BASE_IMAGE=docker.io/vllm/vllm-openai@sha256:befccf0e7e4089aa23926bb6f887a85c0d46c2a99e6de5c5ffdf5cb7957c5b34
 FROM --platform=linux/amd64 ${EXL3_SOURCE_IMAGE} AS exl3_source
 FROM ${VLLM_BASE_IMAGE}
 ARG CUTE_DSL_ARCH=sm_120a
@@ -30,27 +29,28 @@ COPY patches/qwen_pinned_host.py /usr/local/lib/python3.12/dist-packages/vllm/mo
 RUN python3 /tmp/port-exl3-qwen38.py /usr/local/lib/python3.12/dist-packages/vllm \
  && python3 -c 'from vllm.model_executor.layers.quantization import get_quantization_config; assert get_quantization_config("exl3").__name__ == "Exl3Config"'
 
-# Upstream correction merged after the v0.31.0 branch cut, applied at a pinned
-# commit with strict base hashes and fuzz 0:
+# Upstream corrections merged after the v0.31.0 branch cut, applied at a pinned
+# head with strict base hashes and fuzz 0:
 #   PR 58439 + stacked 58835  checkpoint-mapped (mmap) PLE table with readahead
-# (PR 55557's fp8_e4m3 QSA KV cache shipped upstream in v0.31.0 and was dropped
-# from this recipe.)
-COPY patches/port-ple-mmap.py patches/ple-mmap-pr58439-58835-v0.31.patch patches/ple-mmap-base-hashes.json /tmp/ple-mmap/
+# (head 047fc1c, still open upstream; re-anchored byte-clean onto v0.32.0.)
+COPY patches/port-ple-mmap.py patches/ple-mmap-pr58439-58835-v0.32.patch patches/ple-mmap-base-hashes.json /tmp/ple-mmap/
 RUN python3 /tmp/ple-mmap/port-ple-mmap.py /usr/local/lib/python3.12/dist-packages/vllm
 LABEL io.tpurtell.ple-mmap.pr="58439+58835" \
-      io.tpurtell.ple-mmap.commit="47b9933db82d"
+      io.tpurtell.ple-mmap.commit="047fc1c"
 
 # Recipe-local ports, applied after the vendored upstream patches.
+# port-nvfp4-ple-ct.py was dropped here: v0.32.0 upstream now routes
+# CompressedTensors/INC/Quark/ModelOpt-mixed-precision PLE layers to the
+# unquantized method itself (per-layer scheme check; strictly better scoped
+# than the recipe port).
 COPY patches/port-host-embedding.py /tmp/port-host-embedding.py
 COPY patches/port-vocab-projection.py /tmp/port-vocab-projection.py
 COPY patches/port-nvfp4-moe.py /tmp/port-nvfp4-moe.py
-COPY patches/port-nvfp4-ple-ct.py /tmp/port-nvfp4-ple-ct.py
 COPY patches/port-exl3-ple-fp8.py /tmp/port-exl3-ple-fp8.py
 COPY patches/port-ple-exact-pin.py /tmp/port-ple-exact-pin.py
 RUN python3 /tmp/port-host-embedding.py /usr/local/lib/python3.12/dist-packages/vllm \
  && python3 /tmp/port-vocab-projection.py /usr/local/lib/python3.12/dist-packages/vllm \
  && python3 /tmp/port-nvfp4-moe.py /usr/local/lib/python3.12/dist-packages/vllm \
- && python3 /tmp/port-nvfp4-ple-ct.py /usr/local/lib/python3.12/dist-packages/vllm \
  && python3 /tmp/port-exl3-ple-fp8.py /usr/local/lib/python3.12/dist-packages/vllm \
  && python3 /tmp/port-ple-exact-pin.py /usr/local/lib/python3.12/dist-packages/vllm \
  && python3 -c 'from vllm.model_executor.layers.quantization import get_quantization_config; assert get_quantization_config("exl3").__name__ == "Exl3Config"' \

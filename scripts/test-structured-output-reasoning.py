@@ -1,8 +1,9 @@
 #!/usr/bin/env python3
 """CPU regression for the installed manager's actual grammar_bitmask method.
 
-Targets the v0.30.0 redesign: reasoning-boundary logic lives in
-`_get_constraint_start` (extracted here as well) and draft tokens go through
+Targets the v0.32.0 shape: reasoning-boundary logic lives in
+`_get_constraint_bounds` (extracted here as well, returning the
+ConstraintBounds NamedTuple) and draft tokens go through
 `accept_tokens` directly, with a log + bitmask shutdown on rejection.
 
 AST extraction avoids loading vLLM/CUDA. The matcher and tensor are test
@@ -91,15 +92,24 @@ def _extract(path, class_name, names):
 
 def manager(reasoner=True):
     methods = _extract(SOURCE, 'StructuredOutputManager',
-                       ('_get_constraint_start', 'grammar_bitmask'))
+                       ('_get_constraint_bounds', 'grammar_bitmask'))
     helpers = _extract(UTILS, None, ('strip_speculative_padding',))
     module = ast.Module(body=methods + helpers, type_ignores=[])
     logs = []
+    from typing import NamedTuple
+
+    class ConstraintBounds(NamedTuple):
+        grammar_start: int
+        constraint_start: int
+
     namespace = {
         'TYPE_CHECKING': False,
         'logger': SimpleNamespace(error=lambda *a, **k: logs.append(a[1])),
         'ParserEngineReasoningAdapter': type('ParserEngineReasoningAdapter',
                                              (), {}),
+        'ConstraintBounds': ConstraintBounds,
+        '_CONSTRAINED_FROM_START': ConstraintBounds(0, 0),
+        '_NO_SPEC_TOKENS': ConstraintBounds(1, 1),
     }
     import __future__
     exec(compile(ast.fix_missing_locations(module), str(SOURCE), 'exec',
@@ -110,8 +120,8 @@ def manager(reasoner=True):
         _grammar_bitmask=Tensor(), fill_bitmask_parallel_threshold=128,
         enable_in_reasoning=False, masks=[], logs=logs,
     )
-    instance._get_constraint_start = lambda *args: namespace[
-        '_get_constraint_start'](instance, *args)
+    instance._get_constraint_bounds = lambda *args: namespace[
+        '_get_constraint_bounds'](instance, *args)
     if reasoner:
         instance._get_reasoner = lambda request: SimpleNamespace(
             is_reasoning_end=lambda history: False,

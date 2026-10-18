@@ -57,9 +57,9 @@ replace(exl3, '        if model_type != "deepseek_v4":\n',
         '                    self.tensor_storage[f"mtp.layers.{index}.{match.group(2)}"] = entry\n'
         '        if model_type != "deepseek_v4":\n')
 routed = root / "model_executor/layers/fused_moe/routed_experts.py"
-replace(routed, '            is_fused = loaded_weight.dim() == 3\n',
+replace(routed, '            is_fused = loaded_weight.dim() == 3 and named_expert is None\n',
         '            # EXL3 per-expert trellis tiles also have rank three.\n'
-        '            is_fused = (loaded_weight.dim() == 3\n'
+        '            is_fused = (loaded_weight.dim() == 3 and named_expert is None\n'
         '                        and self.quant_method.__class__.__name__ != "Exl3MoEMethod")\n')
 # The recipe's EXL3 trellis knobs were plain environment variables read from
 # the adapter; v0.31.0 warns about every unregistered VLLM_* variable at

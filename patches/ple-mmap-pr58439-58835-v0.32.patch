@@ -1,7 +1,8 @@
 diff --git a/vllm/config/engram.py b/vllm/config/engram.py
+index 7a7ed8f..37b30a9 100644
 --- a/vllm/config/engram.py
 +++ b/vllm/config/engram.py
-@@ -21,6 +21,12 @@
+@@ -20,6 +20,12 @@ _NGRAM_LAYER_FIELDS = {
  }
  
  
@@ -14,7 +15,7 @@ diff --git a/vllm/config/engram.py b/vllm/config/engram.py
  def model_has_engram_layers(model_config: "ModelConfig | None") -> bool:
      """Whether the model carries n-gram embedding layers."""
      if model_config is None:
-@@ -42,6 +48,16 @@
+@@ -41,6 +47,16 @@ class EngramConfig:
      """Shard embeddings across TP and all DP ranks when enabled.
      Otherwise, each DP rank has a separate TP-sharded embedding replica."""
  
@@ -31,7 +32,7 @@ diff --git a/vllm/config/engram.py b/vllm/config/engram.py
      dp_shared_memory: bool | None = None
      """Share CPU-offloaded embedding weights between co-located
      DP replicas. Each node stores one copy of every TP shard, reducing host
-@@ -63,6 +79,16 @@
+@@ -62,6 +78,16 @@ class EngramConfig:
              raise ValueError(
                  "use_thp requires cpu_offload=True and dp_shared_memory=False"
              )
@@ -48,9 +49,9 @@ diff --git a/vllm/config/engram.py b/vllm/config/engram.py
          return self
  
      def verify_model_config(self, model_config: "ModelConfig | None") -> None:
-@@ -85,6 +111,19 @@
-                 "embeddings, non-empty n-gram layer ids, and a CUDA-alike "
-                 "device (CUDA or ROCm)."
+@@ -80,6 +106,24 @@ class EngramConfig:
+                 "EngramConfig requires a model with supported Engram "
+                 "embeddings and non-empty n-gram layer ids."
              )
 +        if (
 +            self.checkpoint_mapped
@@ -61,25 +62,81 @@ diff --git a/vllm/config/engram.py b/vllm/config/engram.py
 +                f"{sorted(_CHECKPOINT_MAPPED_ARCHITECTURES)} only, not "
 +                f"{model_config.architecture}."
 +            )
-+        if self.checkpoint_mapped and not current_platform.is_cuda():
-+            # The ROCm Qwen4Exp path has no mapped backend and would silently
-+            # store the full pinned table instead.
-+            raise ValueError("Engram checkpoint_mapped is implemented for CUDA only.")
++        if self.checkpoint_mapped:
++            from vllm.platforms import current_platform
++
++            if not current_platform.is_cuda():
++                # The ROCm Qwen4Exp path has no mapped backend and would
++                # silently store the full pinned table instead.
++                raise ValueError(
++                    "Engram checkpoint_mapped is implemented for CUDA only."
++                )
  
      def resolve_dp_shared_memory(self, parallel_config: "ParallelConfig") -> None:
          """Share host tables by default wherever the configuration permits."""
-@@ -94,6 +133,7 @@
+@@ -87,6 +131,7 @@ class EngramConfig:
+             self.dp_shared_memory = (
+                 self.cpu_offload
                  and not self.use_thp
++                and not self.checkpoint_mapped
                  and parallel_config.data_parallel_size > 1
                  and not parallel_config.enable_elastic_ep
-+                and not self.checkpoint_mapped
              )
+diff --git a/vllm/models/qwen4_exp/common/ngram_embedding.py b/vllm/models/qwen4_exp/common/ngram_embedding.py
+index 85a382c..5753e45 100644
+--- a/vllm/models/qwen4_exp/common/ngram_embedding.py
++++ b/vllm/models/qwen4_exp/common/ngram_embedding.py
+@@ -238,6 +238,12 @@ class Qwen4ExpPLEEmbeddingMethod(QuantizeMethodBase):
+     def embedding(self, layer: nn.Module, input_: torch.Tensor) -> torch.Tensor:
+         return F.embedding(input_, layer.weight)
  
-     def verify_parallel_config(self, parallel_config: "ParallelConfig") -> None:
++    def process_weights_after_loading(self, layer: nn.Module) -> None:
++        """Let storage that is bound after loading (checkpoint-mapped) attach."""
++        bind = getattr(layer, "bind_storage_after_loading", None)
++        if bind is not None:
++            bind()
++
+     @abstractmethod
+     def dequantize(
+         self,
+@@ -327,6 +333,7 @@ class Qwen4ExpPLEFp8EmbeddingMethod(Qwen4ExpPLEEmbeddingMethod):
+         sentinel = torch.finfo(torch.float32).min
+         if torch.any(layer.weight_scale == sentinel):
+             raise ValueError("FP8 PLE checkpoint is missing its global scale")
++        super().process_weights_after_loading(layer)
+ 
+     def dequantize(
+         self,
+@@ -576,10 +583,7 @@ class Qwen4ExpPLEPinnedHostEmbedding(Qwen4ExpPLEEmbedding):
+         output: torch.Tensor,
+     ) -> None:
+         """Join the side stream, optionally reduce ETP shards, and select rows."""
+-        prefetch_stream = self._prefetch_stream
+-        if prefetch_stream is None:
+-            raise RuntimeError("pinned PLE finalize requires a prior start_prefetch")
+-        torch.cuda.current_stream().wait_stream(prefetch_stream)
++        self._join_prefetch_stream()
+         slot_size, slot_offset = self._get_dp_gather_slot(output.shape[0])
+         embeddings = prefetch_output[: slot_size * self.etp_data_parallel_size]
+         if self.reduce_results:
+@@ -594,6 +598,12 @@ class Qwen4ExpPLEPinnedHostEmbedding(Qwen4ExpPLEEmbedding):
+         )
+         output.copy_(embeddings.flatten(-2))
+ 
++    def _join_prefetch_stream(self) -> None:
++        prefetch_stream = self._prefetch_stream
++        if prefetch_stream is None:
++            raise RuntimeError("pinned PLE finalize requires a prior start_prefetch")
++        torch.cuda.current_stream().wait_stream(prefetch_stream)
++
+     def finalize_prefetch(self, total_tokens: int) -> torch.Tensor:
+         """Finalize the full-token pinned lookup with optional ETP reduction."""
+         buffer = self._prefetch_buffer
 diff --git a/vllm/models/qwen4_exp/nvidia/model_state.py b/vllm/models/qwen4_exp/nvidia/model_state.py
+index 2461685..1e78a23 100644
 --- a/vllm/models/qwen4_exp/nvidia/model_state.py
 +++ b/vllm/models/qwen4_exp/nvidia/model_state.py
-@@ -13,6 +13,12 @@
+@@ -13,6 +13,12 @@ from vllm.v1.worker.gpu.mm.encoder_cache import EncoderCache
  from vllm.v1.worker.gpu.model_states.mamba_hybrid import MambaHybridModelState
  from vllm.v1.worker.gpu.states import RequestState
  
@@ -92,7 +149,7 @@ diff --git a/vllm/models/qwen4_exp/nvidia/model_state.py b/vllm/models/qwen4_exp
  
  class Qwen4ExpModelState(MambaHybridModelState):
      """Add rollback-safe PLE n-gram context to the model inputs."""
-@@ -58,6 +64,13 @@
+@@ -58,6 +64,13 @@ class Qwen4ExpModelState(MambaHybridModelState):
              dtype=torch.int64,
              device=self.device,
          )
@@ -106,7 +163,7 @@ diff --git a/vllm/models/qwen4_exp/nvidia/model_state.py b/vllm/models/qwen4_exp
          self.ple_query_start_loc = torch.zeros(
              self.max_num_reqs + 1,
              dtype=torch.int32,
-@@ -106,12 +119,59 @@
+@@ -106,12 +119,59 @@ class Qwen4ExpModelState(MambaHybridModelState):
          query_start_loc[: num_reqs_padded + 1].copy_(input_batch.query_start_loc)
          # Represent unused capacity as trailing zero-length requests.
          query_start_loc[num_reqs_padded + 1 :].copy_(input_batch.query_start_loc[-1])
@@ -167,50 +224,8 @@ diff --git a/vllm/models/qwen4_exp/nvidia/model_state.py b/vllm/models/qwen4_exp
      def prepare_dummy_inputs(
          self,
          num_reqs: int,
-diff --git a/vllm/models/qwen4_exp/common/ngram_embedding.py b/vllm/models/qwen4_exp/common/ngram_embedding.py
---- a/vllm/models/qwen4_exp/common/ngram_embedding.py
-+++ b/vllm/models/qwen4_exp/common/ngram_embedding.py
-@@ -216,6 +216,12 @@
-     def embedding(self, layer: nn.Module, input_: torch.Tensor) -> torch.Tensor:
-         return F.embedding(input_, layer.weight)
- 
-+    def process_weights_after_loading(self, layer: nn.Module) -> None:
-+        """Let storage that is bound after loading (checkpoint-mapped) attach."""
-+        bind = getattr(layer, "bind_storage_after_loading", None)
-+        if bind is not None:
-+            bind()
-+
-     @abstractmethod
-     def dequantize(
-         self,
-@@ -305,6 +311,7 @@
-         sentinel = torch.finfo(torch.float32).min
-         if torch.any(layer.weight_scale == sentinel):
-             raise ValueError("FP8 PLE checkpoint is missing its global scale")
-+        super().process_weights_after_loading(layer)
- 
-     def dequantize(
-         self,
-@@ -522,7 +529,7 @@
-         output: torch.Tensor,
-     ) -> None:
-         """Join the side stream, reduce ETP shards, and select local rows."""
--        torch.cuda.current_stream().wait_stream(self._prefetch_stream)
-+        self._join_prefetch_stream()
-         slot_size, slot_offset = self._get_dp_gather_slot(output.shape[0])
-         active_output = prefetch_output[: slot_size * self.etp_data_parallel_size]
-         embeddings = self._reduce_etp_embeddings(active_output)
-@@ -533,6 +540,9 @@
-         )
-         output.copy_(embeddings.flatten(-2))
- 
-+    def _join_prefetch_stream(self) -> None:
-+        torch.cuda.current_stream().wait_stream(self._prefetch_stream)
-+
-     def forward(self, hidden_states: torch.Tensor) -> torch.Tensor:
-         """Finish the pinned lookup into graph-owned output storage."""
-         output = self._prefetch_buffer.new_empty(
 diff --git a/vllm/models/qwen4_exp/nvidia/ngram_embedding.py b/vllm/models/qwen4_exp/nvidia/ngram_embedding.py
+index 794eea8..db15d91 100644
 --- a/vllm/models/qwen4_exp/nvidia/ngram_embedding.py
 +++ b/vllm/models/qwen4_exp/nvidia/ngram_embedding.py
 @@ -1,13 +1,15 @@
@@ -224,16 +239,16 @@ diff --git a/vllm/models/qwen4_exp/nvidia/ngram_embedding.py b/vllm/models/qwen4
 +import regex as re
  import torch
  from torch import nn
+ from transformers import Qwen4ExpTextConfig
  
- from vllm.config import get_current_vllm_config
 +from vllm.compilation.breakable_cudagraph import eager_break_during_capture
+ from vllm.config import get_current_vllm_config
+ from vllm.distributed import get_etp_group, get_tp_group
  from vllm.logger import init_logger
- from vllm.model_executor.layers.quantization.base_config import (
-     QuantizationConfig,
-@@ -26,6 +28,12 @@
+@@ -27,6 +29,12 @@ from ..common.ngram_embedding import (
      Qwen4ExpPLEUnquantizedEmbeddingMethod,
  )
- from .ops.ple import ple_ngram_ids
+ from ..common.ops.ple import ple_ngram_ids
 +from .ple_pageable import (
 +    MappedTable,
 +    discover_table_layout,
@@ -243,7 +258,14 @@ diff --git a/vllm/models/qwen4_exp/nvidia/ngram_embedding.py b/vllm/models/qwen4
  
  logger = init_logger(__name__)
  
-@@ -40,6 +48,256 @@
+@@ -35,12 +43,258 @@ __all__ = [
+     "Qwen4ExpPLEEmbedding",
+     "Qwen4ExpPLEEmbeddingMethod",
+     "Qwen4ExpPLEFp8EmbeddingMethod",
++    "Qwen4ExpPLEPageableHostEmbedding",
+     "Qwen4ExpPLEPinnedHostEmbedding",
+     "Qwen4ExpPLEUnquantizedEmbeddingMethod",
+     "Qwen4ExpNGramEmbedding",
  ]
  
  
@@ -271,6 +293,7 @@ diff --git a/vllm/models/qwen4_exp/nvidia/ngram_embedding.py b/vllm/models/qwen4
 +        num_ngram_heads: int = 1,
 +        max_total_tokens: int = 0,
 +        data_parallel_rank: int = 0,
++        reduce_results: bool = True,
 +    ) -> None:
 +        device = torch.device("cuda", torch.accelerator.current_device_index())
 +        require_pageable_access(device.index)
@@ -294,6 +317,7 @@ diff --git a/vllm/models/qwen4_exp/nvidia/ngram_embedding.py b/vllm/models/qwen4
 +            num_ngram_heads=num_ngram_heads,
 +            max_total_tokens=max_total_tokens,
 +            data_parallel_rank=data_parallel_rank,
++            reduce_results=reduce_results,
 +        )
 +        layer_match = re.search(r"layers\.(\d+)\.", prefix)
 +        if layer_match is None:
@@ -307,6 +331,7 @@ diff --git a/vllm/models/qwen4_exp/nvidia/ngram_embedding.py b/vllm/models/qwen4
 +        self._rebind_pending = False
 +        self._pending_table: MappedTable | None = None
 +        self._reload_error: Exception | None = None
++        self._device = device
 +        self._prefetch_stream = torch.cuda.Stream(device=device)
 +        self._prefetch_buffer = torch.empty(
 +            max_total_tokens * self.etp_data_parallel_size,
@@ -374,7 +399,7 @@ diff --git a/vllm/models/qwen4_exp/nvidia/ngram_embedding.py b/vllm/models/qwen4
 +            self.weight.dtype,
 +            int(getattr(self._model_config.hf_text_config, "split_ngram_parts", 512)),
 +        )
-+        return MappedTable(layout, self._prefetch_buffer.device)
++        return MappedTable(layout, self._device)
 +
 +    def _bind(self) -> None:
 +        if self._reload_error is not None:
@@ -387,7 +412,7 @@ diff --git a/vllm/models/qwen4_exp/nvidia/ngram_embedding.py b/vllm/models/qwen4
 +            table = MappedTable.zeros(
 +                self.org_vocab_size,
 +                self.embedding_dim * self.weight.dtype.itemsize,
-+                self._prefetch_buffer.device,
++                self._device,
 +            )
 +        else:
 +            table = self._pending_table or self._map_checkpoint_files()
@@ -411,18 +436,14 @@ diff --git a/vllm/models/qwen4_exp/nvidia/ngram_embedding.py b/vllm/models/qwen4
 +            # layer without loadable elements is only restored): rebind now,
 +            # or raise if that reload was rejected.
 +            self._bind()
++        buffer = self._prefetch_buffer
++        assert buffer is not None, "allocated in __init__"
 +        slot_size, _ = self._get_dp_gather_slot(ngram_ids.shape[0])
 +        gathered_ids = self._gather_dp_ids(ngram_ids, slot_size)
-+        self._lookup(
-+            gathered_ids, output=self._prefetch_buffer[: gathered_ids.shape[0]]
-+        )
++        self._lookup(gathered_ids, output=buffer[: gathered_ids.shape[0]])
 +
 +    @eager_break_during_capture
-+    def start_prefetch(
-+        self,
-+        hidden_states: torch.Tensor,
-+        ngram_ids: torch.Tensor,
-+    ) -> None:
++    def start_prefetch(self, ngram_ids: torch.Tensor) -> None:
 +        """Look up on the current stream, not the pinned backend's side stream.
 +
 +        With the side-stream lookup, greedy outputs on GB10 were not reproducible
@@ -481,7 +502,6 @@ diff --git a/vllm/models/qwen4_exp/nvidia/ngram_embedding.py b/vllm/models/qwen4
 +    """
 +    from vllm.model_executor.model_loader.default_loader import DefaultModelLoader
 +
-+    # _prepare_weights returns (hf_folder, files, use_safetensors, fmt).
 +    _, files, use_safetensors, _ = DefaultModelLoader(load_config)._prepare_weights(
 +        model_config.model_weights or model_config.model,
 +        None,
@@ -494,13 +514,10 @@ diff --git a/vllm/models/qwen4_exp/nvidia/ngram_embedding.py b/vllm/models/qwen4
 +    return files
 +
 +
-+
-+
-+
  class Qwen4ExpNGramEmbedding(nn.Module):
      _MASK64 = (1 << 64) - 1
      _SPLITMIX_GAMMA = 0x9E3779B97F4A7C15
-@@ -208,11 +466,13 @@
+@@ -211,11 +465,13 @@ class Qwen4ExpNGramEmbedding(nn.Module):
          if params_dtype is None:
              params_dtype = torch.get_default_dtype()
          engram_config = get_current_vllm_config().engram_config
@@ -516,12 +533,12 @@ diff --git a/vllm/models/qwen4_exp/nvidia/ngram_embedding.py b/vllm/models/qwen4
 +            embedding_cls = Qwen4ExpPLEPinnedHostEmbedding
 +        else:
 +            embedding_cls = Qwen4ExpPLEDeviceEmbedding
-         self.ngram_embedding = embedding_cls(
-             padded_vocab_size,
-             self.head_dim,
-@@ -363,6 +623,13 @@
-         ngram_ids = self.compute_ngram_ids(input_ids, query_start_loc, ngram_context)
-         return self.ngram_embedding(ngram_ids).flatten(-2)
+         # A TP reduce-scatter covers all vocabulary owners only when ETP=TP.
+         self.use_reduce_scatter = (
+             self.use_sequence_parallel
+@@ -392,6 +648,13 @@ class Qwen4ExpNGramEmbedding(nn.Module):
+             return embeddings
+         return self._sp_shard_embeddings(embeddings)
  
 +    def cpu_ngram_ids_fn(self):
 +        """A CPU-only ``compute_ngram_ids`` for host-side page prefetching."""
@@ -532,8 +549,8 @@ diff --git a/vllm/models/qwen4_exp/nvidia/ngram_embedding.py b/vllm/models/qwen4
 +
      def start_prefetch(
          self,
-         hidden_states: torch.Tensor,
-@@ -434,6 +701,12 @@
+         input_ids: torch.Tensor,
+@@ -462,6 +725,12 @@ class Qwen4ExpNGramEmbedding(nn.Module):
                          f"expected {expected_shape}, got "
                          f"{tuple(loaded_weight.shape)}"
                      )
@@ -546,10 +563,12 @@ diff --git a/vllm/models/qwen4_exp/nvidia/ngram_embedding.py b/vllm/models/qwen4
                  embedding.weight.weight_loader(
                      embedding.weight,
                      loaded_weight,
-@@ -448,6 +721,23 @@
+@@ -474,3 +743,19 @@ class Qwen4ExpNGramEmbedding(nn.Module):
+         if regular_weights:
+             loaded.update(AutoWeightsLoader(self).load_weights(regular_weights))
          return loaded
- 
- 
++
++
 +def copy_module_for_cpu_ids(module: "Qwen4ExpNGramEmbedding"):
 +    """An object with CPU copies of the hash buffers ``compute_ngram_ids`` reads."""
 +    from types import SimpleNamespace
@@ -564,16 +583,12 @@ diff --git a/vllm/models/qwen4_exp/nvidia/ngram_embedding.py b/vllm/models/qwen4
 +        _shift_precompute=Qwen4ExpNGramEmbedding._shift_precompute,
 +        _shift_apply=Qwen4ExpNGramEmbedding._shift_apply,
 +    )
-+
-+
- __all__ = [
-     "Qwen4ExpNGramEmbedding",
-+    "Qwen4ExpPLEPageableHostEmbedding",
- ]
 diff --git a/vllm/models/qwen4_exp/nvidia/ple_pageable.py b/vllm/models/qwen4_exp/nvidia/ple_pageable.py
---- a/vllm/models/qwen4_exp/nvidia/ple_pageable.py
+new file mode 100644
+index 0000000..614f11d
+--- /dev/null
 +++ b/vllm/models/qwen4_exp/nvidia/ple_pageable.py
-@@ -0,0 +1,547 @@
+@@ -0,0 +1,492 @@
 +# SPDX-License-Identifier: Apache-2.0
 +# SPDX-FileCopyrightText: Copyright contributors to the vLLM project
 +"""Read the Qwen4Exp PLE n-gram table in place from the checkpoint files.
@@ -590,14 +605,6 @@ diff --git a/vllm/models/qwen4_exp/nvidia/ple_pageable.py b/vllm/models/qwen4_ex
 +rows a step needs are faulted in ahead of the lookup by CPU threads
 +(:class:`PagePrefetcher`). The prefetch is only a hint: the lookup is correct
 +whether or not it has finished.
-+
-+A decode step's rows are known only once the previous step has sampled, so the
-+prefetch has no lead over the lookup: while the table is cold (after a start,
-+loading the weights evicts it from the page cache), the GPU reaches the missing
-+pages at the same time as the prefetch. The prefetch therefore issues readahead
-+for all of a step's pages at once (:meth:`MappedTable._fill`); the GPU's faults
-+then wait on reads that are already in flight in parallel instead of issuing
-+them one at a time.
 +"""
 +
 +import ctypes
@@ -622,11 +629,6 @@ diff --git a/vllm/models/qwen4_exp/nvidia/ple_pageable.py b/vllm/models/qwen4_ex
 +
 +_PAGE = 4096
 +_MADV_RANDOM = 1
-+_MADV_WILLNEED = 3
-+_MADV_POPULATE_READ = 22  # Linux 5.14+
-+# Row sets up to this size (decode steps) are filled page by page; larger ones
-+# (prefill) are touched from the thread pool.
-+_FILL_MAX_ROWS = 4096
 +_CU_PAGEABLE_MEMORY_ACCESS = 88
 +_CU_PAGEABLE_MEMORY_ACCESS_USES_HOST_PAGE_TABLES = 100
 +_SAFETENSORS_DTYPES = {
@@ -833,9 +835,6 @@ diff --git a/vllm/models/qwen4_exp/nvidia/ple_pageable.py b/vllm/models/qwen4_ex
 +        self.num_rows = layout.num_rows
 +        self._maps: dict[str, tuple[mmap.mmap, np.ndarray]] = {}
 +        libc = ctypes.CDLL(None, use_errno=True)
-+        libc.madvise.argtypes = [ctypes.c_void_p, ctypes.c_size_t, ctypes.c_int]
-+        self._libc = libc
-+        self._can_populate = True
 +        for path in sorted({s.path for s in layout.shards}):
 +            fd = os.open(path, os.O_RDONLY)
 +            try:
@@ -882,8 +881,6 @@ diff --git a/vllm/models/qwen4_exp/nvidia/ple_pageable.py b/vllm/models/qwen4_ex
 +        )
 +        array = np.frombuffer(mapping, dtype=np.uint8)
 +        self._maps = {"<zeros>": (mapping, array)}
-+        self._libc = None
-+        self._can_populate = False
 +        self.views = [array[: num_rows * row_bytes].reshape(num_rows, row_bytes)]
 +        self.layout = None
 +        self.shard_base = torch.tensor(
@@ -937,12 +934,7 @@ diff --git a/vllm/models/qwen4_exp/nvidia/ple_pageable.py b/vllm/models/qwen4_ex
 +            view, index = task
 +            return int(view[index, 0].sum()) + int(view[index, last].sum())
 +
-+        if rows.size <= _FILL_MAX_ROWS:
-+            if not self._fill(groups(np.arange(rows.size))):
-+                for task in groups(np.arange(rows.size)):
-+                    fault(task)
-+            return
-+        if pool is None:
++        if pool is None or rows.size <= 4096:
 +            for task in groups(np.arange(rows.size)):
 +                fault(task)
 +            return
@@ -951,38 +943,6 @@ diff --git a/vllm/models/qwen4_exp/nvidia/ple_pageable.py b/vllm/models/qwen4_ex
 +            if chunk.size:
 +                tasks.extend(groups(chunk))
 +        list(pool.map(fault, tasks))
-+
-+    def _fill(self, tasks: list[tuple[np.ndarray, np.ndarray]]) -> bool:
-+        """Read the pages of a few rows in parallel; False if unsupported.
-+
-+        One thread touching the pages serially waits for each read in turn
-+        (~4.7 ms for a decode step's ~57 cold pages on GB10, idle box).
-+        ``MADV_WILLNEED`` queues readahead for every page and returns at once,
-+        so the SSD serves them concurrently, and the GPU's own faults on these
-+        pages wait on reads already in flight; ``MADV_POPULATE_READ`` then maps
-+        each page (~0.36 ms in total). ctypes releases the GIL in both calls.
-+        """
-+        if not self._can_populate:
-+            return False
-+        starts = []
-+        for view, index in tasks:
-+            first = view.__array_interface__["data"][0] + index.astype(np.int64) * (
-+                self.row_bytes
-+            )
-+            starts.append(first & ~(_PAGE - 1))
-+            starts.append((first + self.row_bytes - 1) & ~(_PAGE - 1))
-+        if not starts:
-+            return True
-+        pages = np.unique(np.concatenate(starts)).tolist()
-+        madvise = self._libc.madvise
-+        for page in pages:
-+            madvise(page, _PAGE, _MADV_WILLNEED)
-+        for page in pages:
-+            if madvise(page, _PAGE, _MADV_POPULATE_READ) != 0:
-+                # EINVAL before Linux 5.14: touch the rows instead from now on.
-+                self._can_populate = False
-+                return False
-+        return True
 +
 +
 +class PagePrefetcher:
