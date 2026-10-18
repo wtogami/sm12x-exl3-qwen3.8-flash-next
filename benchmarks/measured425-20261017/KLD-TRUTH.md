@@ -8,6 +8,7 @@
 | measured425 (l3 knapsack) | 4.2465 | 0.02149 | 0.01414 | 1.52 |
 | measured459 (l3 knapsack) | 4.5868 | 0.01984 | 0.01377 | 1.44 |
 | vendor425 (per-expert K4/K5) | 4.25 | **0.01433** | — | — |
+| K5 uniform | 5.0 | **0.01412** | — | — |
 
 UPDATE 18:33 (same day): the keystone became measurable after all. The tree
 blocker was MultiLinear's uniform-BITRATE fusion assert (block_sparse_mlp.py
@@ -20,6 +21,15 @@ Published per-expert allocation genuinely works; my panel-knapsack l3 solve
 genuinely does not (0.0215 is worse than plain K4). The engine-side attempt
 below stands as the record of why THAT route was dead; the number came home
 through the converter tree.
+
+UPDATE 18:47: K5 uniform true KLD = 0.01412 at 5.0 bits. Corrected reading:
+vendor's per-expert allocation is a BITS-SAVING trick (matches uniform K5's
+quality at 85% of the bits), not a quality trick - it does not beat what you
+get by just buying bits. K6V could not be measured: the req6b card was built
+without layers.*.ple.ple_embedding.layer_multipliers (tree loader requires it,
+engine loader tolerates it; it passed previously as a measurement ALT because
+alt tensors are keyed to the base's module tree). Not rebuilt: top of curve,
+least informative point.
 
 Headline (pre-keystone, superseded for vendor but still true for measured):
 **plain uniform K4 (4.0 bits) beats measured425 (4.25 bits)**. The
