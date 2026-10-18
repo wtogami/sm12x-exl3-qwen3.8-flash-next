@@ -73,3 +73,6 @@ cheapest to serve. Vendor 4.25 remains default; no rebuild is justified.
 - sc-measure/engine-lp-{vendor425,k4}.pt (harvested top-20 prompt_logprobs)
 - snapshots/k4 symlink (req4-build/out) in the K4.25-v1 repo dir for engine boots
 - scripts/sc/{bf16-logitdump,kl-engine-harvest,kl-estimate}.py + gpu0-kltree.sh
+
+## Closure
+Quality program closed 2026-10-17 evening (owner): vendor 4.25 is the terminal card; band above ~4.25 bits is behaviorally flat (see decision-20261015.md evening entry). This file is the final true-KLD ledger.
