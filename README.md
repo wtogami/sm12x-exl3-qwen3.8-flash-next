@@ -28,6 +28,16 @@ for the defaults; C16 throughput tradeoffs are recorded below.
 > ladder, SM clock-lock sweep, four-way concurrency scaling) ·
 > [docs/qualification.md](docs/qualification.md) (full dated record).
 >
+> **Closed: measured-allocation quant cards** — we tried to beat the vendor
+> 4.25 bpw EXL3 card by measuring per-group KL-vs-BF16 on a calibration panel
+> and solving a bits-for-KLD knapsack. It is not worth pursuing: the true-KLD
+> band above ~4.25 bits is behaviorally flat (uniform K5 ≈ vendor on KL and on
+> every gate), our solved allocations lose to plain uniform at equal bits, and
+> the vendor card is the only quality point that fits TP1 with 512K context.
+> Vendor 4.25 remains the serving default; uniform K5 @ TP2 is the recorded
+> fallback. What was tried, the KLD ledger, and why we aborted:
+> [docs/quant-optimization-abort-20261017.md](docs/quant-optimization-abort-20261017.md).
+>
 > **Historical:** the benchmark tables further down in this file (and the
 > full set in [benchmarks/RESULTS.md](benchmarks/RESULTS.md)) predate the
 > rebase (v0.1.0–v0.3.1-era images, 400 W RTX, 262144
