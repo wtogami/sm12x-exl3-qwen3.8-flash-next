@@ -59,6 +59,31 @@ MODE_ASYNC = "async"
 MODE_ENV_NAME = "PLE_STREAM_V2_MODE"
 ARENAS_ENV = "PLE_STREAM_ARENAS"
 DEFAULT_ARENAS = 4
+LOG_EVERY_ENV = "PLE_STREAM_V2_LOG_EVERY"
+
+
+LOG_EVERY_DEFAULT = 200
+
+
+def _log_every() -> int:
+    """How often the per-phase averages are logged, in staged steps.
+
+    The phase split (D2H wait / host ids / gather+enqueue) is the only in-engine evidence of where streaming
+    time goes, and a short acceptance run can finish before a fixed period of 200 steps ever prints. Reading
+    the interval from the environment keeps one boot able to answer both "steady state" (default) and "did
+    this shape stage at all" (set it to 1 or 10) without a rebuild. Resolved per stager, at construction,
+    which is after the launcher has passed the environment in.
+    """
+    raw = os.getenv(LOG_EVERY_ENV, "").strip()
+    if not raw:
+        return LOG_EVERY_DEFAULT
+    try:
+        value = int(raw)
+    except ValueError:
+        raise RuntimeError(f"{LOG_EVERY_ENV} must be an integer >= 1, got {raw!r}")
+    if value < 1:
+        raise RuntimeError(f"{LOG_EVERY_ENV} must be >= 1, got {value}")
+    return value
 
 
 def v2_enabled() -> bool:
@@ -109,6 +134,7 @@ class StepStager:
         self.max_rows = int(max_rows)
         self.mode = v2_mode()
         self.arenas = max(2, int(arenas or os.getenv(ARENAS_ENV, DEFAULT_ARENAS)))
+        self._log_every = _log_every()
 
         self._st = StreamTable(
             [int(v.__array_interface__["data"][0]) for v in table.views],
@@ -239,7 +265,7 @@ class StepStager:
         self.stats["sync_us"] += (t1 - t0) * 1e6      # wait for this step's inputs on the host
         self.stats["ids_us"] = self.stats.get("ids_us", 0.0) + (t2 - t1) * 1e6   # CPU n-gram ids
         self.stats["gather_us"] += (t3 - t2) * 1e6    # row gather + H2D enqueue
-        if self.stats["steps"] % 200 == 0:
+        if self.stats["steps"] % self._log_every == 0:
             s = self.stats
             logger.info("PLE stream v2 stats: steps=%d rows=%d d2h=%.0fus ids=%.0fus gather=%.0fus "
                         "(avg per step: %.0f/%.0f/%.0f us) skips=%d",
