@@ -3466,3 +3466,31 @@ shard in Python and issues one ctypes call per group, re-deriving `argtypes` on 
 from ~2.4 ms to something proportional to the work, which by the arithmetic above is worth most of the 7.8%
 decode loss. Prefill barely sees it, because 2.4 ms against a ~200 ms compute window is noise -- consistent
 with prefill and decode costs being dominated by different things all along.
+
+
+# Removing the per-group overhead: 2.49 ms -> 0.056 ms for a decode-size batch
+
+`ple_copy_rows_multi` takes the shard index per row and walks the whole batch in one C call; `gather_to`
+sorts by shard once and hands over three contiguous offset arrays. `argtypes` are declared at load time
+instead of inside the per-group worker. Measured with `scripts/bench-ple-gather-latency.py`, same host, same
+checkpoint, CPU-only:
+
+| rows | before ms/call | after ms/call | speedup |
+|---|---|---|---|
+| 16 | 0.348 | 0.028 | 12.4x |
+| 256 | 2.161 | 0.035 | 61.7x |
+| 864 | 2.487 | 0.056 | 44.4x |
+| 2,048 | 2.542 | 0.102 | 24.9x |
+| 32,768 | 4.686 | 2.744 | 1.7x |
+
+The 864-row point is the decode step the in-engine phase split measured at 1.79 ms, so exposed host work per
+step should fall from ~2.5 ms (ids + gather) to ~0.8 ms, leaving the host-side id computation as the largest
+remaining piece. Large batches improve less because there the memcpy is the real work -- which is the same
+split the before-table showed from the other side.
+
+Correctness gate: `scripts/test-ple-rowcopy.py` all-pass, 0 wrong rows across inline, boundary, fan-out,
+whole-table, scattered, sharded and ownership-zeroing cases. The first version of this change segfaulted in
+that suite for a reason worth recording: `StreamTable.from_paths` builds the object with placeholder zero
+bases and fills the real mapping addresses *afterwards*, so a pointer array cached in `__init__` handed the
+C loop NULL bases. Fixed by `_refresh_bases_ptr()`, called from both places -- and a reminder that caching a
+derived view of mutable state needs the mutation path to invalidate it.

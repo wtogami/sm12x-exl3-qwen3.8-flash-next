@@ -28,3 +28,19 @@ void ple_copy_rows_to(const unsigned char *src, unsigned char *dst,
                       const int64_t *src_off, const int64_t *dst_off, long n, long row_bytes) {
   for (long i = 0; i < n; i++) memcpy(dst + dst_off[i], src + src_off[i], row_bytes);
 }
+
+/* One call for a whole batch that spans many shards.
+ *
+ * The per-shard loop in Python (gather_to -> _copy_group) issues one call per shard the batch happens to
+ * touch, and a batch over a 47.7 GiB / 128-shard table touches all 128 once it passes a few hundred rows.
+ * Measured cost of that shape: ~19 us per group and ~3.5 ns per row, so a 864-row decode step paid ~2.4 ms
+ * to move 138 KB. This variant takes the shard index per row and does the whole batch in one call, keeping
+ * locality by receiving the rows already sorted by shard.
+ */
+void ple_copy_rows_multi(unsigned char *dst, const unsigned char *const *bases,
+                         const int64_t *shard_of, const int64_t *src_off,
+                         const int64_t *dst_off, long n, long row_bytes) {
+  for (long i = 0; i < n; i++) {
+    memcpy(dst + dst_off[i], bases[shard_of[i]] + src_off[i], row_bytes);
+  }
+}

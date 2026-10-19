@@ -55,11 +55,31 @@ def _load_rowcopy(so_path: str | None = None):
             "(gcc -O3 -shared -fPIC -o ple_rowcopy.so ple_rowcopy.c). Refusing to fall back to "
             "a per-row Python loop, which measures 100x slower and would misreport the design.")
     lib = ctypes.CDLL(path)
+    # Declared once, here. The previous version re-assigned argtypes inside the per-group worker, which is
+    # per-call ctypes bookkeeping on the hot path -- part of the ~19 us per shard group measured in
+    # docs/ssd-stream-findings.md.
     lib.ple_copy_rows.argtypes = [ctypes.c_void_p, ctypes.c_void_p,
                                   np.ctypeslib.ndpointer(dtype=np.int64, ndim=1,
                                                          flags="C_CONTIGUOUS"),
                                   ctypes.c_long, ctypes.c_long]
     lib.ple_copy_rows.restype = None
+    lib.ple_copy_rows_to.argtypes = [ctypes.c_void_p, ctypes.c_void_p,
+                                     np.ctypeslib.ndpointer(dtype=np.int64, ndim=1,
+                                                            flags="C_CONTIGUOUS"),
+                                     np.ctypeslib.ndpointer(dtype=np.int64, ndim=1,
+                                                            flags="C_CONTIGUOUS"),
+                                     ctypes.c_long, ctypes.c_long]
+    lib.ple_copy_rows_to.restype = None
+    lib.ple_copy_rows_multi.argtypes = [ctypes.c_void_p,      # destination
+                                        ctypes.c_void_p,      # const unsigned char *bases[]
+                                        np.ctypeslib.ndpointer(dtype=np.int64, ndim=1,
+                                                               flags="C_CONTIGUOUS"),
+                                        np.ctypeslib.ndpointer(dtype=np.int64, ndim=1,
+                                                               flags="C_CONTIGUOUS"),
+                                        np.ctypeslib.ndpointer(dtype=np.int64, ndim=1,
+                                                               flags="C_CONTIGUOUS"),
+                                        ctypes.c_long, ctypes.c_long]
+    lib.ple_copy_rows_multi.restype = None
     return lib
 
 
@@ -315,6 +335,17 @@ class StreamTable:
         self._copy = _load_rowcopy(rowcopy_so)
         self._fanpool = None
         self._owns_maps: list = []        # populated by from_paths so it can unmap
+        self._refresh_bases_ptr()
+
+    def _refresh_bases_ptr(self) -> None:
+        """(Re)build the void* array that ple_copy_rows_multi indexes per row.
+
+        Must be called whenever ``self.bases`` changes. from_paths constructs the object with placeholder
+        zeros and fills the real mapping addresses afterwards, so a pointer array built only in __init__
+        would hand the C loop NULL bases -- which faults, loudly, in scripts/test-ple-rowcopy.py.
+        """
+        self._bases_arr = (ctypes.c_void_p * len(self.bases))(*self.bases)
+        self._bases_ptr = ctypes.cast(self._bases_arr, ctypes.c_void_p)
 
     @classmethod
     def from_paths(cls, paths, *, rows_per_shard: int, row_bytes: int = 160, threads: int = 24,
@@ -341,6 +372,7 @@ class StreamTable:
             obj._owns_maps.append((fd, base, size))
         obj.num_shards = len(obj.bases)
         obj.num_rows = obj.num_shards * obj.rows_per_shard
+        obj._refresh_bases_ptr()      # the constructor saw placeholder bases; these are the real ones
         return obj
 
     @property
@@ -387,43 +419,41 @@ class StreamTable:
         if owned.any():
             sel_all = np.flatnonzero(owned)
             shard, local = self.split(rows[sel_all])
-            order = np.argsort(shard, kind="stable")
+            order = np.argsort(shard, kind="stable")     # walk one mapping at a time inside the C loop
             sel_all, shard, local = sel_all[order], shard[order], local[order]
-            bounds = np.flatnonzero(np.diff(shard)) + 1
-            for lo, hi in zip(np.concatenate(([0], bounds)), np.concatenate((bounds, [sel_all.size]))):
-                s = int(shard[lo])
-                src_off = np.ascontiguousarray(local[lo:hi] * rb, dtype=np.int64)
-                dst_off = np.ascontiguousarray(sel_all[lo:hi] * rb, dtype=np.int64)
-                self._copy_group(self.bases[s], dst_addr, src_off, dst_off)
+            src_off = np.ascontiguousarray(local * rb, dtype=np.int64)
+            dst_off = np.ascontiguousarray(sel_all * rb, dtype=np.int64)
+            self._copy_multi(dst_addr, shard, src_off, dst_off)
         return n
 
-    def _copy_group(self, base, dst_addr, src_off, dst_off):
-        np = self.np
-        n = src_off.size
-        k = 1 if n <= self._small else min(self.threads, max(1, n // 256))
-        bounds = [int(x) for x in np.linspace(0, n, k + 1)]
+    def _copy_multi(self, dst_addr, shard, src_off, dst_off) -> None:
+        """One C call over the whole batch, fanned out only when the batch is big enough to want it.
+
+        Previously this was one call per shard the batch touched -- up to 128 for any batch over a few
+        hundred rows -- each with its own numpy slices and ctypes marshalling. Measured fixed cost of that
+        shape was ~19 us per group against ~3.5 ns per row of actual copying, so decode-size steps spent
+        nearly all their time in bookkeeping (docs/ssd-stream-findings.md).
+        """
+        n = int(src_off.size)
+        if n == 0:
+            return
+        k = 1 if n <= self._small else min(self.threads, max(1, n // 4096))
+        if k <= 1:
+            self._copy.ple_copy_rows_multi(ctypes.c_void_p(dst_addr), self._bases_ptr, shard,
+                                           src_off, dst_off, n, self.row_bytes)
+            return
+        if self._fanpool is None:
+            self._fanpool = ThreadPoolExecutor(max_workers=self.threads, thread_name_prefix="ple-tab")
 
         def work(i):
-            lo, hi = bounds[i], bounds[i + 1]
-            if hi <= lo:
-                return
-            fn = self._copy.ple_copy_rows_to
-            fn.argtypes = [ctypes.c_void_p, ctypes.c_void_p,
-                           np.ctypeslib.ndpointer(dtype=np.int64, ndim=1, flags="C_CONTIGUOUS"),
-                           np.ctypeslib.ndpointer(dtype=np.int64, ndim=1, flags="C_CONTIGUOUS"),
-                           ctypes.c_long, ctypes.c_long]
-            fn.restype = None
-            fn(ctypes.c_void_p(base), ctypes.c_void_p(dst_addr),
-               np.ascontiguousarray(src_off[lo:hi]), np.ascontiguousarray(dst_off[lo:hi]),
-               hi - lo, self.row_bytes)
+            lo, hi = int(bounds[i]), int(bounds[i + 1])
+            if hi > lo:
+                self._copy.ple_copy_rows_multi(ctypes.c_void_p(dst_addr), self._bases_ptr,
+                                               shard[lo:hi], src_off[lo:hi], dst_off[lo:hi],
+                                               hi - lo, self.row_bytes)
 
-        if k == 1:
-            work(0)
-        else:
-            if self._fanpool is None:
-                self._fanpool = ThreadPoolExecutor(max_workers=self.threads,
-                                                   thread_name_prefix="ple-tab")
-            list(self._fanpool.map(work, range(k)))
+        bounds = np.linspace(0, n, k + 1).astype(np.int64)
+        list(self._fanpool.map(work, range(k)))
 
     def close(self):
         if self._fanpool is not None:
