@@ -8,6 +8,9 @@ image `8294c3c914c0` (vLLM v0.31.0 fork), MTP3 speculative decoding, YaRN
 512K context, 2048-token batch budget. Power measurements use a 2 Hz
 on-card sampler with exact run-window attribution. The companion quality
 verdict is [quality-comparison.md](quality-comparison.md).
+(2026-10-18: the v0.32.0 rebase re-qualified exl3, exl3-ple8 and nvfp4 at
+parity with these numbers — same card, same day, A/B receipts in
+[qualification.md](qualification.md); the RedHatAI profile is retired.)
 
 **Headline: both NVFP4 builds prefill 20-30% faster than EXL3 at every
 power level; single-stream decode is a three-way tie at 600 W. At C16 the

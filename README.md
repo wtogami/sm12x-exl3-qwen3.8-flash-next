@@ -7,15 +7,18 @@ scaling of the 262144-native window (`LONGCTX=1`); Spark serves the native
 262144. The scheduler has 16 request slots. C1 performance is the priority
 for the defaults; C16 throughput tradeoffs are recorded below.
 
-> **Current: vLLM v0.31.0 rebase, last full measurement day 2026-10-07.**
-> The runtime builds on the released official `vllm/vllm-openai:v0.31.0`
+> **Current: vLLM v0.32.0 rebase (2026-10-18); last full comparison day
+> 2026-10-07 (v0.31 image, v0.32 re-qualified at parity).**
+> The runtime builds on the released official `vllm/vllm-openai:v0.32.0`
 > digest (CUDA 13.0, multiarch); the model ships upstream as
 > `vllm/models/qwen4_exp` (Qwen4Exp is the upstream codename for
 > Qwen3.8-Flash-Next), so no custom vLLM base is needed. FP8 QSA KV (PR
-> 55557) shipped upstream in v0.31.0 and the vendored copy was dropped; the
-> checkpoint-mapped PLE backport is re-derived at v0.31 as
-> `patches/ple-mmap-pr58439-58835-v0.31.patch` (upstream PRs 58439+58835
-> plus a pinned post-cut correction). RTX defaults: `exl3`, MTP3, YaRN
+> 55557) shipped upstream in v0.31.0; the checkpoint-mapped PLE backport is
+> re-anchored at v0.32 as `patches/ple-mmap-pr58439-58835-v0.32.patch`
+> (upstream PRs 58439+58835, still open, head `047fc1c`), and
+> `patches/port-mrope-positions-factor.py` pins the v0.31-size M-RoPE cache
+> because v0.32.0's cache shrink (PR 59853) crashes any prompt past the
+> checkpoint-native 262144 — details in docs/qualification.md. RTX defaults: `exl3`, MTP3, YaRN
 > 512K, FP8 KV, host-offloaded PLE table (`PLE_MMAP=0`; discrete RTX
 > cannot dereference checkpoint mappings — Spark (GB10) defaults to mmap).
 >
@@ -153,10 +156,12 @@ rebased runtime.** The Spark package currently requires registry
 authentication while its visibility is private. The package owner can enable
 public pulls in GitHub package settings.
 
-Current RTX test host: one RTX PRO 6000 Blackwell 96 GB at its **600 W**
-default limit (4x8-pin power), driver 615.71.09, on a Threadripper 9970X with
-183 GiB CPU RAM; 2026-10-07 measurements under the v0.31.0 image use this
-configuration. The historical 400 W columns (above and in
+Current RTX test host: two RTX PRO 6000 Blackwell 96 GB cards (4x8-pin),
+driver 615.78.08, on a Threadripper 9970X with ~996 GiB CPU RAM. Test legs
+run on **GPU index 1** (`GPU=1`, selected via the podman CDI entity; set to
+600 W with `sudo nvidia-smi -pl 600` — not persistent across reboots); GPU 0
+is reserved. The 2026-10-07 comparison measurements (v0.31.0 image) predate
+the second card and used a single card at 600 W. The historical 400 W columns (above and in
 benchmarks/RESULTS.md) were measured on the same class of card at a 400 W
 limit. Spark uses a GB10 with approximately
 121.63 GiB shared CPU/GPU memory and driver 580.159.03.

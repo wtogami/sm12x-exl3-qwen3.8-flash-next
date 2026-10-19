@@ -6,6 +6,9 @@ one serving stack: rebase-qualified engine image `8294c3c914c0` (vLLM
 v0.31.0 fork), MTP3 speculative decoding, YaRN 512K context, 600 W power
 limit, temperature 0 with thinking enabled, offline evaluation. All legs are
 same-day and every receipt is stamped with its served model name.
+(2026-10-18: the v0.32.0 rebase re-qualified exl3, exl3-ple8 and nvfp4 at
+parity with these numbers, including nvfp4's GSM8K deficit — receipts in
+[qualification.md](qualification.md); the RedHatAI profile is retired.)
 
 **Headline: on tool-calling all four are statistically tied (83–85/100,
 ten runs each). On GSM8K the NVIDIA build is genuinely lower (−2.4 pts);
