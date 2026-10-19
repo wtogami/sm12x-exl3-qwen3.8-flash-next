@@ -3286,3 +3286,54 @@ Two follow-ups, in the order I would do them, with the reason each is suspicious
 Also noted so it isn't believed: my "build assertions passed: 0" line was a bad anchor. The check prints a
 two-space indent; I grepped for four. 12 assertions pass. The new module was in the image all along — its
 log line moved from `:302` to `:341`, which is how I knew to look at my grep instead of the build.
+
+# Rebase onto vLLM v0.32: v1 was not broken -- the graph regime it forces changes output
+
+Rebasing the 160-commit `ssd-stream-exp1` onto a `prod` that had meanwhile taken the vLLM v0.32.0 rebase
+produced five cells on `burst` (GPU 1; GPU 0 sampled every 10s and never above 2 MiB). The build applied
+all eight port hunks and twelve assertions, `stream-v2` reproduced the pinned baseline hash across boots,
+and `pinned-exact` confirmed the 16.3 GiB rounding saving empirically (50.06 vs 66.38 GiB Shmem).
+
+One result looked like a v1 defect and was not. `stream-v1` hashed `1ce6cb9be5b93b92` where the baseline
+was `7c1421daade83d79` -- self-consistent within the boot, divergent from the reference. The control that
+decided it: **pinned backend, no streaming, `VLLM_USE_BREAKABLE_CUDAGRAPH=1` plus
+`cudagraph_mode=PIECEWISE` reproduces `1ce6cb9b…` exactly.** A second control, `PIECEWISE` *without* that
+env, reproduces the baseline. So on v0.32 the regime v1 requires alters greedy output by itself.
+
+| config | env | cudagraph | strict hash | decode tok/s |
+|---|---|---|---|---|
+| pinned, defaults | — | FULL_AND_PIECEWISE | `7c1421da…` | 144.0 |
+| pinned + PIECEWISE | — | PIECEWISE | `7c1421da…` | 20.8 |
+| pinned + PIECEWISE | breakable | PIECEWISE | `1ce6cb9b…` | 125.5 |
+| stream-v1 | breakable | PIECEWISE | `1ce6cb9b…` | 108.7 |
+| stream-v2 | — | FULL_AND_PIECEWISE | `7c1421da…` | 129.4 |
+
+Two things to take from this, one methodological and one numerical.
+
+**Methodological.** On `gg` (v0.31) the same regime had been output-neutral, so I carried an assumption
+across a major version boundary and then nearly diagnosed a bug in my own code because of it. The
+generalisable version: when a feature forces a configuration change, the configuration change needs its
+own control cell *re-run on the new version*, not inherited from the old one. My first control attempt was
+also the wrong control -- `PIECEWISE` without the env, which decoded at 20.8 tok/s, an obvious tell that
+it was not the regime under test. And `stream-v1`'s hash being self-consistent across repeats is precisely
+what makes regime-driven divergence dangerous: it looks like determinism.
+
+**Numerical, and it corrects my earlier split.** Against properly matched regimes the streaming cost is
+roughly the same in both designs, and v2's advantage is entirely the graph regime:
+
+| | prefill vs matched baseline | decode vs matched baseline |
+|---|---|---|
+| v1 streaming (regime-matched to 16,310 / 125.5) | −13.1% | −13.4% |
+| v2 streaming (regime-matched to defaults) | −13.8% | −10.1% |
+
+Earlier I described v2 as recovering "two thirds of the decode loss" against v1's total; against the
+correct controls that total was never all streaming's. The gather/staging cost is ~13% of prefill either
+way -- which also means the sync-mode stall is still the thing to attack, and it is common to both
+designs.
+
+Not measured, and it matters for anyone who does run regime B: whether `1ce6cb9b…` differs from the
+baseline by one early token flipping under FP8 accumulation-order differences and then cascading through
+64 greedy tokens, or substantively. The strict hash is an equality test, not a distance metric, so it
+cannot answer that; the probe would need its per-prompt text captured and diffed. My working reading is
+"cascading near-tie", consistent with the chunked-prefill nondeterminism already documented in this file,
+but it is a reading and not a result.
