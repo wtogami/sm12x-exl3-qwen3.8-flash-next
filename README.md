@@ -16,10 +16,13 @@ for the defaults; C16 throughput tradeoffs are recorded below.
 > 55557) shipped upstream in v0.31.0; the checkpoint-mapped PLE backport is
 > re-anchored at v0.32 as `patches/ple-mmap-pr58439-58835-v0.32.patch`
 > (upstream PRs 58439+58835, still open, head `047fc1c`), and
-> `patches/port-mrope-positions-factor.py` pins the v0.31-size M-RoPE cache
-> because v0.32.0's cache shrink (PR 59853) crashes any prompt past the
-> checkpoint-native 262144 (upstream
-> [#62383](https://github.com/vllm-project/vllm/issues/62383)) — details in docs/qualification.md. RTX defaults: `exl3`, MTP3, YaRN
+> `patches/port-mrope-served-window.py` carries the fix for v0.32.0's
+> M-RoPE cache shrink (PR 59853), which crashed any prompt past the
+> checkpoint-native 262144 (upstream issue
+> [#62383](https://github.com/vllm-project/vllm/issues/62383), fix filed by
+> us as PR [#62409](https://github.com/vllm-project/vllm/pull/62409); it
+> floors the cos/sin cache on `max_model_len` and supersedes the earlier
+> blunt x4 workaround) — details in docs/qualification.md. RTX defaults: `exl3`, MTP3, YaRN
 > 512K, FP8 KV, host-offloaded PLE table (`PLE_MMAP=0`; discrete RTX
 > cannot dereference checkpoint mappings — Spark (GB10) defaults to mmap).
 >

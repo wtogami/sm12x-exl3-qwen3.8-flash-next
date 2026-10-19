@@ -1273,3 +1273,86 @@ TP2 boot** on this host; it started clean under EP.
   (-2.4%), C2 301.5 (-1.5%), C4 471.9 (+1.3%), C8 800.5 (+3.5%), C16 1228.8
   (+0.4%); TTFT within 3% at every depth. All inside the Oct-7 jitter
   bands: EP costs nothing for nvfp4, so the safe EXL3-driven default stays.
+
+## The real fix: served-window cache floor, PR 62409 (2026-10-19)
+
+The 2026-10-18 diagnosis in the section above ("the Qwen4Exp path indexes
+deeper than the token position") was wrong in its mechanism, though right
+that the cache size was the lever. Instrumented ctor stacks (print of
+`cache_max_position_num` + construction stack at every
+`MRotaryEmbedding.__init__`) on the stock v0.32.0 image show the true
+chain: `get_rope()`'s yarn branch **discards the caller's `max_position`
+and passes `original_max_position_embeddings` — the PRE-scaling window —
+as the class base**, and `MRotaryEmbedding` never multiplies it by the
+YaRN scaling factor. The blanket 4x (Qwen2.5-VL era, `bf3b79efb`
+2025-02-05) had been covering that gap for any factor <= 4; PR 59853
+(`a98247ab4`, first release v0.32.0) removed the cover. Three proofs the
+model-side story was wrong: (a) sizing the cache at the `qsa.py`
+`get_rope` call site from `max_model_len` is a provable NO-OP — the ctor
+still printed 262144 (the factory overrides it); (b) `--hf-overrides`
+forcing `max_position_embeddings` cannot move the base at either nesting
+level (the YaRN serving window is *derived* = native x factor, per
+`ModelConfig`; the top-level form fails boot validation outright);
+(c) flooring only `vllm_config.model_config` fixes the TARGET instance
+but leaves the MTP drafter at 262144 — still crashes, because at
+draft-build time the current config resolves to the draft's own
+ModelConfig. The faulting consumer is the drafter's cos/sin table under
+graph replay, matching #62383's MTP x cudagraph factorization (H200)
+exactly; host `dmesg` across all our faults: Xid 31 FAULT_PDE
+ACCESS_TYPE_VIRT_READ.
+
+Fix filed upstream by us: **PR
+[#62409](https://github.com/vllm-project/vllm/pull/62409)** (base
+`main`, commit `2c2c57288`):
+`cache_max_position_num = max(base * positions_factor, target
+max_model_len)`, the target resolution mirroring 59853's own
+`mrope_positions_factor()`. `Fixes #62383`. Native-window deployments
+are bit-identical to stock (verified: single shared instance, 262144
+rows, no overrides). The independent #62383 reporter had ruled out the
+rope cache on un-verified grounds; our ctor prints supersede that.
+
+Recipe changes: `patches/port-mrope-served-window.py` carries the exact
+62409 hunk and **replaces** the blunt `port-mrope-positions-factor.py`
+(x4 workaround), which is deleted. Verified inside the candidate image:
+`qwen3_vl.py` back at stock `return 4 if pruned else 1`, zero workaround
+markers, mrope.py floor present. Image
+`qwen38-rtx:v032f-candidate` (`abbde425a717`), built 2026-10-19 from
+prod + this port.
+
+TP=1 re-qualification, GPU 1 @ **600 W** (host idle-power setting for
+this stage; receipts `benchmarks/v032f-pr62409-20261019/tp1/`). New in
+every leg: the **boundary retrieval leg** (280K + 480K x 3 positions
+each) that unpatched v0.32.0 has NEVER survived anywhere, and that all
+three profiles pass with needle hits:
+
+| profile | test-quant-profiles | api | vision | retr 8K/240K | boundary 280K/480K | structured | seven | orchid | tools |
+|---|---|---|---|---|---|---|---|---|---|
+| exl3 | exit 0 | 16/16 | pass | 6/6 | **6/6** | pass | 19/21 (159.5 wtps) | 5/5 | 143/176 |
+| exl3-ple8 | " | 16/16 | pass | 6/6 | **6/6** | pass | 19/21 (161.3) | 5/5 | 147/176 |
+| nvfp4 | " | 16/16 | pass | 6/6 | **6/6** | pass | 18/21 (162.1) | 4/5 | 148/176 |
+
+seven/orchid counts match the Oct-18 (300 W) bands even at the higher
+power cap; nvfp4's 18/21 + 4/5 is its standing jitter class.
+
+TP2 re-qualification, both GPUs @ **300 W**, MTP3, EP default-on, port
+8125 (receipts `.../tp2/`). Same suite, same boundary legs — the first
+TP2 qualification ever run PAST the 262144 boundary (Oct-13/18 TP2
+testing predates the boundary legs):
+
+| profile | api | vision | retr 8K/240K | boundary 280K/480K | structured | seven | orchid | tools |
+|---|---|---|---|---|---|---|---|---|
+| exl3 | 16/16 | pass | 6/6 | **6/6** | pass | 19/21 (219.3 wtps) | 5/5 | 152/176 |
+| exl3-ple8 | 16/16 | pass | 6/6 | **6/6** | pass | 19/21 (224.1) | 5/5 | 143/176 |
+| nvfp4 | 16/16 | pass | 6/6 | **6/6** | pass | 17/21 (221.3) | 1/5 | 151/176 |
+
+`exl3-ple8` at TP2 is first-ever territory: boots and full-passes.
+`nvfp4` TP2 orchid 1/5 is the one watch item (nvfp4 was already the
+weakest orchid profile at TP1, 3/5 on Oct-18; its boundary/tools legs at
+TP2 are strong) — recorded, not gating; re-check on next nvfp4 touch.
+Decode/throughput ladders deliberately not re-run: this section changes
+only cache sizing, verified parity-class behaviorally by the suites;
+perf claims would need the same-card ladder protocol.
+
+Promotion: `:local` = v032f image; rollback tags `v0.32-20261018` and
+`v0.31-20261014` unchanged. When (if) 62409 merges, the port retires
+with the usual "remove at next rebase" rule.

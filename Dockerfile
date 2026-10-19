@@ -43,16 +43,19 @@ LABEL io.tpurtell.ple-mmap.pr="58439+58835" \
 # CompressedTensors/INC/Quark/ModelOpt-mixed-precision PLE layers to the
 # unquantized method itself (per-layer scheme check; strictly better scoped
 # than the recipe port).
+# port-mrope-positions-factor.py (the blunt x4 workaround for the 59853
+# regression) was replaced 2026-10-19 by port-mrope-served-window.py, the
+# exact upstream fix we filed as vllm-project/vllm#62409.
 COPY patches/port-host-embedding.py /tmp/port-host-embedding.py
 COPY patches/port-vocab-projection.py /tmp/port-vocab-projection.py
 COPY patches/port-nvfp4-moe.py /tmp/port-nvfp4-moe.py
-COPY patches/port-mrope-positions-factor.py /tmp/port-mrope-positions-factor.py
+COPY patches/port-mrope-served-window.py /tmp/port-mrope-served-window.py
 COPY patches/port-exl3-ple-fp8.py /tmp/port-exl3-ple-fp8.py
 COPY patches/port-ple-exact-pin.py /tmp/port-ple-exact-pin.py
 RUN python3 /tmp/port-host-embedding.py /usr/local/lib/python3.12/dist-packages/vllm \
  && python3 /tmp/port-vocab-projection.py /usr/local/lib/python3.12/dist-packages/vllm \
  && python3 /tmp/port-nvfp4-moe.py /usr/local/lib/python3.12/dist-packages/vllm \
- && python3 /tmp/port-mrope-positions-factor.py /usr/local/lib/python3.12/dist-packages/vllm \
+ && python3 /tmp/port-mrope-served-window.py /usr/local/lib/python3.12/dist-packages/vllm \
  && python3 /tmp/port-exl3-ple-fp8.py /usr/local/lib/python3.12/dist-packages/vllm \
  && python3 /tmp/port-ple-exact-pin.py /usr/local/lib/python3.12/dist-packages/vllm \
  && python3 -c 'from vllm.model_executor.layers.quantization import get_quantization_config; assert get_quantization_config("exl3").__name__ == "Exl3Config"' \
