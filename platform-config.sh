@@ -254,8 +254,8 @@ qwen38_ple_stream_check() {
   # reads go to the device, and O_DIRECT on this shape tops out at 85.6k pages/s against a 132.7k
   # requirement -- so a cache-starved host is not merely slower, it can fall behind prefill entirely.
   # Hence: hard floor at ${PLE_STREAM_CACHE_GIB:=-} 2 GiB, warning under 16 GiB, silence above it.
-  local config="$1" bytes="$2" memtotal_kib="$3" memavail_kib="$4"
-  local dims ngram_rows ple_dim vocab hidden table_kib embed_kib embed_pin_kib
+  local config="$1" bytes="$2" memtotal_kib="$3" memavail_kib="$4" tp="${5:-1}"
+  local dims ngram_rows ple_dim vocab hidden table_kib embed_kib embed_pin_kib embed_rank_kib
   local staging_kib cache_min_kib cache_warn_kib avail_kib eff_kib
   if [[ ! -r "$config" ]] || ! command -v python3 >/dev/null 2>&1; then
     echo "WARNING: cannot read $config, or no python3; skipping the streaming memory preflight" >&2
@@ -273,7 +273,12 @@ print(int(text["ngram_vocab_size_base"]), int(text["ple_embed_dim"]),
   # 20,000,00x rows x 160 B, and 16 x 160 == 2560 == ple_embed_dim. Verified against the checkpoint.
   table_kib=$(( ngram_rows * ple_dim * bytes / 1024 ))
   embed_kib=$(( vocab * hidden * 2 / 1024 ))
-  embed_pin_kib="$(qwen38_next_pow2 "$embed_kib")"
+  # Per-rank sizing, mirroring qwen38_ple_memcheck: the host token embedding is a
+  # VocabParallelEmbedding, so each rank pins round2(ceil(embed/tp)) and the demand is tp times that.
+  # tp=1 reproduces the single-rank figures exactly. The n-gram table does not appear in this sum at
+  # all, which is the entire point of streaming.
+  embed_rank_kib=$(( (embed_kib + tp - 1) / tp ))
+  embed_pin_kib=$(( $(qwen38_next_pow2 "$embed_rank_kib") * tp ))
   # Staging arena: one row per (token x ngram head), rounded generously. It is megabytes; the point
   # of printing it is that a future config where it is NOT megabytes becomes visible here.
   # tokens x heads x row_bytes, and row_bytes is ple_dim/heads x bytes, so the head count cancels:
@@ -287,7 +292,7 @@ print(int(text["ngram_vocab_size_base"]), int(text["ple_embed_dim"]),
   {
     echo "  PLE streaming preflight:"
     echo "    table in checkpoint      $(qwen38_gib "$table_kib") GiB (NOT pinned; read via page cache)"
-    echo "    token embedding pinned   $(qwen38_gib "$embed_pin_kib") GiB (rounded; unchanged by streaming)"
+    echo "    token embedding pinned   $(qwen38_gib "$embed_pin_kib") GiB (tp=$tp, per-rank $(qwen38_gib "$embed_rank_kib") GiB rounded; unchanged by streaming)"
     echo "    staging arena            $(( staging_kib / 1024 )) MiB (tokens x row bytes; heads cancel)"
     echo "    memory headroom          $(qwen38_gib "$avail_kib") GiB $(
       (( avail_kib < memavail_kib )) && printf '(cgroup-clipped from %s GiB MemAvailable)' "$(qwen38_gib "$memavail_kib")"
