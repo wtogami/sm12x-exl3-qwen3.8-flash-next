@@ -3540,10 +3540,17 @@ Two things fall out. First, the decode-time shape is the flat part of the curve:
 step carries 16 tokens or 128, so at decode sizes the engine's hashing is mostly per-call cost, not arithmetic.
 Second, the real decode step is 54 tokens -- `rows/steps = 972,240/1,125 = 864`, and 864/16 heads is exactly 54
 tokens with a fixed spec-decode width -- and the in-engine `ids` phase for that step measured 727 us against
-these ~195 us. So roughly half of the remaining `ids` cost is not the engine's function at all: it is the
-wrapper around it (pinned-memory slices, the tensor-to-numpy handoff, and whatever the live worker's thread
-contention adds), plus larger real batches (`qsl` with several requests instead of one, which this bench does
-not model).
+these ~195 us. So roughly half of the remaining `ids` cost is not the hashing itself: it is the environment --
+the wrapper around it (pinned-memory slices, the tensor-to-numpy handoff) and whatever the live worker's thread
+contention adds.
+
+Request count was the obvious candidate for that gap, and it is not the explanation. Re-running the same call
+at fixed tokens with 1 to 16 requests (a second axis in the same script) moves the decode-size number from
+0.198 ms to only 0.239 ms, and at 512 tokens it stays inside 1.4-3.0 ms with no monotonic trend. The one thing
+that table does show is a first-call effect: the first point of each group reads high (0.419 ms where the
+steady state is ~0.20), so a single-sample measurement of this function overstates its cost -- which is worth
+remembering when comparing these numbers against the in-engine average, itself taken over more than a thousand
+steps.
 
 That matters for how to spend effort. The cheap lever is inside our overlay: stop making a second contiguous
 copy of the ids and stop re-slicing pinned arenas per step. The structural lever is to stop hashing on the host

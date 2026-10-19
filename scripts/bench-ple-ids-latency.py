@@ -81,16 +81,33 @@ stub = SimpleNamespace(
 fn = E.compute_ngram_ids
 print(f"  stub geometry: ngram_size={ngram_size} heads_per_ngram={heads}"
       f" => {total_heads} heads, vocab={vocab}, eos={eos}")
-print(f"  {'tokens':>7} {'ms/call':>9} {'us/token':>9} {'rows':>7}")
-for n_tokens in (16, 54, 128, 512, 2048, 8192):
+
+
+def time_call(n_tokens: int, num_reqs: int):
+    """One (tokens, requests) point. `query_start_loc` has num_reqs+1 entries and the
+    engine builds a num_reqs x num_tokens packed buffer, so request count is a second axis
+    the single-request numbers above do not cover -- and a live decode step has several."""
+    bounds = np.linspace(0, n_tokens, num_reqs + 1).astype(np.int64)
     ids = torch.from_numpy(rng.integers(0, vocab, size=n_tokens, dtype=np.int64))
-    qsl = torch.tensor([0, n_tokens], dtype=torch.int64)
-    ctx = torch.from_numpy(rng.integers(0, vocab, size=(1, 4), dtype=np.int64))
+    qsl = torch.from_numpy(bounds)
+    ctx = torch.from_numpy(rng.integers(0, vocab, size=(num_reqs, 4), dtype=np.int64))
     out = fn(stub, ids, qsl, ctx)
     reps = max(5, min(300, 300_000 // max(n_tokens, 1)))
     t0 = time.perf_counter()
     for _ in range(reps):
         fn(stub, ids, qsl, ctx)
-    dt = (time.perf_counter() - t0) / reps
-    print(f"  {n_tokens:7d} {dt * 1e3:9.3f} {dt * 1e6 / n_tokens:9.2f}"
-          f" {int(out.numel()):7d}")
+    return (time.perf_counter() - t0) / reps, int(out.numel())
+
+
+print(f"  {'tokens':>7} {'ms/call':>9} {'us/token':>9} {'rows':>7}")
+for n_tokens in (16, 54, 128, 512, 2048, 8192):
+    dt, rows = time_call(n_tokens, 1)
+    print(f"  {n_tokens:7d} {dt * 1e3:9.3f} {dt * 1e6 / n_tokens:9.2f} {rows:7d}")
+
+print("  same calls at fixed tokens per step, varying the number of requests:")
+print(f"  {'tokens':>7} {'reqs':>5} {'ms/call':>9} {'packed':>10}")
+for n_tokens in (54, 512):
+    for num_reqs in (1, 2, 4, 8, 16):
+        dt, _rows = time_call(n_tokens, num_reqs)
+        print(f"  {n_tokens:7d} {num_reqs:5d} {dt * 1e3:9.3f}"
+              f" {f'{num_reqs}x{n_tokens}':>10}")
