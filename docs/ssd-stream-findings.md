@@ -3351,3 +3351,38 @@ shared characters ("size of a table…" against "total size of a table…"), `ve
 differ, both in the wording of the first clause rather than in substance -- the cascade signature of a
 near-tie flipping early and carried forward by greedy decoding, not of wrong n-gram features. A hash alone
 cannot make that distinction, which is the reason the distance mode exists.
+
+# TP2 on this host: throughput, power envelope, and what changes in the output
+
+Two boots per cell on `burst`, both cards capped at 300 W, pinned backend, `cudagraph_mode` left at the
+default `FULL_AND_PIECEWISE` (tensor parallelism does not force the breakable regime).
+
+| cell | devices | health | Shmem Δ | prefill tok/s | decode tok/s | strict hash |
+|---|---|---|---|---|---|---|
+| `tp1-pinned` | 1 × `9C:00.0` | 180 / 180 s | +66.18 GiB | 11,038 / 11,068 | 136.5 / 136.6 | `7c1421da…` |
+| `tp2-pinned` | `51:00.0` + `9C:00.0` | 260 / 170 s | +66.36 GiB | 15,768 / 15,762 | 197.8 / 197.2 | `6fb33c30…` |
+
+**TP2 is a large decode win at matched per-card power**: prefill +42.9%, decode +44.8%. Against equal *total*
+wattage -- one card at its 600 W ceiling, measured earlier at 16,608 / 144.3 -- TP2 on 2 × 300 W gives decode
++37.1% and prefill −5.0%. So width buys decode and is roughly neutral on big prefills, which is what a
+latency-bound decode step versus a bandwidth-bound prefill should do.
+
+**The power cap is a first-order variable for prefill and a second-order one for decode.** Dropping a single
+card from 600 W to 300 W cost prefill −33% (16,608 → 11,038) and decode −5.2% (144.3 → 136.5). Corollary, and
+the reason the driver applies the cap itself: prefill numbers measured under different power envelopes are not
+comparable, decode numbers roughly are. Earlier single-card figures in this file were taken at the 600 W
+ceiling and form a matched set only with each other.
+
+**TP width changes greedy output, reproducibly.** `6fb33c3054c7562d` reproduced across two independent TP2
+boots and differs from TP1's `7c1421daade83d79`. Consequences: the strict-hash reference is per-topology, so
+`REF` must be taken from a cell of the same TP width, and moving a serving host between TP1 and TP2 is a
+re-baseline event rather than a tuning knob. Sized with `--dump`/`--diff`: one of five gated prompts differs,
+after 133 shared characters (~23 words), and the divergence is in whether the reply re-echoes the instruction
+before answering ("…, then explain the integer arithmetic line by line.\n\nThis is" versus ". This is a
+classic modular arithmetic…"). `arithmetic`, `verbatim`, `multilingual` and `multi-step` are identical
+character for character. A formatting-of-the-first-sentence difference at 23 words in, not a substantive
+disagreement -- but it is a real output change and should be adopted deliberately.
+
+Cross-boot repeatability was also confirmed for the throughput itself: 0.27% spread on prefill and 0.07% on
+decode between boots of the same cell, which is far tighter than the 13% prefill spread noted elsewhere in
+this file for uncapped runs -- pinning the power envelope appears to have removed most of the prefill noise.
