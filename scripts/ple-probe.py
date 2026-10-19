@@ -21,11 +21,18 @@ Prints machine-parseable lines the matrix driver diffs:
   tokens <n>             completion tokens hashed, so an empty run cannot read as a match
   correct <yes|no>       strict vs --expect, when given
   prefill <tok/s>  decode <tok/s>
+
+A hash is an equality test, not a distance metric. When two regimes disagree it cannot distinguish one
+early token flipping on a near-tie and then cascading through 64 greedy tokens from a genuinely wrong
+PLE contribution -- both read as "the hash differs". --dump records the per-prompt text so --diff can
+report how far the two runs agree before they part.
 """
 import argparse
 import hashlib
 import json
+import os
 import statistics
+import sys
 import time
 import urllib.request
 
@@ -45,6 +52,47 @@ PROMPTS = [
                    "why."),
 ]
 SHORT = "Define page-cache reuse distance in one sentence."
+
+
+def diff_dumps(path, la, lb):
+    """Report how far apart two labelled dumps of the same prompts are.
+
+    The interesting quantity is the shared prefix. Greedy decoding cannot recover from one flipped token,
+    so a long common prefix that then parts is the signature of a near-tie rounding the other way, while
+    parting at character zero of every prompt means the two runs are computing something different.
+    Returns the number of prompts that differ so the caller can exit non-zero.
+    """
+    by = {la: {}, lb: {}}
+    for line in open(path):
+        if line.strip():
+            r = json.loads(line)
+            if r["label"] in by:
+                by[r["label"]][r["name"]] = r["text"]
+    if set(by[la]) ^ set(by[lb]):
+        print(f"  the two labels cover different prompts: {sorted(set(by[la]) ^ set(by[lb]))}")
+        return -1
+    if not by[la]:
+        print(f"  no rows for {la!r}/{lb!r} in {path}")
+        return -1
+    print(f"  comparing {la} vs {lb} over {len(by[la])} prompts")
+    differing = 0
+    for name in [n for n, _ in PROMPTS] + sorted(set(by[la]) - {n for n, _ in PROMPTS}):
+        if name not in by[la]:
+            continue
+        a, b = by[la][name], by[lb][name]
+        if a == b:
+            print(f"  {name:13s} identical ({len(a)} chars)")
+            continue
+        differing += 1
+        i = 0
+        while i < min(len(a), len(b)) and a[i] == b[i]:
+            i += 1
+        print(f"  {name:13s} DIFFERS after {i} chars (~{len(a[:i].split())} words) of {len(a)}/{len(b)}")
+        print(f"      shared tail: ...{a[max(0, i - 40):i]!r}")
+        print(f"      {la:<11s}: {a[i:i + 60]!r}")
+        print(f"      {lb:<11s}: {b[i:i + 60]!r}")
+    print(f"diff {'IDENTICAL' if differing == 0 else f'{differing} of {len(by[la])} prompts differ'}")
+    return differing
 
 
 def post(url, model, prompt, max_tokens):
@@ -70,7 +118,14 @@ def main():
     ap.add_argument("--warmup", type=int, default=2,
                     help="discarded requests per shape before timing; a cold cell measures "
                          "roughly 30 percent low on prefill")
+    ap.add_argument("--dump", default="", help="append strict-set completion text to this JSONL")
+    ap.add_argument("--label", default="unlabelled", help="label for --dump rows (the matrix cell name)")
+    ap.add_argument("--diff", nargs=3, metavar=("FILE", "LABEL_A", "LABEL_B"),
+                    help="offline: how far apart two dumps part; needs no server")
     a = ap.parse_args()
+
+    if a.diff:
+        return 0 if diff_dumps(*a.diff) == 0 else 1
 
     parts, total = [], 0
     for name, prompt in PROMPTS:
@@ -96,6 +151,12 @@ def main():
         return 2
     strict = sha(strict_items)
     print(f"strict {strict}")
+    if a.dump:
+        with open(a.dump, "a") as f:
+            for n, ptok, txt in strict_items:
+                f.write(json.dumps({"label": a.label, "name": n, "prompt_tokens": ptok,
+                                    "strict": strict, "text": txt}) + "\n")
+        print(f"dumped {len(strict_items)} gated completions to {a.dump} as {a.label!r}")
     print(f"all {sha(parts)}")
     print(f"tokens {total}")
     print(f"gated {len(strict_items)}/{len(parts)} prompts")
