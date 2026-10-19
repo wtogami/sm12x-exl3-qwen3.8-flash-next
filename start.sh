@@ -47,6 +47,27 @@ PLE_MMAP="${PLE_MMAP:-${VLLM_PLE_MMAP:-${DEFAULT_PLE_MMAP:-0}}}"
 # round. The value has to reach the container as well as the preflight a few lines
 # below: the gate sizes the reservation, the loader performs it, and if they disagree
 # the gate approves a footprint the host cannot commit.
+# MEMORY caps the container's memory (podman/docker --memory) so a host with less RAM than the table can be
+# measured without reinstalling it, and so such a host can be served deliberately. Setting it changes two
+# things at once, which is the point: the cap is enforced by the cgroup, and the preflight below sizes itself
+# against the cap rather than against /proc/meminfo, which is not namespaced and would keep reporting the whole
+# host. Leave it unset for the host's own behaviour. Swap is pinned to the same value, so a smaller cap means a
+# smaller page cache rather than anon quietly spilling to disk. Accepts a bare integer as GiB (MEMORY=16) or a
+# sized value the engine understands (MEMORY=16G, 8192M).
+MEMORY="${MEMORY:-}"
+memory_args=()
+memory_kib=0
+if [[ -n "$MEMORY" ]]; then
+  # Everything below is in KiB, since /proc/meminfo is too: MiB x 1024, GiB x 1048576.
+  case "$MEMORY" in
+    *[mM]) memory_kib=$(( ${MEMORY%[mM]} * 1024 )) ;;                    # megabytes
+    *[gG]) memory_kib=$(( ${MEMORY%[gG]} * 1048576 )) ;;                 # gigabytes
+    *)     memory_kib=$(( MEMORY * 1048576 )) ;;                          # bare integer = GiB
+  esac
+  (( memory_kib > 0 )) || { echo "MEMORY must be a positive size, e.g. MEMORY=16 for 16 GiB" >&2; exit 2; }
+  memory_args=(--memory "$MEMORY" --memory-swap "$MEMORY")
+fi
+
 PLE_PIN_STRATEGY="${PLE_PIN_STRATEGY:-round2}"
 [[ "$PLE_PIN_STRATEGY" == round2 || "$PLE_PIN_STRATEGY" == exact ]] || { echo "PLE_PIN_STRATEGY must be round2 or exact" >&2; exit 2; }
 # PLE_STREAM=1 reads the PLE table from the checkpoint by CPU row copy into pinned staging
@@ -164,6 +185,12 @@ if [[ "$PLE_MMAP" == 0 && "$PLE_STREAM" == 0 && "$CUSTOM_ENGRAM" == 0 \
       MemAvailable:) mem_avail_kib=$value ;;
     esac
   done < /proc/meminfo
+  # With MEMORY set, the gate must judge the container, not the host: /proc/meminfo is host-wide, so an
+  # uncapped reading would approve a footprint the capped container cannot commit.
+  if (( ${memory_kib:-0} > 0 )); then
+    (( mem_avail_kib > memory_kib )) && mem_avail_kib=$memory_kib
+    (( mem_total_kib > memory_kib )) && mem_total_kib=$memory_kib
+  fi
   qwen38_ple_memcheck "$CONFIG_PATH" "${PLE_BYTES_PER_ELEMENT:-2}" "$mem_total_kib" "$mem_avail_kib" "$TP_SIZE"
 fi
 # Streaming replaces the pinned-table requirement with a page-cache requirement, so it needs its own
@@ -208,6 +235,12 @@ if [[ "$PLE_STREAM" == 1 && "$CUSTOM_ENGRAM" == 0 && "${QWEN38_SKIP_MEMCHECK:-0}
       MemAvailable:) mem_avail_kib=$value ;;
     esac
   done < /proc/meminfo
+  # With MEMORY set, the gate must judge the container, not the host: /proc/meminfo is host-wide, so an
+  # uncapped reading would approve a footprint the capped container cannot commit.
+  if (( ${memory_kib:-0} > 0 )); then
+    (( mem_avail_kib > memory_kib )) && mem_avail_kib=$memory_kib
+    (( mem_total_kib > memory_kib )) && mem_total_kib=$memory_kib
+  fi
   qwen38_ple_stream_check "$CONFIG_PATH" "${PLE_BYTES_PER_ELEMENT:-2}" "$mem_total_kib" "$mem_avail_kib" "$TP_SIZE" \
     || exit 3
 fi
@@ -342,6 +375,11 @@ fi
 # mounts keep their host cache_home_t label, which container_t cannot access.
 # :z rather than :Z because these caches are shared with download.sh, and :Z
 # would isolate each run behind its own MCS category.
+if [[ -n "$MEMORY" ]]; then
+  echo "  container memory cap: ${MEMORY} ($(( ${memory_kib} / 1024 )) GiB), swap pinned to the same size," >&2
+  echo "    and the memory preflight sized against the cap rather than host MemAvailable" >&2
+fi
+
 # Streaming tuning knobs, forwarded only when the operator actually set one. Named explicitly rather than
 # passing the whole shell environment through, so the served configuration stays auditable from this file.
 # Without this block a knob added to the backend is silently swallowed by the launcher: the module reads its
@@ -355,6 +393,7 @@ unset _ple_var
 
 docker run -d --name "$container_name" \
   "${GPU_ARGS[@]}" \
+  "${memory_args[@]}" \
   --ipc=host --network=host \
   -e OMP_NUM_THREADS="${CPU_THREADS:-8}" \
   -e PLE_PIN_STRATEGY="${PLE_PIN_STRATEGY}" \
