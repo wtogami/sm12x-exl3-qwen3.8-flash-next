@@ -1257,7 +1257,12 @@ TP2 boot** on this host; it started clean under EP.
   best (1017.2) by +20% at equal total power.
 - Prefill stays power-bound, as Oct 13 showed: TP2 at 2x300 W does not beat
   single-card 600 W (128K: 11.2 s vs 9.8 s on v0.32 TP1).
-- "TP_SIZE>1 implies EP" was justified only by EXL3's block-128 alignment
-  wall; whether nvfp4 actually *requires* EP (its experts are block-16,
-  320/rank-aligned; the MTP FP8 block-128 draft experts are the likely
-  blocker) remains untested under plain TP.
+- Plain TP (EP off) for nvfp4: **tested 2026-10-19, it loads and serves**
+  (`ENABLE_EXPERT_PARALLEL=0 TP_SIZE=2` boots in 3 min, smoke passes, zero
+  weight rejections) - the Oct-13 "TP implies EP" default was justified by
+  EXL3's block-128 wall only; nvfp4's block-16 experts slice 640->320
+  cleanly and even the FP8 block-128 MTP draft experts load. Performance vs
+  the EP run above, same day (`nvfp4-tp2-plain-*` receipts): C1 179.9
+  (-2.4%), C2 301.5 (-1.5%), C4 471.9 (+1.3%), C8 800.5 (+3.5%), C16 1228.8
+  (+0.4%); TTFT within 3% at every depth. All inside the Oct-7 jitter
+  bands: EP costs nothing for nvfp4, so the safe EXL3-driven default stays.
