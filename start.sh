@@ -57,6 +57,7 @@ PLE_MMAP="${PLE_MMAP:-${VLLM_PLE_MMAP:-${DEFAULT_PLE_MMAP:-0}}}"
 MEMORY="${MEMORY:-}"
 memory_args=()
 memory_kib=0
+memory_arg=""
 if [[ -n "$MEMORY" ]]; then
   # Everything below is in KiB, since /proc/meminfo is too: MiB x 1024, GiB x 1048576.
   case "$MEMORY" in
@@ -65,7 +66,15 @@ if [[ -n "$MEMORY" ]]; then
     *)     memory_kib=$(( MEMORY * 1048576 )) ;;                          # bare integer = GiB
   esac
   (( memory_kib > 0 )) || { echo "MEMORY must be a positive size, e.g. MEMORY=16 for 16 GiB" >&2; exit 2; }
-  memory_args=(--memory "$MEMORY" --memory-swap "$MEMORY")
+  # A bare integer needs its unit made explicit before it reaches the engine. Both crun and docker read a
+  # suffix-less --memory value as MiB, so MEMORY=16 would cap the container at 16 MiB and crun would refuse it
+  # as "the memory limit could be too low" -- an error that reads like a cgroup layout problem rather than a
+  # missing suffix, on a run four orders of magnitude below what was asked for.
+  case "$MEMORY" in
+    *[kmgtKMGT]*) memory_arg="$MEMORY" ;;
+    *) memory_arg="${MEMORY}g" ;;
+  esac
+  memory_args=(--memory "$memory_arg" --memory-swap "$memory_arg")
 fi
 
 PLE_PIN_STRATEGY="${PLE_PIN_STRATEGY:-round2}"
@@ -376,7 +385,7 @@ fi
 # :z rather than :Z because these caches are shared with download.sh, and :Z
 # would isolate each run behind its own MCS category.
 if [[ -n "$MEMORY" ]]; then
-  echo "  container memory cap: ${MEMORY} ($(( ${memory_kib} / 1024 )) GiB), swap pinned to the same size," >&2
+  echo "  container memory cap: ${memory_arg} ($(( memory_kib / 1048576 )) GiB), swap pinned to the same size," >&2
   echo "    and the memory preflight sized against the cap rather than host MemAvailable" >&2
 fi
 
