@@ -1235,3 +1235,29 @@ here is dominated by other work, so the NVFP4 prefill lead stands.
 nvfp4's GSM8K deficit is **unchanged** under the new ModelOpt
 mixed-precision detection (identical 0.8976): the −2.4 pt gap belongs to
 the expert pipeline itself, not to the loader fix.
+
+### TP2+EP re-check on v0.32 (2026-10-19, 2x300 W)
+
+Same protocol as the Oct-13 TP2 qualification (GPU entities 0+1, `TP_SIZE=2`
+implying expert parallel, port 8125, MTP3, YaRN 512K, clients mode,
+3-run decode + 5-depth prefill), now on the v0.32.0 image. Receipts:
+`benchmarks/v032-rebase-20261018/tp2/`. This was the **first-ever nvfp4
+TP2 boot** on this host; it started clean under EP.
+
+| TP2+EP @ 2x300 W | C1 | C2 | C4 | C8 | C16 | TTFT 128K |
+|---|---|---|---|---|---|---|
+| exl3 v0.32 | 180.1 | 292.7 | 453.3 | 735.4 | 981.9 | 14.9 s |
+| nvfp4 v0.32 | **184.4** | 306.0 | 465.9 | 773.5 | **1223.4** | 11.2 s |
+| exl3 v0.31 (Oct-13 ref) | 172.7 | 279.9 | ~458 | — | — | — |
+
+- exl3 v0.32 vs v0.31 TP2: +4.3% C1, parity elsewhere — same story as the
+  TP1 A/B.
+- nvfp4 TP2 sets recipe-best decode at every concurrency: C1 184.4 beats
+  the single-card 600 W best (133.7) by +38%; C16 1223.4 beats the prior
+  best (1017.2) by +20% at equal total power.
+- Prefill stays power-bound, as Oct 13 showed: TP2 at 2x300 W does not beat
+  single-card 600 W (128K: 11.2 s vs 9.8 s on v0.32 TP1).
+- "TP_SIZE>1 implies EP" was justified only by EXL3's block-128 alignment
+  wall; whether nvfp4 actually *requires* EP (its experts are block-16,
+  320/rank-aligned; the MTP FP8 block-128 draft experts are the likely
+  blocker) remains untested under plain TP.
