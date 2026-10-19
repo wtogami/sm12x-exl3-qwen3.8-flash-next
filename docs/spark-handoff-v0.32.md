@@ -5,14 +5,17 @@ requires registry access; build and test entirely locally.
 
 ## What changed for this test
 - Base: `vllm/vllm-openai:v0.32.0` (official arm64 image), replacing v0.31.0.
-- New in the image: the `port-mrope-positions-factor.py` regression port
-  (upstream issue vllm-project/vllm#62383). Spark serves the native
-  262144 window by default and never crosses the bug boundary, so the
-  port must be a no-op on this platform — if you see ANY behavior change
-  vs v0.31 at native lengths, that is itself a finding.
+- The image now carries `patches/port-mrope-served-window.py` — the real
+  fix for the v0.32.0 M-RoPE boundary crash (upstream issue
+  vllm-project/vllm#62383, fix filed as PR vllm-project/vllm#62409).
+  It floors the cos/sin cache at `max_model_len` instead of restoring the
+  old blanket 4x. Spark serves the native 262144 window by default, where
+  the floor is provably inert (bit-identical cache sizing to stock,
+  verified on RTX). If you see ANY behavior delta vs v0.31 at native
+  lengths, that is itself a finding about this build.
 - Do NOT set `LONGCTX=1` on v0.32 for anything beyond a guarded test:
-  the YaRN path past 262144 is the open upstream bug (the vendored ×4
-  port fixes it on RTX; Spark is untested for it).
+  the YaRN path past 262144 is the open upstream bug; the vendored port
+  fixes it on RTX but is untested on Spark.
 - Spark defaults are unchanged: `PLE_MMAP=1` (checkpoint-mapped table),
   MTP2, 0.7 utilization cap, native 262144.
 
@@ -25,31 +28,41 @@ requires registry access; build and test entirely locally.
 
 ## Run (from the repo root, on this branch)
 ```bash
-git rev-parse HEAD                    # record this in your report
-bash build.sh                         # native arm64 build -> spark-exl3-qwen3.8-flash-next:local
-bash start.sh                         # exl3, mmap, MTP2, native window
+git rev-parse HEAD                     # record this in your report
+bash build.sh                          # native arm64 build -> spark-exl3-qwen3.8-flash-next:local
 python3 scripts/test-quant-profiles.py
-RESULT_DIR=benchmarks/spark-v032 bash scripts/quality-suite.sh
+RESULT_DIR=benchmarks/spark-v032 \
+  IMAGE=localhost/spark-exl3-qwen3.8-flash-next:local \
+  QUANTS=exl3 \
+  BOUNDARY_TOKENS= \
+  bash scripts/qualification-legs.sh   # full functional matrix; owns start/stop per profile
 python3 scripts/capture-runtime.py --output benchmarks/spark-v032/runtime.json
 python3 scripts/capture-mmap-memory.py --output benchmarks/spark-v032/memory.json
-bash stop.sh
-```
-Then package everything:
-```bash
 bash scripts/spark-report.sh benchmarks/spark-v032
 # prints the path of spark-report-<host>-<utc>.tar.gz
 ```
+Notes:
+- `BOUNDARY_TOKENS=` (empty) is REQUIRED on native-window Spark: the
+  280K/480K past-native legs are invalid there while #62383 is open.
+- The legs script is resume-safe (a profile with an existing first
+  receipt is skipped) and never aborts the matrix mid-profile; its
+  per-step `exit N` lines land in `RESULT_DIR/driver.log`, which the
+  report packages automatically.
+- Add `QUANTS="exl3 exl3-ple8"` only if you also downloaded the FP8-PLE
+  variant; `exl3` is the gate.
 
 ## Pass criteria
 - `build.sh` exits 0 (all in-image CPU canaries run during the build).
-- `quality-suite.sh`: every step exit 0; contracts pass at their
-  documented rates (vision pass; retrieval 6/6 at 8K/240K; api 16/16;
-  seven/orchid are informational - report counts, don't chase a miss
-  class marked as known jitter in docs/qualification.md).
+- `test-quant-profiles.py` exit 0.
+- `qualification-legs.sh` exit 0 — equivalently: every `exit` line in
+  `driver.log` says `exit 0` (api, vision, retrieval, structured,
+  seven, orchid, tools for each profile booted).
 - Engine log during the run contains no `Xid`, no retraction storms, and
   `checkpoint_mapped` is confirmed active at startup.
+- seven/orchid are informational — report counts, don't chase a miss
+  class marked as known jitter in docs/qualification.md.
 
 ## Send back
 The single `spark-report-*.tar.gz` the script prints. It bundles all
-receipts, host/driver/image/git identity, and an exit-code summary. No
-model weights, no personal files.
+receipts (including `driver.log`), host/driver/image/git identity, and
+the exit-code summary. No model weights, no personal files.
