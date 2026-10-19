@@ -73,7 +73,11 @@ class _EtpEmbedding:
             self.etp_data_parallel_size = value
 
 
-for _value, _refuse in ((2, True), (4, True), (1, False), (None, False)):
+check("qwen_stream_gather exports require_unreplicated_rows",
+      hasattr(sg, "require_unreplicated_rows"))
+
+for _value, _refuse in ((2, True), (4, True), (1, False), (None, False)) if hasattr(
+        sg, "require_unreplicated_rows") else ():
     try:
         sg.require_unreplicated_rows(_EtpEmbedding(_value), staging_rows=32768, row_bytes=160)
         _got = False
