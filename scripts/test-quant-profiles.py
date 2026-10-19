@@ -109,12 +109,12 @@ for line in read("README.md").splitlines():
     if header and len(cells) == len(header) and re.fullmatch(r"`[a-z0-9-]+`", cells[0]):
         rows[cells[0].strip("`")] = dict(zip(header, cells))
 assert rows, "README profile table not found; its header or shape changed"
-# Profiles de-emphasized in the README table by owner policy (f0bf10b: the
-# RedHatAI checkpoint stays launchable and stays in model-profiles.sh, the
-# profiler enums and the usage texts, but is no longer presented in the
-# human-facing table). An explicit list is the difference between "de-emphasized
-# on purpose" and "the row went stale".
-DEEMPHASIZED = {"nvfp4-redhatai"}
+# Profiles present in model-profiles.sh but intentionally absent from the
+# README table. The RedHatAI profile was retired outright on 2026-10-18 (C16
+# scaling collapse; checkpoint deleted; v0.32 upstream absorbed its startup
+# port), so the set is empty again. An explicit list is the difference between
+# "absent on purpose" and "the row went stale".
+DEEMPHASIZED = set()
 assert set(rows) == profiles - DEEMPHASIZED, (
     f"README table rows {sorted(rows)} != profiles-minus-deemphasized "
     f"{sorted(profiles - DEEMPHASIZED)}")

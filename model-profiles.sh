@@ -17,11 +17,11 @@ case "${QUANT:-exl3}" in
     MODEL_REVISION=fc694b54fb0174e0913e6adf86691ef85a4ead47
     PLE_BYTES_PER_ELEMENT=1
     ;;
-  nvfp4-redhatai)
-    MODEL_REPO=RedHatAI/Qwen3.8-Flash-Next-NVFP4
-    MODEL_REVISION=c8f2fb1b9869f686b214782036123b10ff96d14a
-    PLE_BYTES_PER_ELEMENT=2
-    ;;
-  *) echo "QUANT must be exl3, exl3-ple8, nvfp4, or nvfp4-redhatai" >&2; exit 2 ;;
+  # nvfp4-redhatai retired 2026-10-18: the C16 scaling collapse (see
+  # docs/qualification.md and docs/performance-comparison.md) de-recommended
+  # the profile, the checkpoint was deleted from the model cache, and v0.32
+  # upstream absorbed the startup port it needed. Oct-7 receipts remain the
+  # historical record.
+  *) echo "QUANT must be exl3, exl3-ple8 or nvfp4" >&2; exit 2 ;;
 esac
 MODEL_CACHE_NAME="models--${MODEL_REPO//\//--}"

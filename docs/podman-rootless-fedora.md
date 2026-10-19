@@ -468,7 +468,7 @@ the checkpoint headers rather than estimated:
 
 | profile | PLE dtype | table in checkpoint | **actually pinned** |
 | --- | --- | --- | --- |
-| `exl3`, `nvfp4-redhatai` | BF16 | 102.40 GB = 95.40 GiB | **128 GiB** |
+| `exl3` | BF16 | 102.40 GB = 95.40 GiB | **128 GiB** |
 | `exl3-ple8`, `nvfp4` | FP8 E4M3 + one global scale | 51.20 GB = 47.68 GiB | **64 GiB** |
 
 The last column is the one that has to fit in RAM. The token embedding table adds
@@ -592,7 +592,7 @@ As the deploying user:
 
 ```sh
 ./build.sh      # also generates ~/.config/cdi/nvidia.yaml and its containers.conf.d drop-in
-./download.sh   # QUANT=exl3|exl3-ple8|nvfp4|nvfp4-redhatai
+./download.sh   # QUANT=exl3|exl3-ple8|nvfp4
 ./start.sh
 ./stop.sh       # same QUANT as start.sh; see README for the grace period
 ```
