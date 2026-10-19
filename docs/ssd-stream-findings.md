@@ -3494,3 +3494,29 @@ that suite for a reason worth recording: `StreamTable.from_paths` builds the obj
 bases and fills the real mapping addresses *afterwards*, so a pointer array cached in `__init__` handed the
 C loop NULL bases. Fixed by `_refresh_bases_ptr()`, called from both places -- and a reminder that caching a
 derived view of mutable state needs the mutation path to invalidate it.
+
+
+# In-engine effect of the single-call gather: decode loss 7.8% -> 3.4%, output still byte-identical
+
+Same cell as the phase split above -- v2, TP1, GPU 1, 300 W, 1,125 staged steps, 972,240 rows -- rebuilt image:
+
+| metric | before | after | pinned control |
+|---|---|---|---|
+| `gather` us/step | 1,787 | 364 | -- |
+| `ids` us/step | 707 | 727 | -- |
+| exposed host work (ids+gather) | 2.49 ms | 1.09 ms | -- |
+| decode tok/s | 126.0 | 131.9 | 136.6 |
+| decode vs control | -7.8% | **-3.4%** | -- |
+| prefill tok/s | 10,515 | 10,566 | 11,034 |
+| strict hash | `7c1421da…` | `7c1421da…` | `7c1421da…` |
+
+The cost model that motivated the change holds: exposed host work fell from ~2.5 ms to ~1.1 ms against a
+~28 ms decode step, which predicts a loss of roughly 3.9% where 3.4% was measured. The in-engine gather
+improved 4.9x rather than the 44x the CPU-only benchmark showed, because the in-engine number also includes
+the H2D enqueue into the pinned arena, which the benchmark does not measure.
+
+`ids` is now the larger half of what remains: 727 us of host-side n-gram id computation per step, produced by
+the engine's own host ids function rather than by anything in the streaming overlay. Attacking it is a
+different kind of change -- it means porting engine code, not tuning a copy loop -- and the whole remaining
+budget is ~1.1 ms/step, so even eliminating it entirely is worth roughly 3 points of decode. That is the
+honest stopping point unless a 3% decode gain justifies touching engine-side id computation.
