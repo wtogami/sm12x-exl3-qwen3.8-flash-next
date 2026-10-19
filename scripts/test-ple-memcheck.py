@@ -36,7 +36,13 @@ def config(path: Path, **overrides) -> Path:
 
 def check(cfg: Path, bytes_per_element: int, memtotal_gib: float, memavail_gib: float,
           strategy: str | None = None):
-    script = ('source "%s/platform-config.sh" && qwen38_ple_memcheck "%s" %d %d %d'
+    # PIN_WAIT=0 pins the scenario these assertions describe. Since a25cbe4 the preflight waits out
+    # post-teardown unpin lag when no live process holds the memory, and on a host with free RAM it
+    # legitimately recovers headroom and proceeds without warning -- so leaving the wait enabled made
+    # this test's outcome depend on whatever else was running at the moment. The warn path is what is
+    # under test; the wait path is covered by its own behaviour.
+    script = ('export PIN_WAIT=0; source "%s/platform-config.sh" && '
+              'qwen38_ple_memcheck "%s" %d %d %d'
               % (root, cfg, bytes_per_element, int(memtotal_gib * KIB), int(memavail_gib * KIB)))
     if strategy is not None:
         script = 'export PLE_PIN_STRATEGY=%s; ' % strategy + script
