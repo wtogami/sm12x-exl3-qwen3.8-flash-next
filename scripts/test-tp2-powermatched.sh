@@ -62,7 +62,8 @@ cell() {   # name  extra-env-string  [extra start.sh args]  [want_devices]
   awk -v before="$shmem_before" '/^Shmem:/ {printf "    Shmem %.2f GiB (+%.2f over pre-boot)\n", $2/1048576, ($2-before)/1048576}' /proc/meminfo
 
   echo "  --- backend lines ---"
-  grep -m1 -iE "PLE pinned host memory|pinned at exact size" "$OUT/$name.log" | cut -c1-130 | sed 's/^/    /'
+  grep -m2 -iE "pinned at exact size|PLE pinned host memory|[0-9.]+ GiB of pinned" "$OUT/$name.log" \
+    | cut -c1-140 | sed 's/^/    /'
   grep -m1 -iE "PLE stream v2: staging" "$OUT/$name.log" | cut -c1-160 | sed 's/^/    /'
   grep -m1 -iE "world_size|tensor.parallel" "$OUT/$name.log" | cut -c1-120 | sed 's/^/    /'
   grep -m1 -oE "CUDAGraphMode\.[A-Z_]+" "$OUT/$name.log" | head -1 | sed 's/^/    graph mode: /'
@@ -70,7 +71,11 @@ cell() {   # name  extra-env-string  [extra start.sh args]  [want_devices]
 
   echo "  --- greedy determinism, twice ---"
   local h1 h2
-  h1=$(cd /tmp && python3 -I "$REPO/scripts/ple-probe.py" --reps 2 --warmup 1 2>&1 | awk '$1=="strict"{print $2}')
+  local dump=""
+  if [[ "${DUMP:-0}" == 1 ]]; then
+    dump="--dump $OUT/tp-dumps.jsonl --label $name"
+  fi
+  h1=$(cd /tmp && python3 -I "$REPO/scripts/ple-probe.py" --reps 2 --warmup 1 $dump 2>&1 | awk '$1=="strict"{print $2}')
   h2=$(cd /tmp && python3 -I "$REPO/scripts/ple-probe.py" --reps 2 --warmup 1 2>&1 | awk '$1=="strict"{print $2}')
   echo "    strict hashes: $h1 / $h2   $([ "$h1" = "$h2" ] && echo SELF-CONSISTENT || echo VARIES)"
   if [ -z "$REF" ]; then REF="$h1"; echo "    (reference set from this cell)"; else
@@ -81,9 +86,13 @@ cell() {   # name  extra-env-string  [extra start.sh args]  [want_devices]
   ( cd /tmp && python3 -I "$REPO/scripts/ple-probe.py" --reps 3 --warmup 2 > "$OUT/$name-perf.txt" 2>&1 )
   grep -E "^(prefill|decode) " "$OUT/$name-perf.txt" | sed 's/^/    /'
 
+  # Empty is expected on pinned cells: the phase averages come from StepStager, which only exists when a
+  # streaming backend is selected. On streaming cells an empty section means the boot finished inside the
+  # reporting interval -- lower PLE_STREAM_V2_LOG_EVERY rather than concluding staging did not run.
   echo "  --- v2 phase stats (needs >200 staged steps in this boot) ---"
   grep -h "PLE stream v2 stats" "$OUT/$name.log" | tail -2 | sed 's/^/    /' || echo "    (none)"
   podman stop -t 30 "$ctr" >/dev/null 2>&1
+  podman rm -f "$ctr" >/dev/null 2>&1     # stopped != gone: a leftover shows up in -a counts
 }
 
 # TP1 on GPU 1 only: the shipping configuration, both cards still capped.
@@ -102,6 +111,10 @@ else
 fi
 echo "  containers left behind: $(podman ps -aq --filter name=qwen38 | wc -l) (want 0)"
 
+if [[ "${DUMP:-0}" == 1 && -n "${DIFF_A:-}" && -n "${DIFF_B:-}" ]]; then
+  echo; echo "=== output distance: $DIFF_A vs $DIFF_B ==="
+  ( cd /tmp && python3 -I "$REPO/scripts/ple-probe.py" --diff "$OUT/tp-dumps.jsonl" "$DIFF_A" "$DIFF_B" ) 2>&1 | sed 's/^/  /'
+fi
 echo
 echo "=== power limits still applied ==="
 nvidia-smi --query-gpu=index,power.limit --format=csv,noheader | sed 's/^/  /'
