@@ -3383,6 +3383,42 @@ classic modular arithmetic…"). `arithmetic`, `verbatim`, `multilingual` and `m
 character for character. A formatting-of-the-first-sentence difference at 23 words in, not a substantive
 disagreement -- but it is a real output change and should be adopted deliberately.
 
+# Why streaming is now permitted at TP2, and where it still is not
+
+The launcher used to exit 2 on `PLE_STREAM=1` with `TP_SIZE>1`. That guard conflated two different things,
+and reading the engine made the difference explicit:
+
+* `nvidia/ngram_embedding.py:120` sizes the prefetch buffer as `max_total_tokens * etp_data_parallel_size`.
+* `common/ngram_embedding.py:94` defines `etp_data_parallel_size = etp_group_world_size // tp_group_world_size`.
+* `common/ngram_embedding.py:114-144`: when that value is above 1, `_get_dp_gather_slot` reads the per-rank
+  token counts, `_gather_dp_ids` zero-pads to `slot_size = max(counts)` and `all_gather`s across the ETP
+  group, and `_select_embeddings` slices this rank's rows back out afterwards.
+
+So the hazard is not tensor width, it is **ids arriving at `_lookup` that this rank never computed**. Both
+backends lay rows out positionally, and v2's freshness check is a per-row sequence tag that answers "was row
+*i* staged for step *N*?" -- never "is row *i* the right row". A rank staging the wrong content keeps every
+tag matching: wrong features, full speed, no error.
+
+The two designs are not equally blocked there. v1 reads the ids tensor the engine hands to `_lookup`, which
+is *after* the gather, so it structurally sees the correct rows whatever the ETP width -- at TP>1 it was
+unmeasured, not impossible. v2 computes ids on the host, and a host can only see its own rank's tokens;
+making v2 correct under ETP-across-DP would mean adding a host-side exchange to the staging path, which is a
+design change, not a sizing fix.
+
+Plain TP2 with no data parallelism is the unchanged-geometry case: `etp_data_parallel_size` is provably 1
+(the constructor raises unless the ETP group size is divisible by the TP group size, and the ETP group cannot
+exceed a 2-GPU world with DP=1 -- the TP2 cells booted, so the ratio is 1), `_gather_dp_ids` is the identity,
+and the only per-rank difference is the vocab ownership range from `shard_indices`, which both backends
+already read from the engine rather than assuming.
+
+The guard therefore moved rather than disappeared. `require_unreplicated_rows()` in `qwen_stream_gather.py`
+runs at stager construction in both designs and refuses to serve when the engine reports
+`etp_data_parallel_size != 1`, naming the silent-failure mechanism in the message. Same principle as the tag
+initialisation: put the safety property in the data, not in the ordering of hooks or the wording of a
+launcher -- a launcher that forgets the check still cannot stage the wrong geometry. Verified on CPU: values
+2 and 4 refuse, 1 and absent proceed. The build checker gained assertions for exactly that, and they were
+confirmed to fail against the pre-change image before the image was rebuilt.
+
 Cross-boot repeatability was also confirmed for the throughput itself: 0.27% spread on prefill and 0.07% on
 decode between boots of the same cell, which is far tighter than the 13% prefill spread noted elsewhere in
 this file for uncapped runs -- pinning the power envelope appears to have removed most of the prefill noise.
