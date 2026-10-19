@@ -3422,3 +3422,47 @@ confirmed to fail against the pre-change image before the image was rebuilt.
 Cross-boot repeatability was also confirmed for the throughput itself: 0.27% spread on prefill and 0.07% on
 decode between boots of the same cell, which is far tighter than the 13% prefill spread noted elsewhere in
 this file for uncapped runs -- pinning the power envelope appears to have removed most of the prefill noise.
+
+# v2 phase split on burst, and what the gather cost actually is
+
+`PLE_STREAM_V2_LOG_EVERY=25` on the fixed image, one v2 cell, GPU=1 at 300 W, 1,125 staged steps, 972,240
+rows (864 rows/step), `skips=0`, hash identical to the pinned baseline:
+
+| phase | us/step | what it measures |
+|---|---|---|
+| `d2h` | 12,794 | `ev.synchronize()` on this step's input D2H |
+| `ids` | 707 | host n-gram id computation |
+| `gather` | 1,787 | row copy into pinned staging + H2D enqueue |
+
+The first column is the one to read carefully, because it looks like the smoking gun and is not. 12.8 ms per
+step in a ~28 ms step would be half the runtime, yet decode lost only 7.8% against the pinned control. The
+wait is for the GPU to drain to the point where `input_ids` were written, which is work the CPU would have
+waited for anyway: it overlaps the replay instead of delaying it. The exposed host work is `ids + gather`
+= 2.5 ms/step, which against a 28 ms step is ~9% -- and the measured decode loss is 7.8%. That agreement is
+the evidence that the sync-mode stall is not the problem; the host work per step is.
+
+`scripts/bench-ple-gather-latency.py` then shows what that host work is made of. CPU-only, real checkpoint,
+`gather_to` timed at different batch sizes, with the number of shard groups per batch reported alongside:
+
+| rows | ms/call | us/row | shard groups |
+|---|---|---|---|
+| 16 | 0.348 | 21.77 | 16 |
+| 64 | 1.004 | 15.69 | 51 |
+| 256 | 2.161 | 8.44 | 112 |
+| 864 | 2.487 | 2.88 | 128 |
+| 2,048 | 2.542 | 1.24 | 128 |
+| 8,192 | 2.894 | 0.35 | 128 |
+| 32,768 | 4.686 | 0.14 | 128 |
+
+The absolute cost barely moves from 256 to 8,192 rows: 2.16 ms to 2.89 ms for a 32x larger batch. Fitting the
+two ends, marginal cost is ~3.5 ns/row -- the memcpy is exactly as fast as the prototype measured -- and the
+fixed part is ~19 us **per shard group**, not per call. 16 groups cost 0.35 ms, 51 cost 1.0, 128 cost 2.5.
+Every batch bigger than a couple hundred rows touches all 128 shards of a 47.7 GiB table, so decode-size
+steps pay 128 groups' worth of Python bookkeeping to move 138 KB.
+
+That is the "fixed per-step overhead" suspicion, quantified, and it names the fix: `gather_to` groups ids by
+shard in Python and issues one ctypes call per group, re-deriving `argtypes` on each call and making two
+`ascontiguousarray` copies per group. One C call over a shard-sorted index array should take the fixed term
+from ~2.4 ms to something proportional to the work, which by the arithmetic above is worth most of the 7.8%
+decode loss. Prefill barely sees it, because 2.4 ms against a ~200 ms compute window is noise -- consistent
+with prefill and decode costs being dominated by different things all along.
