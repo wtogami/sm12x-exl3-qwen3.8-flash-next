@@ -13,7 +13,7 @@
 set -uo pipefail
 REPO=/home/opencode/sm12x-exl3-qwen3.8-flash-next
 cd "$REPO" || exit 1
-IMG=localhost/qwen38-rtx:exp2-stream
+IMG="${IMG:-localhost/qwen38-rtx:exp3-stream}"
 OUT=/home/opencode/exp2-test; mkdir -p "$OUT"
 REF="${REF:-}"
 GP0MAX=0
@@ -53,6 +53,10 @@ cell() {   # name  extra-env-string  [extra start.sh args]
   echo "    devices visible: $n (want 1);  bus: $bus (want 00000000:9C:00.0)"
   echo "  --- memory ---"
   awk '/^Shmem:/ {printf "    Shmem %.2f GiB\n", $2/1048576}' /proc/meminfo
+  # Print what the container actually received. A knob added to a backend but not forwarded by start.sh is
+  # invisible otherwise: the module reads its default and the run looks like it tested the tuned variant.
+  echo "  --- env as seen inside the container ---"
+  podman exec "$ctr" sh -c 'env | grep -E "^PLE_" | sort' 2>/dev/null | sed 's/^/    /'
   echo "  --- streaming / backend lines ---"
   grep -m1 -iE "streaming backend selected" "$OUT/$name.log" | cut -c1-120 | sed 's/^/    /'
   grep -m1 -iE "PLE stream v2: staging" "$OUT/$name.log" | cut -c1-150 | sed 's/^/    /'

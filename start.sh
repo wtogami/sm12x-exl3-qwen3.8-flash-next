@@ -329,6 +329,17 @@ fi
 # mounts keep their host cache_home_t label, which container_t cannot access.
 # :z rather than :Z because these caches are shared with download.sh, and :Z
 # would isolate each run behind its own MCS category.
+# Streaming tuning knobs, forwarded only when the operator actually set one. Named explicitly rather than
+# passing the whole shell environment through, so the served configuration stays auditable from this file.
+# Without this block a knob added to the backend is silently swallowed by the launcher: the module reads its
+# default, the operator believes they set something, and nothing disagrees out loud.
+ple_tuning_env=()
+for _ple_var in PLE_STREAM_V2_MODE PLE_STREAM_V2_LOG_EVERY PLE_STREAM_ARENAS PLE_STREAM_THREADS \
+                PLE_STREAM_ARENA_ROWS; do
+  [[ -n "${!_ple_var:-}" ]] && ple_tuning_env+=(-e "${_ple_var}=${!_ple_var}")
+done
+unset _ple_var
+
 docker run -d --name "$container_name" \
   "${GPU_ARGS[@]}" \
   --ipc=host --network=host \
@@ -338,6 +349,7 @@ docker run -d --name "$container_name" \
   -e VLLM_USE_BREAKABLE_CUDAGRAPH="${VLLM_USE_BREAKABLE_CUDAGRAPH:-0}" \
   -e PLE_STREAM_V2="${PLE_STREAM_V2}" \
   -e PLE_ROWCOPY_SO="${PLE_ROWCOPY_SO:-/opt/qwen38/ple_rowcopy.so}" \
+  "${ple_tuning_env[@]}" \
   -e CUDA_CACHE_PATH=/root/.cache/cuda \
   -e TRITON_CACHE_DIR=/root/.cache/triton \
   -e QWEN38_B12X_VOCAB="${B12X_VOCAB:-$DEFAULT_B12X_VOCAB}" \
