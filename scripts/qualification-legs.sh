@@ -90,6 +90,12 @@ leg() {  # $1 = QUANT
   TOOL_EVAL_DIR="${TOOL_EVAL_DIR:-}" RESULT_DIR="$dir/tools" BASE_URL="$B" MODEL="$alias" \
     bash "$SCRIPT_DIR/scripts/tool-quality.sh" >>"$LOG" 2>&1; local rc=$?
   echo "$q tools exit $rc" | tee -a "$LOG"; FAILURES=$(( FAILURES + (rc > 0) ))
+  # Evidence captures while the container still exists (stop_all below
+  # removes it; docker inspect/logs need the container). Non-gating.
+  python3 "$SCRIPT_DIR/scripts/capture-runtime.py" "qwen38-$q" --output "$dir/runtime.json" >>"$LOG" 2>&1 \
+    || echo "$q runtime-capture failed (non-gating)" >> "$LOG"
+  python3 "$SCRIPT_DIR/scripts/capture-mmap-memory.py" "qwen38-$q" --output "$dir/memory.json" >>"$LOG" 2>&1 \
+    || echo "$q memory-capture failed (non-gating)" >> "$LOG"
   echo "===== $q LEG-DONE $(date -u +%FT%TZ)" | tee -a "$LOG"
 }
 
