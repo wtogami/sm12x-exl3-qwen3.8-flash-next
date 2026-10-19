@@ -44,7 +44,7 @@ cell() {   # name  extra-env-string  [extra start.sh args]
     sleep 10
   done
   [ "$code" = "200" ] || { echo "  never healthy"; podman logs --tail 15 "$ctr" 2>&1 | sed 's/^/    /'; return 1; }
-  podman logs "$ctr" > "$OUT/$name.log" 2>&1
+  podman logs "$ctr" > "$OUT/$name.log" 2>&1   # boot-time snapshot; refreshed after the probes below
 
   echo "  --- GPU isolation (the constraint under test) ---"
   podman exec "$ctr" nvidia-smi --query-gpu=index,pci.bus_id --format=csv,noheader | sed 's/^/    in-container: /'
@@ -80,6 +80,18 @@ cell() {   # name  extra-env-string  [extra start.sh args]
   fi
   ( cd /tmp && python3 -I "$REPO/scripts/ple-probe.py" --reps 3 --warmup 2 > "$OUT/$name-perf.txt" 2>&1 )
   grep -E "^(prefill|decode) " "$OUT/$name-perf.txt" | sed 's/^/    /'
+
+  # Re-snapshot the log AFTER the probes and re-run the failure greps. The first snapshot is taken at health,
+  # so every line the probes provoke -- per-step staging stats, capture-copy errors during real replays,
+  # staging failures under load -- was missing from the file those greps read. Until this block existed, the
+  # "capture-copy errors: 0 / staging failures: 0" lines asserted only that BOOTING was clean, which is a
+  # much weaker claim than they appeared to make.
+  podman logs "$ctr" > "$OUT/$name.log" 2>&1
+  echo "  --- after the drive (log re-snapshotted) ---"
+  grep -h "PLE stream v2 stats" "$OUT/$name.log" | tail -2 | sed 's/^/    /'
+  echo "    capture-copy errors: $(grep -ciE 'Cannot copy between CPU and CUDA' "$OUT/$name.log")"
+  echo "    staging failures:    $(grep -ciE 'staging failed' "$OUT/$name.log")"
+  echo "    staging skips:       $(grep -hoE 'skips=[0-9]+' "$OUT/$name.log" | tail -1)"
   podman stop -t 30 "$ctr" >/dev/null 2>&1
   return 0
 }

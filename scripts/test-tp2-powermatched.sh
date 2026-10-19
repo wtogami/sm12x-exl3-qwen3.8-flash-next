@@ -91,6 +91,19 @@ cell() {   # name  extra-env-string  [extra start.sh args]  [want_devices]
   # reporting interval -- lower PLE_STREAM_V2_LOG_EVERY rather than concluding staging did not run.
   echo "  --- v2 phase stats (needs >200 staged steps in this boot) ---"
   grep -h "PLE stream v2 stats" "$OUT/$name.log" | tail -2 | sed 's/^/    /' || echo "    (none)"
+
+
+  # Re-snapshot the log AFTER the probes and re-run the failure greps. The first snapshot is taken at health,
+  # so every line the probes provoke -- per-step staging stats, capture-copy errors during real replays,
+  # staging failures under load -- was missing from the file those greps read. Until this block existed, the
+  # "capture-copy errors: 0 / staging failures: 0" lines asserted only that BOOTING was clean, which is a
+  # much weaker claim than they appeared to make.
+  podman logs "$ctr" > "$OUT/$name.log" 2>&1
+  echo "  --- after the drive (log re-snapshotted) ---"
+  grep -h "PLE stream v2 stats" "$OUT/$name.log" | tail -2 | sed 's/^/    /'
+  echo "    capture-copy errors: $(grep -ciE 'Cannot copy between CPU and CUDA' "$OUT/$name.log")"
+  echo "    staging failures:    $(grep -ciE 'staging failed' "$OUT/$name.log")"
+  echo "    staging skips:       $(grep -hoE 'skips=[0-9]+' "$OUT/$name.log" | tail -1)"
   podman stop -t 30 "$ctr" >/dev/null 2>&1
   podman rm -f "$ctr" >/dev/null 2>&1     # stopped != gone: a leftover shows up in -a counts
 }
