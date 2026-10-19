@@ -62,7 +62,13 @@ cell() {   # name  extra-env-string  [extra start.sh args]
   echo "    staging failures:    $(grep -ciE 'staging failed' "$OUT/$name.log")"
   echo "  --- greedy determinism, twice ---"
   local h1 h2
-  h1=$(cd /tmp && python3 -I "$REPO/scripts/ple-probe.py" --reps 2 --warmup 1 2>&1 | awk '$1=="strict"{print $2}')
+  local dump=""
+  if [[ "${DUMP:-0}" == 1 ]]; then
+    # Text as well as a hash: a hash says two regimes disagree, only the text says by how much, and
+    # "differs" and "one early token cascaded" need separating before anyone calls either a bug.
+    dump="--dump $OUT/dumps.jsonl --label $name"
+  fi
+  h1=$(cd /tmp && python3 -I "$REPO/scripts/ple-probe.py" --reps 2 --warmup 1 $dump 2>&1 | awk '$1=="strict"{print $2}')
   h2=$(cd /tmp && python3 -I "$REPO/scripts/ple-probe.py" --reps 2 --warmup 1 2>&1 | awk '$1=="strict"{print $2}')
   echo "    strict hashes: $h1 / $h2   $([ "$h1" = "$h2" ] && echo SELF-CONSISTENT || echo VARIES)"
   if [ -z "$REF" ]; then REF="$h1"; echo "    (reference set from this cell)"; else
@@ -109,4 +115,8 @@ anyproc=$(grep -vc "procs=none" "$OUT/gpu0.log" || true)
 echo "=== GPU 0 over $samples samples: peak ${peak} MiB, samples showing a compute process: $anyproc ==="
 [ "${peak:-0}" -le 16 ] && [ "$anyproc" = 0 ] && echo "  PASS GPU 0 stayed idle" || { echo "  FAIL GPU 0 was used:"; grep -v "procs=none" "$OUT/gpu0.log" | head -5 | sed 's/^/    /'; }
 nvidia-smi --query-gpu=index,memory.used --format=csv,noheader | sed 's/^/  /'
+if [[ "${DUMP:-0}" == 1 && -n "${DIFF_A:-}" && -n "${DIFF_B:-}" ]]; then
+  echo; echo "=== output distance: $DIFF_A vs $DIFF_B ==="
+  ( cd /tmp && python3 -I "$REPO/scripts/ple-probe.py" --diff "$OUT/dumps.jsonl" "$DIFF_A" "$DIFF_B" ) 2>&1 | sed 's/^/  /'
+fi
 echo TESTDONE
