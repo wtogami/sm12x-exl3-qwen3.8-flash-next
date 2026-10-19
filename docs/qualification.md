@@ -1191,7 +1191,14 @@ since the Oct-7 flight; every leg here ran on **GPU index 1** (600 W via
   under both GDN prefill backends — the reporting kernel varies because CUDA
   errors are async). Bisection receipts: 260067-token probe passes, 280069
   kills the engine; restoring the v0.31 `×4` slack passes 280069 and 480071.
-  The port restores v0.31 sizing; upstream issue pending.
+  The port restores v0.31 sizing. Reported upstream as
+  [vllm-project/vllm#62383](https://github.com/vllm-project/vllm/issues/62383)
+  (filed independently with an H200 TP2+EP YaRN-4.0 repro and an
+  MTP-cudagraphs factorial bisect; the crash-step fingerprint
+  `num_computed_tokens=[262400]` matches ours exactly). Our boundary/Xid
+  evidence and the one-line-revert datapoint are queued there as a comment.
+  The reporter's RoPE-cache rule-out rests on an unverified "positions_factor
+  resolves to 4" assumption; our stock-image test shows the opposite.
 
 The `nvfp4-redhatai` profile was **retired** in this rebase (C16 scaling
 collapse de-recommended it — see the repeat-block receipts in
