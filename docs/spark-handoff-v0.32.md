@@ -13,9 +13,12 @@ requires registry access; build and test entirely locally.
   the floor is provably inert (bit-identical cache sizing to stock,
   verified on RTX). If you see ANY behavior delta vs v0.31 at native
   lengths, that is itself a finding about this build.
-- Do NOT set `LONGCTX=1` on v0.32 for anything beyond a guarded test:
-  the YaRN path past 262144 is the open upstream bug; the vendored port
-  fixes it on RTX but is untested on Spark.
+- Extended context: `LONGCTX=1` (YaRN 512K) is NOT needed to pass this
+  qualification — the native window is the gate — but it is an optional
+  probe we would genuinely like results from (see below). The image
+  carries the #62383 fix and it is proven on RTX at 480K; no Spark has
+  ever been observed serving past its native window, so a pass OR a
+  documented failure is valuable data.
 - Spark defaults are unchanged: `PLE_MMAP=1` (checkpoint-mapped table),
   MTP2, 0.7 utilization cap, native 262144.
 
@@ -41,8 +44,8 @@ bash scripts/spark-report.sh benchmarks/spark-v032
 # prints the path of spark-report-<host>-<utc>.tar.gz
 ```
 Notes:
-- `BOUNDARY_TOKENS=` (empty) is REQUIRED on native-window Spark: the
-  280K/480K past-native legs are invalid there while #62383 is open.
+- `BOUNDARY_TOKENS=` (empty) is correct for the native-window gate: the
+  280K/480K legs are past-native requests, impossible by definition here.
 - The legs script is resume-safe (a profile with an existing first
   receipt is skipped) and never aborts the matrix mid-profile; its
   per-step `exit N` lines land in `RESULT_DIR/driver.log`, which the
@@ -60,6 +63,27 @@ Notes:
   `checkpoint_mapped` is confirmed active at startup.
 - seven/orchid are informational — report counts, don't chase a miss
   class marked as known jitter in docs/qualification.md.
+
+## Optional (wanted!): extended-context probe — `LONGCTX=1`
+
+First-ever Spark observation past the native window. Skip it if you only
+have time for the gate. Unified-memory allocation is the open question
+(the KV pool at 0.7 util with a 524288 window), so an OOM or auto-shrink
+is an acceptable, reportable outcome — capture what happened, don't
+fight it:
+
+```bash
+LONGCTX=1 RESULT_DIR=benchmarks/spark-v032-longctx \
+  IMAGE=localhost/spark-exl3-qwen3.8-flash-next:local \
+  QUANTS=exl3 BOUNDARY_TOKENS="280000 480000" \
+  bash scripts/qualification-legs.sh
+bash scripts/spark-report.sh benchmarks/spark-v032-longctx
+```
+
+If the engine boots, the boundary legs (280K/480K) are the interesting
+part: they are exactly the requests that crash unpatched v0.32.0 and
+pass on RTX with this image. Send both report tarballs back; a crash
+report from this section does not invalidate the gate above.
 
 ## Send back
 The single `spark-report-*.tar.gz` the script prints. It bundles all
