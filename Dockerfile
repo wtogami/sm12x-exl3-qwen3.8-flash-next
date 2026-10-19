@@ -54,11 +54,23 @@ COPY patches/port-exl3-ple-fp8.py /tmp/port-exl3-ple-fp8.py
 COPY patches/port-ple-exact-pin.py /tmp/port-ple-exact-pin.py
 COPY patches/port-ple-stream.py /tmp/port-ple-stream.py
 COPY patches/check-ple-stream.py /tmp/check-ple-stream.py
+COPY patches/check-undefined-globals.py /tmp/check-undefined-globals.py
 COPY patches/qwen_ple_stream.py /usr/local/lib/python3.12/dist-packages/vllm/model_executor/layers/qwen_ple_stream.py
 COPY patches/qwen_ple_stream2.py /usr/local/lib/python3.12/dist-packages/vllm/model_executor/layers/qwen_ple_stream2.py
 COPY patches/qwen_stream_gather.py /usr/local/lib/python3.12/dist-packages/vllm/model_executor/layers/qwen_stream_gather.py
 COPY patches/ple_rowcopy.c /tmp/ple_rowcopy.c
-RUN python3 /tmp/port-host-embedding.py /usr/local/lib/python3.12/dist-packages/vllm \
+# Scope check first, and on the installed copies: a name that is not in scope compiles fine and only fails
+# when that line runs, which for these overlays means minutes into an engine start. Cheap enough to put ahead
+# of the port steps so a typo costs seconds rather than a build.
+RUN python3 /tmp/check-undefined-globals.py \
+      /usr/local/lib/python3.12/dist-packages/vllm/model_executor/layers/qwen_ple_stream.py \
+      /usr/local/lib/python3.12/dist-packages/vllm/model_executor/layers/qwen_ple_stream2.py \
+      /usr/local/lib/python3.12/dist-packages/vllm/model_executor/layers/qwen_stream_gather.py \
+      /usr/local/lib/python3.12/dist-packages/vllm/model_executor/layers/qwen_host_embedding.py \
+      /usr/local/lib/python3.12/dist-packages/vllm/model_executor/layers/qwen_pinned_host.py \
+      /usr/local/lib/python3.12/dist-packages/vllm/model_executor/layers/qwen_vocab_projection.py \
+      /usr/local/lib/python3.12/dist-packages/vllm/model_executor/layers/qwen_nvfp4_moe.py \
+  && python3 /tmp/port-host-embedding.py /usr/local/lib/python3.12/dist-packages/vllm \
  && python3 /tmp/port-vocab-projection.py /usr/local/lib/python3.12/dist-packages/vllm \
  && python3 /tmp/port-nvfp4-moe.py /usr/local/lib/python3.12/dist-packages/vllm \
  && python3 /tmp/port-mrope-served-window.py /usr/local/lib/python3.12/dist-packages/vllm \

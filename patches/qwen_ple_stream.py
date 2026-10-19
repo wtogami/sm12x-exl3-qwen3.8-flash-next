@@ -86,9 +86,7 @@ class RowStager:
         import sys
         from pathlib import Path
         sys.path.insert(0, str(Path(__file__).resolve().parent))
-        from qwen_stream_gather import StreamTable, require_unreplicated_rows
-
-        require_unreplicated_rows(embedding, staging_rows=int(max_rows), row_bytes=int(row_bytes))
+        from qwen_stream_gather import StreamTable          # shipped beside this file
 
         self.torch = torch
         self.device = device
@@ -142,6 +140,15 @@ class RowStager:
 def make_stager(embedding, table) -> RowStager:
     max_rows = int(os.getenv(_ARENA_ROWS_ENV, "0")) or max(
         1, int(embedding._prefetch_buffer.shape[0]) * int(embedding._prefetch_buffer.shape[1]))
+    # This is the only place in v1 with both the embedding and the staging geometry in hand. RowStager's
+    # constructor takes a table, not the embedding, so the precondition has to be checked out here -- and
+    # that distinction is the whole reason this file once raised NameError on every v1 boot: a reference to
+    # `embedding` inside the constructor compiles fine and fails only when a stager is actually built.
+    import sys
+    from pathlib import Path
+    sys.path.insert(0, str(Path(__file__).resolve().parent))
+    from qwen_stream_gather import require_unreplicated_rows
+    require_unreplicated_rows(embedding, staging_rows=max_rows, row_bytes=int(table.row_bytes))
     return RowStager(
         table,
         device=embedding._prefetch_buffer.device,
