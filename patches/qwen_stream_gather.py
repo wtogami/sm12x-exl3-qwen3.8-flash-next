@@ -63,6 +63,32 @@ def _load_rowcopy(so_path: str | None = None):
     return lib
 
 
+def require_unreplicated_rows(embedding, *, staging_rows: int, row_bytes: int) -> None:
+    """Refuse to stage unless this rank's staging geometry is the whole story for its rows.
+
+    The streaming backends lay rows out positionally: staging row *i* is consumed by lookup row *i*, and the
+    v2 sequence tag asks only "was row *i* staged for step *N*?", not "is row *i* the right row". That is safe
+    when the id list handed to ``_lookup`` is this rank's own ids. It stops being safe when the engine
+    gathers ids across an embedding-parallel group spanning data parallelism
+    (``etp_data_parallel_size > 1``), because then the ids for other ranks exist only on their devices --
+    joined by a device-side ``all_gather`` and padded to the largest rank's token count -- and no amount of
+    host-side staging by this rank can produce them. Staging the wrong rows there keeps every tag matching,
+    so the design's own safety net cannot see it: wrong features served silently, at full speed.
+
+    Checking the engine's value here, at construction, rather than trusting a launcher flag keeps the safety
+    property in the data. A launcher that forgets the check still cannot stage the wrong geometry.
+    """
+    etp_dp = int(getattr(embedding, "etp_data_parallel_size", 1) or 1)
+    if etp_dp != 1:
+        raise RuntimeError(
+            f"PLE streaming refuses to start: etp_data_parallel_size={etp_dp}. The staged-row layout is "
+            f"positional ({staging_rows} rows x {row_bytes} B here), but under embedding parallelism spanning "
+            "data parallelism the engine feeds _lookup the all_gathered ids of the whole ETP group, padded "
+            "to the largest rank's token count. This rank's host cannot produce the other ranks' rows, and "
+            "because the sequence tag only proves a row was staged for this step -- not that it is the right "
+            "row -- the failure would be silent. Serve the table pinned (PLE_STREAM=0) on such a topology.")
+
+
 class StreamGather:
     """Gathers table rows from an mmapped checkpoint into double-buffered pinned staging."""
 

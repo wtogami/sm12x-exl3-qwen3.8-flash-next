@@ -170,22 +170,21 @@ fi
 # preflight rather than the absence of one: "no table pinned" is not "no memory needed". This reads the
 # cgroup limit too, because /proc/meminfo inside a capped container reports the host's RAM.
 if [[ "$PLE_STREAM" == 1 && "${TP_SIZE:-1}" != 1 ]]; then
-  {
-    echo "Refusing to start: PLE_STREAM=1 with TP_SIZE=${TP_SIZE}. The streaming backend has only been"
-    echo "measured at TP=1. The staged-row geometry under tensor parallelism is the open question: the"
-    echo "engine sizes its own prefetch buffer as max_total_tokens x etp_data_parallel_size rows, and"
-    echo "whether a rank must stage rows for heads it does not own (zero-filled) or only for its own"
-    echo "range has not been established here. Staging the wrong shape fails silently -- the sequence"
-    echo "tag still matches, so the mask cannot detect it -- which is the one failure mode this design"
-    echo "refuses to guess about."
-    echo "Serve the table pinned (PLE_STREAM=0), or run TP_SIZE=1."
-  } >&2
-  exit 2
+  # The precondition is about the ETP group, not the TP width. Staging is positional, so it is correct
+  # exactly while each rank stages its own ids -- which holds whenever etp_data_parallel_size == 1. That is
+  # guaranteed here because this launcher never requests data parallelism, and it is enforced per rank at
+  # stager construction by require_unreplicated_rows(), which refuses to serve rather than stage rows whose
+  # error would be silent. The earlier blanket refusal was broader than the hazard: it blocked plain TP2,
+  # where the row geometry is unchanged and only the vocab range differs per rank, together with the
+  # ETP-across-DP case that genuinely is unresolved.
+  echo "  note: PLE_STREAM=1 with TP_SIZE=${TP_SIZE}: each rank stages only its own ids, which requires" >&2
+  echo "        etp_data_parallel_size == 1 (true unless data parallelism is requested, which this launcher" >&2
+  echo "        never does). The loader asserts it per rank and will refuse to start otherwise." >&2
 fi
 
-# Streaming preflight. TP_SIZE>1 was refused above, so the tp argument here is always 1 today; it is
-# threaded through so the preflight cannot drift into a state where it silently sizes one rank as if it
-# were the whole host.
+# Streaming preflight. The tp argument carries the host-level requirement: each rank holds its own share of
+# the token embedding, so the pinned demand is tp times a per-rank figure. Threading it through keeps the
+# preflight from sizing one rank as if it were the whole host.
 if [[ "$PLE_STREAM" == 1 && "$CUSTOM_ENGRAM" == 0 && "${QWEN38_SKIP_MEMCHECK:-0}" != 1 ]] \
    && [[ -r /proc/meminfo ]]; then
   mem_total_kib=0

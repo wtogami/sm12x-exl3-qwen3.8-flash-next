@@ -124,8 +124,10 @@ class StepStager:
         import sys
         from pathlib import Path
         sys.path.insert(0, str(Path(__file__).resolve().parent))
-        from qwen_stream_gather import StreamTable
+        from qwen_stream_gather import StreamTable, require_unreplicated_rows
 
+        require_unreplicated_rows(embedding, staging_rows=int(max_rows),
+                                  row_bytes=int(embedding.table.row_bytes))
         self.torch = torch
         self.embedding = embedding
         self.device = embedding._prefetch_buffer.device

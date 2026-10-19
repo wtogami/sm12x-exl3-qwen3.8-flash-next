@@ -86,7 +86,9 @@ class RowStager:
         import sys
         from pathlib import Path
         sys.path.insert(0, str(Path(__file__).resolve().parent))
-        from qwen_stream_gather import StreamTable          # shipped beside this file
+        from qwen_stream_gather import StreamTable, require_unreplicated_rows
+
+        require_unreplicated_rows(embedding, staging_rows=int(max_rows), row_bytes=int(row_bytes))
 
         self.torch = torch
         self.device = device

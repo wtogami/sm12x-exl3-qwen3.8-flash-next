@@ -60,6 +60,31 @@ if VLLM is not None:
           ng.index("if stream_enabled():") < ng.index("elif engram_config is not None and "
                                                      "engram_config.checkpoint_mapped:"))
 
+# The ETP precondition has to be enforced by the loader, not just described by the launcher. Staging is
+# positional, so a rank staging the wrong rows keeps every sequence tag matching -- the design's own safety
+# net cannot see that class of error, which is why the check raises at construction instead of being a
+# comment somewhere the operator might read.
+from vllm.model_executor.layers import qwen_stream_gather as sg
+
+
+class _EtpEmbedding:
+    def __init__(self, value):
+        if value is not None:
+            self.etp_data_parallel_size = value
+
+
+for _value, _refuse in ((2, True), (4, True), (1, False), (None, False)):
+    try:
+        sg.require_unreplicated_rows(_EtpEmbedding(_value), staging_rows=32768, row_bytes=160)
+        _got = False
+    except RuntimeError:
+        _got = True
+    check(f"etp_data_parallel_size={_value} is {'refused' if _refuse else 'accepted'}", _got == _refuse)
+
+for _mod, _name in ((s1, "v1"), (s2, "v2")):
+    check(f"{_name} calls the ETP check at stager construction",
+          "require_unreplicated_rows(" in Path(_mod.__file__).read_text())
+
 # Static sweep: a wrong module prefix inside a function body is not importable at build time, so it hides
 # until the first engine start -- which is exactly how this repo has already wasted two boots.
 BAD_PREFIX = "vllm.model_executor.models.qwen4_exp"
