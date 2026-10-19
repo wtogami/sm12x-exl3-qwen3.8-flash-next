@@ -35,9 +35,8 @@ RESULT_DIR=benchmarks/spark-v032 \
   IMAGE=localhost/spark-exl3-qwen3.8-flash-next:local \
   QUANTS=exl3 \
   BOUNDARY_TOKENS= \
-  bash scripts/qualification-legs.sh   # full functional matrix; owns start/stop per profile
-python3 scripts/capture-runtime.py --output benchmarks/spark-v032/runtime.json
-python3 scripts/capture-mmap-memory.py --output benchmarks/spark-v032/memory.json
+  bash scripts/qualification-legs.sh   # functional matrix + runtime.json/memory.json
+                                      # captures per profile, owns start/stop
 bash scripts/spark-report.sh benchmarks/spark-v032
 # prints the path of spark-report-<host>-<utc>.tar.gz
 ```

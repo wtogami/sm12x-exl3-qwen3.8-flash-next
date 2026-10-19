@@ -18,7 +18,7 @@ info="$(mktemp -d)/host-info.txt"
   echo "-- dmesg nvidia tail"; dmesg -T 2>/dev/null | grep -iE "NVRM|Xid" | tail -10 || echo "(dmesg unavailable)"
   echo "-- memory"; free -g | head -2
   echo "-- disk"; df -h / | tail -1
-  echo "-- runtime"; cat "$RESULTS/runtime.json" 2>/dev/null | head -c 2000 || echo "(no runtime.json)"
+  echo "-- runtime"; rt="$(find "$RESULTS" -name runtime.json 2>/dev/null | head -1)"; [[ -n "$rt" ]] && head -c 2000 "$rt" || echo "(no runtime.json)"
   echo "-- image"; (docker images --format '{{.Repository}}:{{.Tag}} {{.ID}}' 2>/dev/null | grep spark-exl3 || podman images 2>/dev/null | grep spark-exl3 || echo "(image list unavailable)") | head -3
 } > "$info"
 tarball="spark-report-${host}-${stamp}.tar.gz"
