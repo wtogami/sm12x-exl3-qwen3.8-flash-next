@@ -1163,3 +1163,75 @@ Receipts: [core-suite-20261007](../benchmarks/core-suite-20261007/)
 (exl3/rha/nvfp4 core suites with served-model-name stamps),
 [tool-eval-repeats-20261007](../benchmarks/tool-eval-repeats-20261007/)
 (`{exl3,rha,nvfp4,ple8}/run-01..10` with traces + analysis).
+
+## v0.32.0 rebase (2026-10-18)
+
+Runtime base moved to `vllm/vllm-openai:v0.32.0` (tag digest `befccf0e…`),
+branch `v0.32-rebase`, image `72f854abdf83`
+(`localhost/qwen38-rtx:v0.32-test`). The host gained a second RTX PRO 6000
+since the Oct-7 flight; every leg here ran on **GPU index 1** (600 W via
+`sudo nvidia-smi -pl 600`; driver 615.78.08), GPU 0 reserved. Port changes:
+
+- mmap PLE backport re-anchored onto v0.32.0 from PR 58439 head `047fc1c`
+  (main merged at `4e4eab7`); the PR's `vllm/` diff applies byte-clean —
+  all four base files verified identical between the PR parent, the git tag
+  and the installed image tree (`ple-mmap-base-hashes.json`).
+- EXL3 `is_fused` port anchor updated for upstream's new `named_expert`
+  condition, preserving both gates.
+- `port-nvfp4-ple-ct.py` dropped: v0.32 routes CompressedTensors/INC/Quark/
+  ModelOpt-mixed-precision PLE layers natively, with per-layer scheme
+  scoping.
+- Structured-output canary re-anchored from `_get_constraint_start` to the
+  `_get_constraint_bounds`/`ConstraintBounds` refactor; 7/7 before rebuild.
+- **`port-mrope-positions-factor.py` added — v0.32.0 regression found.**
+  Upstream 59853 sizes the M-RoPE cos/sin cache at `max_position_embeddings×1`
+  when multimodal pruning is off; the Qwen4Exp path indexes deeper, so any
+  prompt past the checkpoint-native 262144 hard-faults the worker (illegal
+  memory access on the first 2048-token chunk past the boundary; observed
+  under both GDN prefill backends — the reporting kernel varies because CUDA
+  errors are async). Bisection receipts: 260067-token probe passes, 280069
+  kills the engine; restoring the v0.31 `×4` slack passes 280069 and 480071.
+  The port restores v0.31 sizing; upstream issue pending.
+
+The `nvfp4-redhatai` profile was **retired** in this rebase (C16 scaling
+collapse de-recommended it — see the repeat-block receipts in
+`benchmarks/c16-repeat-20261007/` — the checkpoint was deleted, and its
+startup port is now upstream). Oct-7 four-way receipts and comparison rows
+remain the historical record; the Oct-18 flight skipped its suite.
+
+### Per-profile re-qualification (GPU 1, YaRN 512K, MTP3, 600 W)
+
+Receipts: `benchmarks/v032-rebase-20261018/{exl3,exl3-ple8,nvfp4}-core/`,
+`exl3-longctx-gauntlet/`.
+
+| Check | exl3 | exl3-ple8 | nvfp4 | Oct-7 v0.31 reference |
+|---|---|---|---|---|
+| Retrieval (incl. 480K for exl3) | 12/12 | 6/6 | 6/6 | 12/12 / 6/6 / 6/6 |
+| API tool constraints | 16/16 | 16/16 | 16/16 | 16/16 all |
+| Vision | pass | pass | pass | pass all |
+| Structured-output live | 29/29 | 29/29 | 29/29 | (canary passed at build) |
+| Seven contracts | 19/21 | 18/21 | 19/21 | 20/18/–/18 (fable-band class) |
+| Orchid | 4/5 | 5/5 | 3/5 | 5/4/3/1 — all misses off-by-one class |
+| Tool-eval-bench (1 run) | 146 (30 HM) | 147 (32 HM) | 147 (30 HM) | 10-run means 146.8/149.7/148.0, sd ≤3.5 |
+
+Every step exited 0; all scores land within the Oct-7 replication bands.
+
+### Same-day A/B versus v0.31 (GPU 1, 600 W, interleaved by quant)
+
+Receipts: `benchmarks/v032-rebase-20261018/ab-v031-vs-v032/`
+(v0.31 baseline image re-tagged `qwen38-rtx:v0.31-20261014`).
+
+| Quant | C1–C16 decode (v0.32 vs v0.31) | TTFT 131K / 523K | GSM8K |
+|---|---|---|---|
+| exl3 | +5.1 / −2.1 / +1.8 / −0.3 / +2.8 % | 12.9 / 57.8 vs 13.0 / 57.9 s | 0.9242 vs 0.9181 |
+| nvfp4 | +2.2 / −1.5 / +0.6 / −1.0 / −2.6 % | 9.8 / 43.7 vs 9.7 / 43.3 s | 0.8976 vs 0.8976 |
+| exl3-ple8 | +3.4 / −1.2 / −2.2 / −4.0 / +1.2 % | 13.0 / 57.7 vs 13.0 / 57.9 s | — |
+
+**Parity, no regression.** Every decode point is inside the run-to-run
+jitter documented on Oct 7; TTFT matches within 0.4 s. The headline
+QSA-GEMM speedups in the v0.32 release notes (1.45–1.68× on the merged
+projection GEMM) do not surface end-to-end at these depths — prefill time
+here is dominated by other work, so the NVFP4 prefill lead stands.
+nvfp4's GSM8K deficit is **unchanged** under the new ModelOpt
+mixed-precision detection (identical 0.8976): the −2.4 pt gap belongs to
+the expert pipeline itself, not to the loader fix.
