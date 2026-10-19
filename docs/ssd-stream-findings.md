@@ -3520,3 +3520,34 @@ the engine's own host ids function rather than by anything in the streaming over
 different kind of change -- it means porting engine code, not tuning a copy loop -- and the whole remaining
 budget is ~1.1 ms/step, so even eliminating it entirely is worth roughly 3 points of decode. That is the
 honest stopping point unless a 3% decode gain justifies touching engine-side id computation.
+
+# What the remaining `ids` cost is made of
+
+`scripts/bench-ple-ids-latency.py` calls the engine's own CPU `compute_ngram_ids` directly, on a stub carrying
+the checkpoint's n-gram geometry (`ngram_size=3`, `heads_per_ngram=8` -> 16 heads, `vocab_size=248320`), with
+no engine and no GPU:
+
+| tokens | ms/call | us/token | rows |
+|---|---|---|---|
+| 16 | 0.190 | 11.88 | 256 |
+| 54 | 0.195 | 3.62 | 864 |
+| 128 | 0.203 | 1.58 | 2,048 |
+| 512 | 1.916 | 3.74 | 8,192 |
+| 2,048 | 2.050 | 1.00 | 32,768 |
+| 8,192 | 2.940 | 0.36 | 131,072 |
+
+Two things fall out. First, the decode-time shape is the flat part of the curve: ~0.20 ms per call whether the
+step carries 16 tokens or 128, so at decode sizes the engine's hashing is mostly per-call cost, not arithmetic.
+Second, the real decode step is 54 tokens -- `rows/steps = 972,240/1,125 = 864`, and 864/16 heads is exactly 54
+tokens with a fixed spec-decode width -- and the in-engine `ids` phase for that step measured 727 us against
+these ~195 us. So roughly half of the remaining `ids` cost is not the engine's function at all: it is the
+wrapper around it (pinned-memory slices, the tensor-to-numpy handoff, and whatever the live worker's thread
+contention adds), plus larger real batches (`qsl` with several requests instead of one, which this bench does
+not model).
+
+That matters for how to spend effort. The cheap lever is inside our overlay: stop making a second contiguous
+copy of the ids and stop re-slicing pinned arenas per step. The structural lever is to stop hashing on the host
+at all -- the engine already has a CUDA path (`ple_ngram_ids`, taken when `input_ids.is_cuda`) that could write
+the 864 ids on device, after which the host only needs a 7 KB D2H before the row gather. Both are bounded by the
+same ceiling: about 1.1 ms of exposed host work per ~28 ms step, which is the ~3 points of decode the phase
+split said was left after the gather fix.
