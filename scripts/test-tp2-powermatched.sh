@@ -105,8 +105,8 @@ cell tp2-pinned  "TP_SIZE=2" "" 2
 # forces the breakable PIECEWISE regime, which changes output on v0.32 by itself -- so its value here is
 # "does it boot and stage at all", not "does the hash match".
 if [[ "${STREAM_CELLS:-0}" == 1 ]]; then
-  cell tp2-stream-v2 "TP_SIZE=2 PLE_STREAM_V2=1" "" 2
-  cell tp2-stream-v1 "TP_SIZE=2 PLE_STREAM=1" "" 2
+  cell tp2-stream-v2 "TP_SIZE=2 PLE_STREAM_V2=1 PLE_ALLOW_UNVALIDATED_TP=1" "" 2
+  cell tp2-stream-v1 "TP_SIZE=2 PLE_STREAM=1 PLE_ALLOW_UNVALIDATED_TP=1" "" 2
 fi
 
 # Streaming + TP used to be refused outright; that guard is now an assertion inside the stagers, so what is

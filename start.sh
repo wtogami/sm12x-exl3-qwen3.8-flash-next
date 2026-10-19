@@ -177,9 +177,22 @@ if [[ "$PLE_STREAM" == 1 && "${TP_SIZE:-1}" != 1 ]]; then
   # error would be silent. The earlier blanket refusal was broader than the hazard: it blocked plain TP2,
   # where the row geometry is unchanged and only the vocab range differs per rank, together with the
   # ETP-across-DP case that genuinely is unresolved.
-  echo "  note: PLE_STREAM=1 with TP_SIZE=${TP_SIZE}: each rank stages only its own ids, which requires" >&2
-  echo "        etp_data_parallel_size == 1 (true unless data parallelism is requested, which this launcher" >&2
-  echo "        never does). The loader asserts it per rank and will refuse to start otherwise." >&2
+  if [[ "${PLE_ALLOW_UNVALIDATED_TP:-0}" != 1 ]]; then
+    {
+      echo "Refusing to start: PLE_STREAM=1 with TP_SIZE=${TP_SIZE}. The arithmetic says this is safe -- the"
+      echo "row geometry at plain TP2 with no data parallelism is identical to TP1, and the loader enforces"
+      echo "the one case where it is not (etp_data_parallel_size != 1 refuses on every rank). But no TP2"
+      echo "streaming boot has been measured yet, and TP width is known to change greedy output here, so the"
+      echo "verification that would justify opening this path does not exist. Streaming is a"
+      echo "small-RAM-host feature; TP2 is a two-GPU-host feature, and the hosts that need streaming are not"
+      echo "the ones asking for TP2."
+      echo "Serve pinned at TP2 (PLE_STREAM=0), stream at TP1, or set PLE_ALLOW_UNVALIDATED_TP=1 once there"
+      echo "is a TP2 reference hash to check against."
+    } >&2
+    exit 2
+  fi
+  echo "  note: PLE_ALLOW_UNVALIDATED_TP=1 -- streaming at TP_SIZE=${TP_SIZE} is unmeasured. The loader still" >&2
+  echo "        refuses etp_data_parallel_size != 1 on every rank; nothing here bypasses that." >&2
 fi
 
 # Streaming preflight. The tp argument carries the host-level requirement: each rank holds its own share of
