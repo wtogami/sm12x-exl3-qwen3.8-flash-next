@@ -3300,13 +3300,24 @@ decided it: **pinned backend, no streaming, `VLLM_USE_BREAKABLE_CUDAGRAPH=1` plu
 `cudagraph_mode=PIECEWISE` reproduces `1ce6cb9b…` exactly.** A second control, `PIECEWISE` *without* that
 env, reproduces the baseline. So on v0.32 the regime v1 requires alters greedy output by itself.
 
-| config | env | cudagraph | strict hash | decode tok/s |
-|---|---|---|---|---|
-| pinned, defaults | — | FULL_AND_PIECEWISE | `7c1421da…` | 144.0 |
-| pinned + PIECEWISE | — | PIECEWISE | `7c1421da…` | 20.8 |
-| pinned + PIECEWISE | breakable | PIECEWISE | `1ce6cb9b…` | 125.5 |
-| stream-v1 | breakable | PIECEWISE | `1ce6cb9b…` | 108.7 |
-| stream-v2 | — | FULL_AND_PIECEWISE | `7c1421da…` | 129.4 |
+| config | env | cudagraph | strict hash | decode tok/s | Shmem |
+|---|---|---|---|---|---|
+| pinned, defaults | — | FULL_AND_PIECEWISE | `7c1421da…` | 144.0 | 66.38 GiB |
+| pinned + PIECEWISE | — | PIECEWISE | `7c1421da…` | 20.8 | — |
+| pinned + PIECEWISE (JSON form) | — | PIECEWISE | `7c1421da…` | 20.8 | 72.05 GiB |
+| pinned + PIECEWISE | breakable | PIECEWISE | `1ce6cb9b…` | 125.5 | 68.50 GiB |
+| stream-v1 | breakable | PIECEWISE | `1ce6cb9b…` | 108.7 | 4.51 GiB |
+| stream-v2 | — | FULL_AND_PIECEWISE | `7c1421da…` | 129.4 | 2.41 GiB |
+
+That fifth row is the one that closes the attribution. The first two PIECEWISE cells differed in *two* ways
+(the dotted `-cc.cudagraph_mode=` spelling plus no env, versus the JSON `--compilation-config` form plus the
+env), so neither alone isolated the variable. Holding the JSON form fixed and dropping only the env
+reproduces the baseline hash at the same 20.8 tok/s decode: **the env is the discriminator, and the CLI
+spelling is irrelevant.** Two independent boots of the no-env PIECEWISE config agreed on both numbers.
+
+Shmem is the column that varies most between boots of the *same* configuration -- 66.38, 68.50 and 72.05 GiB
+for three pinned cells -- so treat single-cell Shmem differences below a few GiB as noise. The streaming
+cells' gaps (2.41 and 4.51 against ~66-72) are far outside that spread and stand.
 
 Two things to take from this, one methodological and one numerical.
 
@@ -3331,9 +3342,12 @@ correct controls that total was never all streaming's. The gather/staging cost i
 way -- which also means the sync-mode stall is still the thing to attack, and it is common to both
 designs.
 
-Not measured, and it matters for anyone who does run regime B: whether `1ce6cb9b…` differs from the
-baseline by one early token flipping under FP8 accumulation-order differences and then cascading through
-64 greedy tokens, or substantively. The strict hash is an equality test, not a distance metric, so it
-cannot answer that; the probe would need its per-prompt text captured and diffed. My working reading is
-"cascading near-tie", consistent with the chunked-prefill nondeterminism already documented in this file,
-but it is a reading and not a result.
+How far apart the two hashes actually are is worth knowing, because "differs" covers both a single early
+token riding through 64 greedy steps and a genuinely different contribution. Measured with the probe's
+`--dump`/`--diff` pair (per-prompt gated text as labelled JSONL, compared offline by label), regime B
+against the shipping default over the same five gated prompts on the same host: `code` parts after 49
+shared characters ("size of a table…" against "total size of a table…"), `verbatim` after 19, and
+`long-context`, `multilingual` and `multi-step` identical character for character. Two of five prompts
+differ, both in the wording of the first clause rather than in substance -- the cascade signature of a
+near-tie flipping early and carried forward by greedy decoding, not of wrong n-gram features. A hash alone
+cannot make that distinction, which is the reason the distance mode exists.

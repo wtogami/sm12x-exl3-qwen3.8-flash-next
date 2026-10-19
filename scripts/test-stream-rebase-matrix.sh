@@ -104,6 +104,11 @@ run pinned-piecewise "PLE_PIN_STRATEGY=round2" "-cc.cudagraph_mode=PIECEWISE"
 run pinned-v1regime "PLE_PIN_STRATEGY=round2 VLLM_USE_BREAKABLE_CUDAGRAPH=1" \
     "--compilation-config {\"cudagraph_mode\":\"PIECEWISE\"}"
 run pinned-round2  ""
+# Third arm for the regime attribution. pinned-piecewise used the dotted CLI form and pinned-v1regime
+# used the JSON form, so those two differed in two ways at once. This holds the JSON form fixed and drops
+# only the env: baseline hash here means the env is the discriminator, 1ce6cb9b here means the CLI form is.
+run pinned-piecewise-json "PLE_PIN_STRATEGY=round2" \
+    "--compilation-config {\"cudagraph_mode\":\"PIECEWISE\"}"
 run pinned-exact   "PLE_PIN_STRATEGY=exact"
 run stream-v1      "PLE_STREAM=1"
 run stream-v2      "PLE_STREAM_V2=1"
