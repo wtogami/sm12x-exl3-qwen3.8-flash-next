@@ -36,7 +36,13 @@ def config(path: Path, **overrides) -> Path:
 
 def check(cfg: Path, bytes_per_element: int, memtotal_gib: float, memavail_gib: float,
           strategy: str | None = None):
-    script = ('source "%s/platform-config.sh" && qwen38_ple_memcheck "%s" %d %d %d'
+    # PIN_WAIT=0 pins the scenario these assertions describe. Since a25cbe4 the preflight waits out
+    # post-teardown unpin lag when no live process holds the memory, and on a host with free RAM it
+    # legitimately recovers headroom and proceeds without warning -- so leaving the wait enabled made
+    # this test's outcome depend on whatever else was running at the moment. The warn path is what is
+    # under test; the wait path is covered by its own behaviour.
+    script = ('export PIN_WAIT=0; source "%s/platform-config.sh" && '
+              'qwen38_ple_memcheck "%s" %d %d %d'
               % (root, cfg, bytes_per_element, int(memtotal_gib * KIB), int(memavail_gib * KIB)))
     if strategy is not None:
         script = 'export PLE_PIN_STRATEGY=%s; ' % strategy + script
@@ -57,6 +63,7 @@ with tempfile.TemporaryDirectory() as folder:
     assert refused.returncode != 0, 'round2 BF16 on a 125.68 GiB host must refuse'
     assert '%.1f' % TABLE_BF16_GIB in refused.stderr, refused.stderr
     assert 'exl3-ple8' in refused.stderr and 'QWEN38_SKIP_MEMCHECK' in refused.stderr
+    assert 'PLE_STREAM=1' in refused.stderr, 'the refusal must list streaming as an out'
     # It must refuse for the right reason: 95.4 GiB of checkpoint is 128 GiB of
     # pin, so the host is short by 130 against 125.68, not 95.4 against 69.
     assert '%.1f GiB' % BF16_PIN_GIB in refused.stderr, refused.stderr

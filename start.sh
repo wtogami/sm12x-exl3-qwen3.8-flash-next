@@ -53,8 +53,100 @@ PLE_MMAP="${PLE_MMAP:-${VLLM_PLE_MMAP:-${DEFAULT_PLE_MMAP:-0}}}"
 # as well as the preflight a few lines
 # below: the gate sizes the reservation, the loader performs it, and if they disagree
 # the gate approves a footprint the host cannot commit.
+# MEMORY caps the container's memory (podman/docker --memory) so a host with less RAM than the table can be
+# measured without reinstalling it, and so such a host can be served deliberately. Setting it changes two
+# things at once, which is the point: the cap is enforced by the cgroup, and the preflight below sizes itself
+# against the cap rather than against /proc/meminfo, which is not namespaced and would keep reporting the whole
+# host. Leave it unset for the host's own behaviour. Swap is pinned to the same value, so a smaller cap means a
+# smaller page cache rather than anon quietly spilling to disk. Accepts a bare integer as GiB (MEMORY=16) or a
+# sized value the engine understands (MEMORY=16G, 8192M).
+MEMORY="${MEMORY:-}"
+memory_args=()
+memory_kib=0
+memory_arg=""
+if [[ -n "$MEMORY" ]]; then
+  # Everything below is in KiB, since /proc/meminfo is too: MiB x 1024, GiB x 1048576.
+  case "$MEMORY" in
+    *[mM]) memory_kib=$(( ${MEMORY%[mM]} * 1024 )) ;;                    # megabytes
+    *[gG]) memory_kib=$(( ${MEMORY%[gG]} * 1048576 )) ;;                 # gigabytes
+    *)     memory_kib=$(( MEMORY * 1048576 )) ;;                          # bare integer = GiB
+  esac
+  (( memory_kib > 0 )) || { echo "MEMORY must be a positive size, e.g. MEMORY=16 for 16 GiB" >&2; exit 2; }
+  # A bare integer needs its unit made explicit before it reaches the engine. Both crun and docker read a
+  # suffix-less --memory value as MiB, so MEMORY=16 would cap the container at 16 MiB and crun would refuse it
+  # as "the memory limit could be too low" -- an error that reads like a cgroup layout problem rather than a
+  # missing suffix, on a run four orders of magnitude below what was asked for.
+  case "$MEMORY" in
+    *[kmgtKMGT]*) memory_arg="$MEMORY" ;;
+    *) memory_arg="${MEMORY}g" ;;
+  esac
+  memory_args=(--memory "$memory_arg" --memory-swap "$memory_arg")
+fi
+
 PLE_PIN_STRATEGY="${PLE_PIN_STRATEGY:-exact}"
 [[ "$PLE_PIN_STRATEGY" == round2 || "$PLE_PIN_STRATEGY" == exact ]] || { echo "PLE_PIN_STRATEGY must be round2 or exact" >&2; exit 2; }
+# PLE_STREAM switches how the PLE table is read on hosts that cannot commit a table-sized pin: instead
+# of page-locking the whole table, the CPU copies this step's rows out of the checkpoint mapping into
+# pinned staging and gathers on the device from DMA-capable memory (patches/qwen_ple_stream.py). The FP8
+# table pins 47.684 GiB and the BF16 one 95.368 GiB; streaming needs a few GiB of page cache instead of
+# either (measured: hits 74-80% at 8-16 GiB of cache, ~0.5% of prefill exposed at p50). Default off: the
+# resident pinned table is faster when it fits.
+# Values:
+#   1          staged reads -- the shipping design (patches/qwen_ple_stream2.py): rows are copied in
+#              prepare_inputs before the step replays, so _lookup is a device-to-device copy and
+#              FULL_AND_PIECEWISE graphs stay on. Decode costs 3.4% against pinned after the single-call
+#              gather fix (burst, both cards at 300 W); greedy output is byte-identical to pinned.
+#   piecewise  same staging, with FULL graphs taken off via cudagraph_mode=PIECEWISE. Diagnostic only:
+#              it isolates the graph-regime cost, which alone is worth 17.8% of decode
+#              (162.8 -> 133.9 tok/s) with streaming switched off entirely. Expect lower numbers.
+#   0          pinned-table reads (default).
+# One knob. It resolves to the pair both old and new images read -- PLE_STREAM selects streaming,
+# PLE_STREAM_V2 selects the staged design within it -- so historical cells keep reproducing: an explicit
+# pair is honoured verbatim, and `piecewise` is the old `PLE_STREAM=1` alone.
+PLE_STREAM="${PLE_STREAM:-${VLLM_PLE_STREAM:-0}}"
+[[ "$PLE_STREAM" == 0 || "$PLE_STREAM" == 1 || "$PLE_STREAM" == piecewise ]] \
+  || { echo "PLE_STREAM must be 0, 1, or piecewise" >&2; exit 2; }
+PLE_STREAM_V2="${PLE_STREAM_V2:-${VLLM_PLE_STREAM_V2:-}}"
+if [[ "$PLE_STREAM" == piecewise ]]; then
+  PLE_STREAM=1
+  [[ -n "$PLE_STREAM_V2" ]] || PLE_STREAM_V2=0
+elif [[ "$PLE_STREAM" != 0 && -z "$PLE_STREAM_V2" ]]; then
+  PLE_STREAM_V2=1
+elif [[ -z "$PLE_STREAM_V2" ]]; then
+  PLE_STREAM_V2=0
+fi
+[[ "$PLE_STREAM_V2" == 0 || "$PLE_STREAM_V2" == 1 ]] \
+  || { echo "PLE_STREAM_V2 must be 0 or 1" >&2; exit 2; }
+if [[ "$PLE_STREAM_V2" == 1 ]]; then
+  # Legacy spelling: PLE_STREAM_V2=1 on its own still means "stream, staged".
+  PLE_STREAM=1
+fi
+if [[ "$PLE_STREAM" == 1 && "$PLE_MMAP" == 0 ]]; then
+  # Streaming selects its backend by class before checkpoint_mapped is consulted, but the storage
+  # plumbing it inherits (never-materialised weights, host page prefetcher) is gated on that flag.
+  # Turning it on silently would run the streaming gather with the prefetcher off and the weights
+  # resident -- slower and using the RAM the feature exists to avoid.
+  echo "  note: PLE_STREAM=1 implies PLE_MMAP=1 (checkpoint-mapped storage, CPU gather); setting it" >&2
+  PLE_MMAP=1
+fi
+if [[ "$PLE_STREAM" == 1 && "$PLE_STREAM_V2" == 0 ]]; then
+  # A v1 streaming gather is host code and cannot live inside a captured CUDA graph: capture would
+  # freeze one row set and replay it forever. Breakable graphs are what makes it legal --
+  # @eager_break_during_capture on start_prefetch records the callable and re-runs the Python on every
+  # replay -- and the branch that defeats it is a FULL cudagraph, where the decorator deliberately
+  # passes the call through. Measured cost of that regime: 17.8% of decode (162.8 -> 133.9 tok/s,
+  # spreads 1.1%/1.6%), which is why PLE_STREAM_V2 exists instead of shipping this as the design.
+  #
+  # Corrected after the fact: this env var is NOT what turns breakable on for this model. The
+  # architecture is in default_breakable_cudagraph_architectures() and the engine logs
+  # "Auto-enabling VLLM_USE_BREAKABLE_CUDAGRAPH=1" on its own. Setting it here is belt-and-braces for
+  # architectures where that is not the default; the load-bearing flag is cudagraph_mode below.
+  if [[ -z "${VLLM_USE_BREAKABLE_CUDAGRAPH:-}" ]]; then
+    export VLLM_USE_BREAKABLE_CUDAGRAPH=1
+    echo "  note: PLE_STREAM=1 implies VLLM_USE_BREAKABLE_CUDAGRAPH=1 (the host gather must run" >&2
+    echo "        eagerly on every replay); set it explicitly to override" >&2
+  fi
+fi
 # LONGCTX=1 serves 512K via YaRN 2.0 rope scaling of the 262K-native
 # checkpoint (RULER 97.66 at 523K vs 97.92 at native 262K, no measured
 # throughput cost). LONGCTX=0 stays at the native 262144 window.
@@ -81,10 +173,88 @@ case " $* " in
     fi
     ;;
 esac
+# PLE_STREAM=1 also has to take FULL CUDA graphs off the table, and breakable graphs alone do not do
+# it. The manager enables breakable capture with
+#     use_breakable_cg = is_breakable_cudagraph_enabled() and cudagraph_mode.has_piecewise_cudagraphs()
+# and the default mode here is FULL_AND_PIECEWISE: prefill captures breakable (where
+# @eager_break_during_capture can insert an eager segment) while DECODE captures one plain
+# torch.cuda.graph. Inside that FULL capture the decorator deliberately passes the call through
+# (`if mode == CUDAGraphMode.FULL: return fn(...)`), so the host row gather would run once at capture
+# time and never again -- stale rows on every replay, not an error. Constraining the mode to PIECEWISE
+# routes every capture through the breakable wrapper. It survives the config's own normalisation only
+# because breakable is enabled: _normalize_piecewise_cudagraph_mode downgrades a PIECEWISE request to
+# NONE when compilation is off *and* breakable is disabled, and streaming turns breakable on precisely
+# because compilation mode is forced to NONE.
+if [[ "$PLE_STREAM" == 1 && "$PLE_STREAM_V2" == 0 ]]; then
+  case " $* " in
+    *" --compilation-config "*|*" --compilation-config="*|*" -cc "*|*" -cc="*|*" -O "*|*" -O="*)
+      echo "  note: caller supplied a compilation config; not forcing cudagraph_mode=PIECEWISE." >&2
+      echo "        If it enables FULL cudagraphs the streaming gather will refuse to start." >&2
+      ;;
+    *)
+      EXTRA_ARGS+=(--compilation-config '{"cudagraph_mode": "PIECEWISE"}')
+      echo "  note: PLE_STREAM=1 also forces cudagraph_mode=PIECEWISE; FULL cudagraph captures do not" >&2
+      echo "        break for host-side work, so decode would freeze one captured row set." >&2
+      ;;
+  esac
+fi
 # Size the pinned host memory before the container exists. A checkpoint-mapped
 # table allocates nothing table-sized, and a caller-supplied --engram-config
 # means we cannot know the placement, so both cases skip the check.
-if [[ "$PLE_MMAP" == 0 && "$CUSTOM_ENGRAM" == 0 && "${QWEN38_SKIP_MEMCHECK:-0}" != 1 ]] \
+# With PLE_STREAM=1 there is no table-sized pinned allocation, so this gate would refuse a host
+# that fits -- the exact disagreement this check exists to prevent. The staging arena it needs
+# instead is megabytes, not gigabytes, and is sized by the loader.
+if [[ "$PLE_MMAP" == 0 && "$PLE_STREAM" == 0 && "$CUSTOM_ENGRAM" == 0 \
+     && "${QWEN38_SKIP_MEMCHECK:-0}" != 1 ]] && [[ -r /proc/meminfo ]]; then
+  mem_total_kib=0
+  mem_avail_kib=0
+  while read -r key value _; do
+    case "$key" in
+      MemTotal:) mem_total_kib=$value ;;
+      MemAvailable:) mem_avail_kib=$value ;;
+    esac
+  done < /proc/meminfo
+  # With MEMORY set, the gate must judge the container, not the host: /proc/meminfo is host-wide, so an
+  # uncapped reading would approve a footprint the capped container cannot commit.
+  if (( ${memory_kib:-0} > 0 )); then
+    (( mem_avail_kib > memory_kib )) && mem_avail_kib=$memory_kib
+    (( mem_total_kib > memory_kib )) && mem_total_kib=$memory_kib
+  fi
+  qwen38_ple_memcheck "$CONFIG_PATH" "${PLE_BYTES_PER_ELEMENT:-2}" "$mem_total_kib" "$mem_avail_kib" "$TP_SIZE"
+fi
+# Streaming replaces the pinned-table requirement with a page-cache requirement, so it needs its own
+# preflight rather than the absence of one: "no table pinned" is not "no memory needed". This reads the
+# cgroup limit too, because /proc/meminfo inside a capped container reports the host's RAM.
+if [[ "$PLE_STREAM" == 1 && "${TP_SIZE:-1}" != 1 ]]; then
+  # The precondition is about the ETP group, not the TP width. Staging is positional, so it is correct
+  # exactly while each rank stages its own ids -- which holds whenever etp_data_parallel_size == 1. That is
+  # guaranteed here because this launcher never requests data parallelism, and it is enforced per rank at
+  # stager construction by require_unreplicated_rows(), which refuses to serve rather than stage rows whose
+  # error would be silent. The earlier blanket refusal was broader than the hazard: it blocked plain TP2,
+  # where the row geometry is unchanged and only the vocab range differs per rank, together with the
+  # ETP-across-DP case that genuinely is unresolved.
+  if [[ "${PLE_ALLOW_UNVALIDATED_TP:-0}" != 1 ]]; then
+    {
+      echo "Refusing to start: PLE_STREAM=1 with TP_SIZE=${TP_SIZE}. The arithmetic says this is safe -- the"
+      echo "row geometry at plain TP2 with no data parallelism is identical to TP1, and the loader enforces"
+      echo "the one case where it is not (etp_data_parallel_size != 1 refuses on every rank). But no TP2"
+      echo "streaming boot has been measured yet, and TP width is known to change greedy output here, so the"
+      echo "verification that would justify opening this path does not exist. Streaming is a"
+      echo "small-RAM-host feature; TP2 is a two-GPU-host feature, and the hosts that need streaming are not"
+      echo "the ones asking for TP2."
+      echo "Serve pinned at TP2 (PLE_STREAM=0), stream at TP1, or set PLE_ALLOW_UNVALIDATED_TP=1 once there"
+      echo "is a TP2 reference hash to check against."
+    } >&2
+    exit 2
+  fi
+  echo "  note: PLE_ALLOW_UNVALIDATED_TP=1 -- streaming at TP_SIZE=${TP_SIZE} is unmeasured. The loader still" >&2
+  echo "        refuses etp_data_parallel_size != 1 on every rank; nothing here bypasses that." >&2
+fi
+
+# Streaming preflight. The tp argument carries the host-level requirement: each rank holds its own share of
+# the token embedding, so the pinned demand is tp times a per-rank figure. Threading it through keeps the
+# preflight from sizing one rank as if it were the whole host.
+if [[ "$PLE_STREAM" == 1 && "$CUSTOM_ENGRAM" == 0 && "${QWEN38_SKIP_MEMCHECK:-0}" != 1 ]] \
    && [[ -r /proc/meminfo ]]; then
   mem_total_kib=0
   mem_avail_kib=0
@@ -94,7 +264,14 @@ if [[ "$PLE_MMAP" == 0 && "$CUSTOM_ENGRAM" == 0 && "${QWEN38_SKIP_MEMCHECK:-0}" 
       MemAvailable:) mem_avail_kib=$value ;;
     esac
   done < /proc/meminfo
-  qwen38_ple_memcheck "$CONFIG_PATH" "${PLE_BYTES_PER_ELEMENT:-2}" "$mem_total_kib" "$mem_avail_kib" "$TP_SIZE"
+  # With MEMORY set, the gate must judge the container, not the host: /proc/meminfo is host-wide, so an
+  # uncapped reading would approve a footprint the capped container cannot commit.
+  if (( ${memory_kib:-0} > 0 )); then
+    (( mem_avail_kib > memory_kib )) && mem_avail_kib=$memory_kib
+    (( mem_total_kib > memory_kib )) && mem_total_kib=$memory_kib
+  fi
+  qwen38_ple_stream_check "$CONFIG_PATH" "${PLE_BYTES_PER_ELEMENT:-2}" "$mem_total_kib" "$mem_avail_kib" "$TP_SIZE" \
+    || exit 3
 fi
 # A container left over from a previous run still owns the name, and both engines
 # then reject the run with "name is already in use". Removing a dead one is done
@@ -227,11 +404,33 @@ fi
 # mounts keep their host cache_home_t label, which container_t cannot access.
 # :z rather than :Z because these caches are shared with download.sh, and :Z
 # would isolate each run behind its own MCS category.
+if [[ -n "$MEMORY" ]]; then
+  echo "  container memory cap: ${memory_arg} ($(( memory_kib / 1048576 )) GiB), swap pinned to the same size," >&2
+  echo "    and the memory preflight sized against the cap rather than host MemAvailable" >&2
+fi
+
+# Streaming tuning knobs, forwarded only when the operator actually set one. Named explicitly rather than
+# passing the whole shell environment through, so the served configuration stays auditable from this file.
+# Without this block a knob added to the backend is silently swallowed by the launcher: the module reads its
+# default, the operator believes they set something, and nothing disagrees out loud.
+ple_tuning_env=()
+for _ple_var in PLE_STREAM_V2_MODE PLE_STREAM_V2_LOG_EVERY PLE_STREAM_ARENAS PLE_STREAM_THREADS \
+                PLE_STREAM_ARENA_ROWS; do
+  [[ -n "${!_ple_var:-}" ]] && ple_tuning_env+=(-e "${_ple_var}=${!_ple_var}")
+done
+unset _ple_var
+
 docker run -d --name "$container_name" \
   "${GPU_ARGS[@]}" \
+  "${memory_args[@]}" \
   --ipc=host --network=host \
   -e OMP_NUM_THREADS="${CPU_THREADS:-8}" \
   -e PLE_PIN_STRATEGY="${PLE_PIN_STRATEGY}" \
+  -e PLE_STREAM="${PLE_STREAM}" \
+  -e VLLM_USE_BREAKABLE_CUDAGRAPH="${VLLM_USE_BREAKABLE_CUDAGRAPH:-0}" \
+  -e PLE_STREAM_V2="${PLE_STREAM_V2}" \
+  -e PLE_ROWCOPY_SO="${PLE_ROWCOPY_SO:-/opt/qwen38/ple_rowcopy.so}" \
+  "${ple_tuning_env[@]}" \
   -e CUDA_CACHE_PATH=/root/.cache/cuda \
   -e TRITON_CACHE_DIR=/root/.cache/triton \
   -e QWEN38_B12X_VOCAB="${B12X_VOCAB:-$DEFAULT_B12X_VOCAB}" \

@@ -211,6 +211,119 @@ qwen38_pinned_holders_present() {
   (( ${sum:-0} > 8388608 ))   # >8 GiB locked by live processes
 }
 
+qwen38_cgroup_avail_kib() {
+  # MemAvailable, clipped by the cgroup's own headroom when one applies.
+  #
+  # /proc/meminfo is not namespaced: inside a capped container it reports the HOST's RAM, so a gate
+  # that trusts it will cheerfully approve a 4 GiB slice for a profile needing 60. The cgroup knows
+  # better, but its headroom is not simply memory.max -- committed anon memory cannot be reclaimed, so
+  # what a streaming table can actually use for page cache is (max - current), which is an upper
+  # bound on reclaimable space rather than a guarantee. Page cache counts against the cgroup and is
+  # reclaimed rather than OOM-killing, which is why this bounds the cache budget instead of refusing.
+  #
+  # QWEN38_CGROUP_DIR lets the test point this at a directory of fabricated files; without that hook
+  # the cgroup branch could only be exercised by creating cgroups, i.e. as root, i.e. never.
+  local avail_kib="$1" dir="${QWEN38_CGROUP_DIR:-/sys/fs/cgroup}" max cur limit_kib
+  if [[ -r "$dir/memory.max" ]]; then
+    max="$(<"$dir/memory.max")"
+    if [[ "$max" != "max" && "$max" =~ ^[0-9]+$ ]] && [[ -r "$dir/memory.current" ]]; then
+      cur="$(<"$dir/memory.current")"
+      limit_kib=$(( (max - cur) / 1024 ))
+      (( limit_kib < 0 )) && limit_kib=0
+      (( limit_kib < avail_kib )) && { echo "$limit_kib"; return 0; }
+    fi
+  elif [[ -r "$dir/memory.limit_in_bytes" ]]; then
+    max="$(<"$dir/memory.limit_in_bytes")"
+    # cgroup v1 reports "no limit" as a huge sentinel rather than the string "max"
+    if [[ "$max" =~ ^[0-9]+$ ]] && (( max < 9223372036854771712 )) && [[ -r "$dir/memory.usage_in_bytes" ]]; then
+      cur="$(<"$dir/memory.usage_in_bytes")"
+      limit_kib=$(( (max - cur) / 1024 ))
+      (( limit_kib < 0 )) && limit_kib=0
+      (( limit_kib < avail_kib )) && { echo "$limit_kib"; return 0; }
+    fi
+  fi
+  echo "$avail_kib"
+}
+
+qwen38_ple_stream_check() {
+  # Preflight for PLE_STREAM=1: no table-sized pin, but page cache becomes the resource that matters.
+  #
+  # Measured on this table with a synthetic serving-shaped session (labelled synthetic, not logged
+  # traffic): page-cache hit rate 0.744 at 8 GiB of cache and 0.797 at 16 GiB, the latter matching the
+  # same run on a host with enough RAM to cache the whole table; working set 14.7 GiB. Below that,
+  # reads go to the device, and O_DIRECT on this shape tops out at 85.6k pages/s against a 132.7k
+  # requirement -- so a cache-starved host is not merely slower, it can fall behind prefill entirely.
+  # Hence: hard floor at ${PLE_STREAM_CACHE_GIB:=-} 2 GiB, warning under 16 GiB, silence above it.
+  local config="$1" bytes="$2" memtotal_kib="$3" memavail_kib="$4" tp="${5:-1}"
+  local dims ngram_rows ple_dim vocab hidden table_kib embed_kib embed_pin_kib embed_rank_kib
+  local staging_kib cache_min_kib cache_warn_kib avail_kib eff_kib
+  if [[ ! -r "$config" ]] || ! command -v python3 >/dev/null 2>&1; then
+    echo "WARNING: cannot read $config, or no python3; skipping the streaming memory preflight" >&2
+    return 0
+  fi
+  if ! dims="$(python3 -c 'import json, sys
+text = json.load(open(sys.argv[1]))["text_config"]
+print(int(text["ngram_vocab_size_base"]), int(text["ple_embed_dim"]),
+      int(text["vocab_size"]), int(text["hidden_size"]))' "$config" 2>/dev/null)"; then
+    echo "WARNING: $config carries no PLE geometry I can read; skipping the streaming preflight" >&2
+    return 0
+  fi
+  read -r ngram_rows ple_dim vocab hidden <<<"$dims"
+  # base x dim x bytes equals the checkpoint's rows x row_bytes exactly: the table is 16 heads of
+  # 20,000,00x rows x 160 B, and 16 x 160 == 2560 == ple_embed_dim. Verified against the checkpoint.
+  table_kib=$(( ngram_rows * ple_dim * bytes / 1024 ))
+  embed_kib=$(( vocab * hidden * 2 / 1024 ))
+  # Per-rank sizing, mirroring qwen38_ple_memcheck: the host token embedding is a
+  # VocabParallelEmbedding, so each rank pins round2(ceil(embed/tp)) and the demand is tp times that.
+  # tp=1 reproduces the single-rank figures exactly. The n-gram table does not appear in this sum at
+  # all, which is the entire point of streaming.
+  embed_rank_kib=$(( (embed_kib + tp - 1) / tp ))
+  embed_pin_kib=$(( $(qwen38_next_pow2 "$embed_rank_kib") * tp ))
+  # Staging arena: one row per (token x ngram head), rounded generously. It is megabytes; the point
+  # of printing it is that a future config where it is NOT megabytes becomes visible here.
+  # tokens x heads x row_bytes, and row_bytes is ple_dim/heads x bytes, so the head count cancels:
+  # the arena is tokens x ple_dim x bytes regardless of how the table is split. 2048 x 2560 x 1 = 5 MiB.
+  staging_kib=$(( ${QWEN38_MAX_BATCHED_TOKENS:-2048} * ple_dim * bytes / 1024 ))
+  cache_min_kib=$(( ${PLE_STREAM_CACHE_GIB:-2} * 1048576 ))
+  cache_warn_kib=$(( ${PLE_STREAM_CACHE_WARN_GIB:-16} * 1048576 ))
+  eff_kib="$(qwen38_cgroup_avail_kib "$memavail_kib")"
+  avail_kib="$eff_kib"
+
+  {
+    echo "  PLE streaming preflight:"
+    echo "    table in checkpoint      $(qwen38_gib "$table_kib") GiB (NOT pinned; read via page cache)"
+    echo "    token embedding pinned   $(qwen38_gib "$embed_pin_kib") GiB (tp=$tp, per-rank $(qwen38_gib "$embed_rank_kib") GiB rounded; unchanged by streaming)"
+    echo "    staging arena            $(( staging_kib / 1024 )) MiB (tokens x row bytes; heads cancel)"
+    echo "    memory headroom          $(qwen38_gib "$avail_kib") GiB $(
+      (( avail_kib < memavail_kib )) && printf '(cgroup-clipped from %s GiB MemAvailable)' "$(qwen38_gib "$memavail_kib")"
+    )"
+  } >&2
+
+  if (( avail_kib < embed_pin_kib + cache_min_kib )); then
+    {
+      echo "Refusing to start with PLE_STREAM=1: only $(qwen38_gib "$avail_kib") GiB of memory headroom,"
+      echo "which has to cover both the $(qwen38_gib "$embed_pin_kib") GiB pinned token embedding and the"
+      echo "$(qwen38_gib "$cache_min_kib") GiB page-cache floor -- $(qwen38_gib "$(( embed_pin_kib + cache_min_kib ))") GiB"
+      echo "together. Streaming moves the table out of pinned RAM into page cache; with barely any"
+      echo "cache to speak of it pays the disk cost without the RAM saving it exists to provide."
+      echo "Raise the cgroup limit / free RAM, or set PLE_STREAM_CACHE_GIB to state a smaller floor"
+      echo "deliberately, or QWEN38_SKIP_MEMCHECK=1 to override without saying why."
+    } >&2
+    return 1
+  fi
+  if (( avail_kib < embed_pin_kib + cache_warn_kib )); then
+    echo "WARNING: PLE_STREAM=1 with $(qwen38_gib "$(( avail_kib - embed_pin_kib ))") GiB for page cache." >&2
+    echo "         Measured on this table with the cache capped: ~8 GiB gives up 2.5% of prefill and" >&2
+    echo "         0.6% of decode, ~24 GiB gives up under 1%; greedy output is identical at every" >&2
+    echo "         level. The hit-rate curve behind the thresholds (0.744 at 8 GiB, 0.797 at 16 GiB)" >&2
+    echo "         is from a synthetic session; see docs/ssd-stream-findings.md." >&2
+    return 0
+  fi
+  echo "  PLE streaming: $(qwen38_gib "$(( avail_kib - embed_pin_kib ))") GiB available for page cache;" >&2
+  echo "  measured hit rate at this budget matches a fully resident table." >&2
+  return 0
+}
+
 qwen38_ple_memcheck() {
   local config="$1" bytes="$2" memtotal_kib="$3" memavail_kib="$4" tp="${5:-1}"
   local dims ngram_rows ple_dim vocab hidden table_kib embed_kib total_kib
@@ -281,6 +394,8 @@ print(int(text["ngram_vocab_size_base"]), int(text["ple_embed_dim"]),
       echo "Choose one of:"
       echo "  QUANT=exl3-ple8   FP8 PLE table, half the pinned footprint"
       echo "  PLE_MMAP=1        map the table from the checkpoint; needs host-page-table dereference (DGX Spark)"
+      echo "  PLE_STREAM=1      read the table through page cache instead of pinning it; sized for hosts"
+      echo "                    smaller than the table (measured: >=16 GiB RAM, 32 GiB comfortable)"
       echo "  a host with at least about ${want_gib} GiB of RAM for this profile"
       echo "Set QWEN38_SKIP_MEMCHECK=1 to start anyway."
     } >&2
