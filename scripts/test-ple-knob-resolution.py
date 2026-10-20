@@ -10,7 +10,7 @@ import importlib.util
 import tempfile
 from pathlib import Path
 
-root = Path('/home/opencode/sm12x-exl3-qwen3.8-flash-next')
+root = Path(__file__).resolve().parents[1]   # same convention as the other offline tests
 spec = importlib.util.spec_from_file_location('lc', str(root / 'scripts/test-container-lifecycle.py'))
 lc = importlib.util.module_from_spec(spec)
 spec.loader.exec_module(lc)          # runs its own asserts first
