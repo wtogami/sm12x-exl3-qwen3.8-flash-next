@@ -313,9 +313,10 @@ print(int(text["ngram_vocab_size_base"]), int(text["ple_embed_dim"]),
   fi
   if (( avail_kib < embed_pin_kib + cache_warn_kib )); then
     echo "WARNING: PLE_STREAM=1 with $(qwen38_gib "$(( avail_kib - embed_pin_kib ))") GiB for page cache." >&2
-    echo "         Measured on this table: 0.744 hit at 8 GiB, 0.797 at 16 GiB (16 GiB matches a host" >&2
-    echo "         that caches the whole table). Below ~16 GiB expect device reads on the miss path;" >&2
-    echo "         below ~8 GiB prefill can become read-bound. Numbers are from a synthetic session." >&2
+    echo "         Measured on this table with the cache capped: ~8 GiB gives up 2.5% of prefill and" >&2
+    echo "         0.6% of decode, ~24 GiB gives up under 1%; greedy output is identical at every" >&2
+    echo "         level. The hit-rate curve behind the thresholds (0.744 at 8 GiB, 0.797 at 16 GiB)" >&2
+    echo "         is from a synthetic session; see docs/ssd-stream-findings.md." >&2
     return 0
   fi
   echo "  PLE streaming: $(qwen38_gib "$(( avail_kib - embed_pin_kib ))") GiB available for page cache;" >&2
@@ -393,6 +394,8 @@ print(int(text["ngram_vocab_size_base"]), int(text["ple_embed_dim"]),
       echo "Choose one of:"
       echo "  QUANT=exl3-ple8   FP8 PLE table, half the pinned footprint"
       echo "  PLE_MMAP=1        map the table from the checkpoint; needs host-page-table dereference (DGX Spark)"
+      echo "  PLE_STREAM=1      read the table through page cache instead of pinning it; sized for hosts"
+      echo "                    smaller than the table (measured: >=16 GiB RAM, 32 GiB comfortable)"
       echo "  a host with at least about ${want_gib} GiB of RAM for this profile"
       echo "Set QWEN38_SKIP_MEMCHECK=1 to start anyway."
     } >&2

@@ -44,8 +44,8 @@ def sandbox(tmp: Path) -> dict:
     (bin_dir / 'uname').chmod(0o755)
     core = tmp / 'core'
     core.mkdir(exist_ok=True)
-    for name in ('cat', 'cut', 'dirname', 'grep', 'head', 'id', 'mkdir', 'mktemp', 'mv',
-                 'rm', 'sed', 'sha256sum', 'sort', 'touch', 'paste'):
+    for name in ('awk', 'cat', 'cut', 'dirname', 'grep', 'head', 'id', 'mkdir', 'mktemp', 'mv',
+                 'rm', 'sed', 'seq', 'sha256sum', 'sort', 'touch', 'paste'):
         target = shutil.which(name)
         if target:
             try:
