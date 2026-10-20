@@ -3596,6 +3596,12 @@ serving tolerates a small cache -- measured, 8.4 GiB of cache costs 2.5% of pref
 of 16 GiB is now a measurement rather than a guess: at that size the engine boots in under 300 s cold, matches
 the pinned hash exactly, and gives up a couple of percent.
 
+Operating rule for streaming hosts, from the table: **16 GiB of total RAM is the effective minimum, 32 GiB the
+recommended size.** At 16 the engine boots cold in under 300 s, matches the pinned hash, and gives up 2.5% of
+prefill and 0.6% of decode; at 32 it gives up under 1% of prefill and nothing measurable of decode. Below that,
+the cliff is the engine's fixed ~7 GiB anon footprint plus ~2 GiB of usable cache -- 8 GiB caps OOM the runtime
+itself.
+
 For comparison at the same host and envelope, the pinned arms: `round2` FP8 needs 66.0 GiB and was refused by
 the preflight at every cap tried (206%/413%/825% of installed), `exact` needs 48.9 GiB and served with identical
 output. So below ~50 GiB of RAM the ordering is exact-pin, then stream; below ~9 GiB neither fits because of the
