@@ -52,7 +52,7 @@ cleanup() {
 }
 trap cleanup EXIT INT TERM
 
-echo "=== power envelope (controlled variable) ==="
+echo "=== power envelope (attempted cap; the printed line is what actually applies) ==="
 sudo -n nvidia-smi -pl 300 -i 0 >/dev/null 2>&1
 sudo -n nvidia-smi -pl 300 -i 1 >/dev/null 2>&1
 nvidia-smi --query-gpu=index,pci.bus_id,power.limit,memory.used --format=csv,noheader | sed 's/^/  /'
@@ -102,13 +102,21 @@ cell() {   # name  extra-env-string  [want_devices]
   grep -m1 -oE "CUDAGraphMode\.[A-Z_]+" "$OUT/$name.log" | head -1 | sed 's/^/    graph mode: /'
 
   echo "  --- greedy determinism, twice ---"
-  local h1 h2 partner
-  h1=$(cd /tmp && python3 -I "$REPO/scripts/ple-probe.py" --reps 2 --warmup 1 2>&1 | awk '$1=="strict"{print $2}')
-  h2=$(cd /tmp && python3 -I "$REPO/scripts/ple-probe.py" --reps 2 --warmup 1 2>&1 | awk '$1=="strict"{print $2}')
-  echo "    strict hashes: $h1 / $h2   $([ "$h1" = "$h2" ] && echo SELF-CONSISTENT || echo VARIES)"
+  local h1 h2 partner out1="$OUT/$name-h1.txt" out2="$OUT/$name-h2.txt"
+  ( cd /tmp && python3 -I "$REPO/scripts/ple-probe.py" --reps 2 --warmup 1 > "$out1" 2>&1 )
+  ( cd /tmp && python3 -I "$REPO/scripts/ple-probe.py" --reps 2 --warmup 1 > "$out2" 2>&1 )
+  h1=$(awk '$1=="strict"{print $2}' "$out1" | head -1)
+  h2=$(awk '$1=="strict"{print $2}' "$out2" | head -1)
+  echo "    served model: $(awk '$1=="model"{print $2}' "$out1" | head -1)"
+  echo "    strict hashes: $h1 / $h2   $([ -n "$h1" ] && [ "$h1" = "$h2" ] && echo SELF-CONSISTENT || echo VARIES)"
   # Pairing is same-width only. Tensor width changes greedy output on this build, and the BF16 checkpoint is a
   # different checkpoint from the FP8 one, so neither a TP width nor a quant variant crosses over: each exact
   # cell is judged against its own width's round2 cell from this same run.
+  # "ERROR / ERROR" agrees with itself and proves nothing, so the gate requires a hex digest.
+  if ! printf "%s" "$h1" | grep -qE "^[0-9a-f]{16}$"; then
+    echo "    FAIL: no strict hash -- the probe did not complete"; tail -4 "$out1" | sed 's/^/      /'
+    podman stop -t 30 "$ctr" >/dev/null 2>&1; podman rm -f "$ctr" >/dev/null 2>&1; return 1
+  fi
   partner="${name%-*}-round2"
   if [ -s "$OUT/$partner-hash.txt" ]; then
     echo "    vs same-width round2 ($(cat "$OUT/$partner-hash.txt")): $([ "$h1" = "$(cat "$OUT/$partner-hash.txt")" ] && echo IDENTICAL || echo DIFFERS)"
@@ -137,7 +145,7 @@ run tp2-round2 "TP_SIZE=2 PLE_PIN_STRATEGY=round2" 2
 run tp2-exact  "TP_SIZE=2 PLE_PIN_STRATEGY=exact" 2
 
 echo
-echo "=== summary (BF16 profile, pinned, both cards 300 W) ==="
+echo "=== summary (BF16 profile, pinned; envelope as observed above, not assumed) ==="
 for name in tp1-round2 tp1-exact tp2-round2 tp2-exact; do
   if [ -s "$OUT/$name-perf.txt" ]; then
     printf '  %-12s %s\n' "$name" "$(grep -hE '^(prefill|decode) ' "$OUT/$name-perf.txt" | sed 's/ (prompt.*//' | tr '\n' ' ')"

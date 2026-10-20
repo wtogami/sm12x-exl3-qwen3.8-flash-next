@@ -30,3 +30,32 @@ f4="/tmp/opencode/d4.jsonl"; open(f4,"w").close()
 r=subprocess.run([sys.executable,"-I",P,"--diff",f4,"A","B"],capture_output=True,text=True)
 print("[empty]", r.returncode, r.stdout.strip()); assert r.returncode==1
 print("all four diff-mode cases behave")
+
+# ---- resolve_model: the served name must come from the engine -----------------
+import importlib.util, io
+spec = importlib.util.spec_from_file_location("ple_probe", P)
+pp = importlib.util.module_from_spec(spec); spec.loader.exec_module(pp)
+
+seen = {}
+def make_opener(payload):
+    def opener(req, timeout=60):
+        seen["url"] = req.full_url
+        return io.StringIO(payload)
+    return opener
+
+# case 5: the models URL is derived from the completions URL, and the first id wins
+got = pp.resolve_model("http://127.0.0.1:8001/v1/completions",
+                       opener=make_opener('{"data":[{"id":"qwen38-exl3"},{"id":"other"}]}'))
+print("[resolve]", seen["url"], "->", got)
+assert seen["url"] == "http://127.0.0.1:8001/v1/models", seen["url"]
+assert got == "qwen38-exl3", got
+
+# case 6: an empty model list is an error, not an empty string that every request then 404s on
+try:
+    pp.resolve_model("http://127.0.0.1:8001/v1/completions", opener=make_opener('{"data":[]}'))
+    raise AssertionError("empty /v1/models must raise")
+except RuntimeError as e:
+    print("[resolve empty]", str(e)[:60])
+
+print("resolve_model behaves for both hosts' profiles")
+

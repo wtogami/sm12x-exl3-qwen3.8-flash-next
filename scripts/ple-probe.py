@@ -95,6 +95,25 @@ def diff_dumps(path, la, lb):
     return differing
 
 
+def resolve_model(completions_url, opener=None):
+    """Ask the engine which model it serves, instead of assuming.
+
+    The two profiles on this branch serve different names -- `qwen38-exl3-ple8` for the FP8 PLE table,
+    `qwen38-exl3` for BF16 -- so any hard-coded default is wrong for one of them. The failure is easy to
+    misread: a name mismatch makes every request 404, which looks exactly like a broken engine, and the
+    drivers switch profiles between hosts routinely. Deriving the id also catches a container that came up
+    with an unexpected model, because the resolved name is printed.
+    """
+    base = completions_url.rsplit("/v1/", 1)[0]
+    open_fn = opener or urllib.request.urlopen
+    with open_fn(urllib.request.Request(base + "/v1/models"), timeout=60) as r:
+        data = json.load(r)
+    ids = [m["id"] for m in data.get("data", []) if m.get("id")]
+    if not ids:
+        raise RuntimeError(f"{base}/v1/models returned no model ids")
+    return ids[0]
+
+
 def post(url, model, prompt, max_tokens):
     body = json.dumps({"model": model, "prompt": prompt, "max_tokens": max_tokens,
                        "temperature": 0, "seed": 11}).encode()
@@ -109,7 +128,8 @@ def post(url, model, prompt, max_tokens):
 def main():
     ap = argparse.ArgumentParser()
     ap.add_argument("--url", default="http://127.0.0.1:8001/v1/completions")
-    ap.add_argument("--model", default="qwen38-exl3-ple8")
+    ap.add_argument("--model", default="",
+                    help="served model name; empty resolves it from the engine's /v1/models")
     ap.add_argument("--expect", default="", help="strict hash to match (16-hex prefix ok)")
     ap.add_argument("--max-tokens", type=int, default=64)
     ap.add_argument("--chunk-limit", type=int, default=2048,
@@ -127,10 +147,19 @@ def main():
     if a.diff:
         return 0 if diff_dumps(*a.diff) == 0 else 1
 
+    try:
+        model = a.model or resolve_model(a.url)
+    except Exception as e:                      # a missing engine must not look like an empty model name
+        print(f"  could not resolve the served model: {type(e).__name__}: {e}")
+        print("strict ERROR")
+        print("correct no")
+        return 2
+    print(f"model {model}")
+
     parts, total = [], 0
     for name, prompt in PROMPTS:
         try:
-            txt, ptok, ctok, el = post(a.url, a.model, prompt, a.max_tokens)
+            txt, ptok, ctok, el = post(a.url, model, prompt, a.max_tokens)
         except Exception as e:  # a dead engine must not look like a matching hash
             print(f"  request failed on {name}: {type(e).__name__}: {e}")
             print("strict ERROR")
@@ -167,10 +196,10 @@ def main():
         # cold kernel selection / autotuning and page-cache state, not the thing under test. Without this
         # every cell would be a measurement of how recently it booted.
         for _ in range(a.warmup):
-            post(a.url, a.model, prompt, mt)
+            post(a.url, model, prompt, mt)
         rates, pt0 = [], 0
         for _ in range(a.reps):
-            _, ptok, ctok, el = post(a.url, a.model, prompt, mt)
+            _, ptok, ctok, el = post(a.url, model, prompt, mt)
             pt0 = ptok
             rates.append((ptok if mt == 1 else ctok) / el)
         # Print the shape, not just the rate. A prefill number measured without the truncation on the

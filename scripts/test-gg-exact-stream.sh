@@ -76,7 +76,9 @@ cell() {   # name  extra-env-string  [extra start.sh args]
   local h1 h2
   h1=$(python3 -I "$REPO/scripts/ple-probe.py" --reps 2 --warmup 1 2>&1 | awk '$1=="strict"{print $2}')
   h2=$(python3 -I "$REPO/scripts/ple-probe.py" --reps 2 --warmup 1 2>&1 | awk '$1=="strict"{print $2}')
-  echo "    strict hashes: $h1 / $h2   $([ "$h1" = "$h2" ] && echo SELF-CONSISTENT || echo VARIES)"
+  # ERROR agreeing with ERROR is not determinism; require the hex digest before calling it consistent.
+  echo "    served model: $(awk '$1=="model"{print $2}' "$OUT/$name-perf.txt" | head -1)"
+  echo "    strict hashes: $h1 / $h2   $(printf "%s" "$h1" | grep -qE "^[0-9a-f]{16}$" && [ "$h1" = "$h2" ] && echo SELF-CONSISTENT || echo VARIES)"
   if [ -z "$REF" ]; then REF="$h1"; echo "    (reference taken from this cell)"; else
     echo "    vs reference $REF: $([ "$h1" = "$REF" ] && echo IDENTICAL || echo DIFFERS)"
   fi
