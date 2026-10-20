@@ -49,20 +49,28 @@ for the defaults; C16 throughput tradeoffs are recorded below.
 | `exl3-ple8` | [EXL3 K4.25 PLE FP8](https://huggingface.co/wrldsuksgo2mars/Qwen3.8-Flash-Next-EXL3-K4.25-PLE-FP8-v1) | FP8 with shared scale, about 48 GiB | 3 / 2 |
 | `nvfp4` | [NVIDIA NVFP4](https://huggingface.co/nvidia/Qwen3.8-Flash-Next-NVFP4) | FP8 with shared scale, about 48 GiB | 2 / 2 |
 
-On RTX the PLE table is page-locked in host RAM, so its size is a host memory
-requirement, not a GPU one. `PLE_PIN_STRATEGY=exact` (the default) page-locks
-the true size: BF16 commits 97.4 GiB with the token embedding, FP8 commits
-49.7 GiB. `PLE_PIN_STRATEGY=round2` is PyTorch's `pin_memory` path, which
-rounds every allocation up to a power of two: the same tables commit 130 GiB
-and 66 GiB. Images built without the exact-pin port behave as `round2`
-regardless of the knob. A 128 GiB host therefore serves the FP8 profiles at
-either strategy but only fits BF16 with `exact`, failing as `CUDA error: out
-of memory` about 40 s into engine start otherwise. `start.sh` sizes this from
-the checkpoint and refuses before creating the container;
-`QWEN38_SKIP_MEMCHECK=1` overrides. See
-[host pinned memory](docs/podman-rootless-fedora.md#host-pinned-memory-for-the-ple-table).
+## Host RAM and checkpoint storage
 
-## Streaming the PLE table on small hosts (`PLE_STREAM`)
+On RTX the PLE table is page-locked in host RAM, so its size is a host
+memory requirement, not a GPU one. Per profile, from measured boots:
+
+| Profile | Checkpoint on disk | PLE table | Pinned (host RAM committed) |
+|---|---:|---:|---:|
+| `exl3` | ~168 GiB | BF16, ~95.4 GiB | **97.4 GiB** |
+| `exl3-ple8` | ~120 GiB | FP8, ~47.7 GiB | **49.7 GiB** |
+| `nvfp4` | ~124 GiB | FP8, ~47.7 GiB | **49.7 GiB** |
+
+The pinned column includes the host token embeddings; each MTP draft token
+adds roughly another 1.184 GiB. These are table sizes, not whole-server
+memory requirements — leave additional headroom for model loading, the
+server, and the OS. `start.sh` sizes the requirement from the checkpoint
+and refuses before creating the container; `QWEN38_SKIP_MEMCHECK=1`
+overrides. Spark in mmap mode locks nothing — its table is read through
+the GB10's unified memory. See
+[host pinned memory](docs/podman-rootless-fedora.md#host-pinned-memory-for-the-ple-table),
+and the next section for hosts too small to pin at all.
+
+## Streaming the PLE table on small RAM hosts (`PLE_STREAM`)
 
 `PLE_STREAM=1` takes the table out of pinned host RAM entirely: rows are read
 from the checkpoint through the page cache, copied by CPU into a staging arena
