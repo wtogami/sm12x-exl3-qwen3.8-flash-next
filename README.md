@@ -26,8 +26,10 @@ for the defaults; C16 throughput tradeoffs are recorded below.
 > 512K, FP8 KV, host-offloaded PLE table (`PLE_MMAP=0`; discrete RTX
 > cannot dereference checkpoint mappings — Spark (GB10) defaults to mmap).
 >
-> **Current measurements** — image `8294c3c914c0`, 600 W, measured
-> 2026-10-07:
+> **Current measurements** — the comparison docs were measured on image
+> `8294c3c914c0` at 600 W (2026-10-07); same-day A/B confirmed v0.32.0
+> parity (2026-10-18), and image `abbde425a717` carries the full
+> re-qualification including the #62409 boundary legs (2026-10-19) —
 > [docs/quality-comparison.md](docs/quality-comparison.md) (EXL3 vs NVIDIA
 > NVFP4 vs the exl3-ple8 FP8-PLE variant; paired
 > McNemar stats, 10-run tool-eval study) ·
@@ -149,7 +151,8 @@ settings, contract failures, tool points and measurement ranges:
 
 `bash build.sh` and `bash start.sh` detect the host architecture automatically:
 arm64 selects DGX Spark SM121 settings; x86_64 selects RTX SM120 settings.
-Both default to the original EXL3 K4.25 checkpoint with BF16 PLE and mmap.
+Both default to the original EXL3 K4.25 checkpoint with BF16 PLE; PLE storage
+mode is platform-specific (table below).
 Spark caps GPU memory utilization at **0.7** to leave unified memory available
 for checkpoint pages and the host. A lower value is configurable.
 
@@ -167,21 +170,19 @@ Use `B12X_VOCAB=0` for the native vocabulary projection or
 default on either host (`--engram-config` on the command line overrides the
 launcher entirely).
 
-Spark's original BF16 PLE default completed full qualification; its column
-appears in [benchmarks/RESULTS.md](benchmarks/RESULTS.md).
-The RTX columns retain their existing measurements.
-[Release v0.3.1](https://github.com/tpurtell/sm12x-exl3-qwen3.8-flash-next/releases/tag/v0.3.1)
-provides native images for both platforms, including the reviewed speculative
-reasoning and xgrammar termination fixes, plus the resident-mode loading repair.
-The v0.3.1 checks cover all 220 tests on RTX, the new resident regressions on
-both architectures, and full-model resident/mmap checks on RTX. The earlier
-v0.3.0 structured-output qualification remains linked in [benchmarks/RESULTS.md](benchmarks/RESULTS.md).
-The [RTX shipping-default structured-output qualification](benchmarks/rtx-structured-final/qualification.json)
-adds a C8 tool run without changing the historical RTX table columns.
+Spark's original BF16 PLE default completed full qualification in the v0.3.x
+era; those receipts stay in-tree — the shipping-default structured-output run
+with its C8 tool pass lives at
+[benchmarks/rtx-structured-final/qualification.json](benchmarks/rtx-structured-final/qualification.json),
+and the Spark-side checks under [benchmarks/](benchmarks). The RTX columns
+retain their historical measurements. Images were never published for these
+rebases and none are planned: build from source (next section).
 
 ## Run
 
-Install Docker with NVIDIA GPU access. Build and run from the repository root;
+A GPU container runtime is required: rootless **podman with the NVIDIA CDI
+hook** is the tested path ([docs/podman-rootless-fedora.md](docs/podman-rootless-fedora.md));
+a docker host should work but is unverified. Build and run from the repository root;
 the scripts select the native RTX or Spark defaults automatically:
 
 ```bash
@@ -225,8 +226,9 @@ QUANT=exl3-ple8 bash start.sh
 # puts one KV head on each GPU and is the largest slice without replication.
 # TP_SIZE>1 also implies --enable-expert-parallel: the K4.25 EXL3 checkpoint
 # cannot split the 640-wide MoE intermediate dimension at all (block-128
-# Hadamard alignment), so routed experts split by count instead. Override
-# with ENABLE_EXPERT_PARALLEL=0 only to watch it fail.
+# Hadamard alignment), so routed experts split by count instead. The hard
+# requirement is EXL3-specific: nvfp4 also runs with EP off at measured
+# parity (2026-10-18/19 receipts), but EP stays the default on every profile.
 ```
 
 Stopping and restarting is a two-step, and `QUANT` selects the container name in
@@ -281,9 +283,8 @@ readahead for the rows a step needs. There is no table-sized device or pinned
 allocation. This is the upstream redesign from PRs
 [#58439](https://github.com/vllm-project/vllm/pull/58439) and
 [#58835](https://github.com/vllm-project/vllm/pull/58835) (stacked, at head
-`47b9933db82d`), re-derived for the v0.31.0 base as
-`ple-mmap-pr58439-58835-v0.31.patch` with strict base hashes plus one pinned
-post-branch-cut upstream correction.
+`047fc1c`), re-derived for the v0.32.0 base as
+`ple-mmap-pr58439-58835-v0.32.patch` with strict base hashes.
 
 **Platform support.** Direct checkpoint mapping requires a GPU that
 dereferences pageable host memory through the host page tables
@@ -401,32 +402,44 @@ from the final client matrix.
 The [Dockerfile](Dockerfile) pins the base image and B12x revision. The
 [patches](patches) now carry the EXL3 namespace/MTP-mapping loader port, the
 qflashrt FP8-PLE annotation for EXL3 hybrids, exact host token embeddings, the
-optional B12x vocabulary projection and NVFP4 expert bridges, the
-CompressedTensors PLE branch that lets compressed-tensors NVFP4 checkpoints
-start under vLLM v0.31, and the strict-hash checkpoint-mapped PLE backport
-(upstream PRs 58439+58835 re-derived for v0.31.0). The QSA FP8 main-cache
-backport shipped upstream in v0.31.0 and was dropped, as were the former MTP
-remap,
-FP8 draft weights, ModelOpt PLE selection and structured-output ports
-(upstream code since v0.30/v0.31).
+optional B12x vocabulary projection and NVFP4 expert bridges, the M-RoPE
+served-window cache floor (the fix we filed upstream as PR 62409), and the
+strict-hash checkpoint-mapped PLE backport (upstream PRs 58439+58835
+re-derived for v0.32.0). The QSA FP8 main-cache backport shipped upstream in
+v0.31.0 and was dropped, as were the former MTP remap, FP8 draft weights,
+CompressedTensors PLE selection, ModelOpt PLE selection and structured-output
+ports (upstream code since v0.30/v0.31/v0.32).
 [Provenance](PROVENANCE.md) distinguishes borrowed benchmark contracts from new
 integration work. Model licenses apply separately from the recipe's [license](LICENSE).
 
 The v0.1.0 runtime receipts retain the original image IDs. The follow-on
 v0.2.0 release adds mmap support and its reviewed validation fixes, with full
 `exl3-ple8` mmap qualification on RTX; v0.3.0/v0.3.1 add native Spark support
-and the resident-mode repair. The current branch completes two engine
-rebases (v0.30.0, then released-v0.31.0) and carries the 2026-10-07 RTX
-comparison in `docs/` — rebased release images are not yet published.
-Historical RTX evidence is retained.
+and the resident-mode repair. The current branch completes three engine
+rebases (v0.30.0, v0.31.0, then released v0.32.0) and carries the 2026-10-07
+RTX comparison in `docs/`. Publishing runtime images was tried and retired:
+the registry packages were the old maintainer's, fell two rebases behind, and
+were deleted as a distribution path on 2026-10-20 — building from source is
+the design, not a fallback. Historical RTX evidence is retained.
 
 ## Reproduce qualification
 
-Run against an otherwise idle endpoint. These scripts refuse to overwrite an
-existing result directory.
+The full matrix in one command — boots each profile via `start.sh` at the
+chosen topology (`TP_SIZE=2` for tensor-parallel), runs every functional leg
+including the past-native 280K/480K boundary probes, captures `runtime.json`
+/`memory.json` evidence per profile, records per-step exit codes, and is
+resumable:
 
 ```bash
-# With the mmap-enabled exl3-ple8 server already running:
+RESULT_DIR=benchmarks/my-qual GPU=1 bash scripts/qualification-legs.sh
+# native-window hosts (Spark): add QUANTS=exl3 BOUNDARY_TOKENS=
+```
+
+The individual suites below run against an already-running idle endpoint and
+refuse to overwrite an existing result directory.
+
+```bash
+# With the exl3-ple8 server already running:
 QUANT=exl3-ple8 MTP_TOKENS=3 RESULT_DIR=benchmarks/my-mmap \
   bash scripts/benchmark-suite.sh
 # Spark default: QUANT=exl3 MTP_TOKENS=2, with a new result directory.
