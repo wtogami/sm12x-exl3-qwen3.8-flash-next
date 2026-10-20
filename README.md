@@ -176,8 +176,10 @@ rebases and none are planned: build from source (next section).
 ## Run
 
 A GPU container runtime is required: rootless **podman with the NVIDIA CDI
-hook** is the tested path ([docs/podman-rootless-fedora.md](docs/podman-rootless-fedora.md));
-a docker host should work but is unverified. Build and run from the repository root;
+hook** is the reference path and fully documented
+([docs/podman-rootless-fedora.md](docs/podman-rootless-fedora.md));
+**docker** is supported via the docker branch of the scripts. Build and run
+from the repository root;
 the scripts select the native RTX or Spark defaults automatically:
 
 ```bash

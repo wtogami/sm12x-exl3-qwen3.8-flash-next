@@ -353,8 +353,8 @@ fi
 # not read, so switching the docker branch to --device would add a root-time
 # /etc/cdi provisioning step and a new stale-spec failure mode, and would raise
 # the docker floor to 28.3.0 (CDI default-on) to no benefit. Divergence here is
-# deliberate. Docker paths in this repo are untested: no docker host was
-# available, so treat that branch as reasoned-about, not verified.
+# deliberate. Docker is supported (verified on user hosts); podman+CDI is
+# the reference development path, so keep both branches consistent by care.
 #
 # Serving is where the GPU is actually needed, and a deployment that skips
 # build.sh (peer-transferred image via podman save/skopeo) never runs it, so
