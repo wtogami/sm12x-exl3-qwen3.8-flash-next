@@ -45,7 +45,12 @@ cell() {   # name  memory-cap  extra-env-string
   echo
   echo "=== cell $name (cap: ${cap:-none}) ==="
   podman ps -aq --filter name=qwen38 | xargs -r podman rm -f >/dev/null 2>&1
-  sleep 3
+  # Give the old container's grace period time to finish: start.sh refuses a name that is still held, and a
+  # fixed sleep left the first cell of a run aborting on a shutdown that had nothing to do with the test.
+  for _w in $(seq 1 30); do
+    podman ps -a --format '{{.Names}}' 2>/dev/null | grep -qx "${CONTAINER_NAME:-qwen38-exl3-ple8}" && { sleep 1; continue; }
+    break
+  done
 
   # Start every cell from the same cold state. Without this, the second cell inherits a warm cache from the
   # first and reads as "needs less RAM" for a reason that has nothing to do with its cap.

@@ -3600,3 +3600,49 @@ For comparison at the same host and envelope, the pinned arms: `round2` FP8 need
 the preflight at every cap tried (206%/413%/825% of installed), `exact` needs 48.9 GiB and served with identical
 output. So below ~50 GiB of RAM the ordering is exact-pin, then stream; below ~9 GiB neither fits because of the
 engine's own anon footprint.
+
+# BF16 profile qualified: `exact` returns ~33 GiB at both TP widths, output unchanged
+
+burst, LONGCTX=1 (524288 + YaRN), QUANT=exl3 (BF16 PLE table), both cards capped at 300 W, image
+`localhost/qwen38-rtx:exp3-stream`. `Shmem` is read as a delta over a pre-boot sample because it is host-wide.
+
+| cell | strategy | pinned demand | predicted | strict hash | prefill | decode |
+|---|---|---|---|---|---|---|
+| tp1-round2 | round2 | 130 GiB (+131 observed range 133.9 abs) | 130.00 | `7c1421daade83d79` | 11,105.9 | 131.5 |
+| tp1-exact  | exact  | +97.54 | 98.00 | `7c1421daade83d79` IDENTICAL | 11,081.1 | 130.9 |
+| tp2-round2 | round2 | +130.36 | 130.00 | `dae7b3a806972f90` | 15,821.6 | 195.3 |
+| tp2-exact  | exact  | +97.73 | 98.00 | `dae7b3a806972f90` IDENTICAL | 15,722.9 | 195.1 |
+
+Four things worth keeping.
+
+**The saving is real and matches the arithmetic at both widths.** Predicted 130 against 98; measured deltas
+130.36 -> 97.73 and ~131 -> ~97.5, i.e. 32.6 GiB returned. The rounding waste does not shrink at TP2, which is
+the point of computing demand as `tp x round(size/tp)` rather than `round(size)`.
+
+**Nothing observable changes.** Greedy output is identical within each width, twice per cell, and throughput
+moves by at most 0.6% -- inside gg's own cross-boot spread of about 1%, so the honest reading is "no measurable
+cost". The loader confirms the strategy from inside: `PLE weight pinned at exact size 95.368 GiB (no
+power-of-two rounding)` at TP1, and one such line per rank at TP2, each `47.684 GiB`, which also shows the table
+is split per rank rather than replicated. Graph regime stayed `FULL_AND_PIECEWISE` in all four cells, with zero
+capture-copy errors and zero load errors.
+
+**Two independent stability checks agreed.** The TP2 hash `dae7b3a806972f90` is the same one recorded from an
+engine started from a different image (`localhost/qwen38-rtx:local`) before this run, so the exp3 overlays do not
+change BF16 TP2 output. And BF16 at TP1 hashes to `7c1421daade83d79`, the value the FP8 checkpoint produces at
+TP1 -- on the gated prompt set the PLE dtype difference is not visible at TP1, while TP2 gives a different value
+for each checkpoint. Observed, with no stronger claim attached: hash identity is per topology.
+
+**TP width is worth far more here than dtype.** TP2 over TP1 on the same BF16 profile: prefill +42.5%, decode
++48.5% at matched per-card watts -- close to the FP8 measurements (+42.9% / +44.8%), so the width gain is a
+property of the shape rather than of the table dtype. BF16 itself costs a little decode against FP8 at TP1
+(131.5 vs ~136.5) while prefill matches.
+
+### Harness note
+
+The first cell of the burst run aborted for an unrelated reason, and the fix is worth recording because it made
+a cell report nothing at all: `podman rm -f` returns while the old container is still in its grace-period
+shutdown, and `start.sh` refuses a name that is still held (`qwen38-exl3 is already stopping. Run ./stop.sh
+first`). With a fixed 3-second sleep, the first cell of every run lost its boot to that race and only the later
+cells measured anything. All three drivers now wait for the name to be released and pass `REPLACE=1`, so the
+launcher does the stop-and-replace deliberately instead of refusing. The `tp1-round2` numbers above come from a
+re-run after that change, in which the cell booted in ~240 s and produced the hash shown.

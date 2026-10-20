@@ -40,10 +40,17 @@ cell() {   # name  extra-env-string  [extra start.sh args]
   echo
   echo "=== cell $name ==="
   podman ps -aq --filter name=qwen38 | xargs -r podman rm -f >/dev/null 2>&1
-  sleep 3
+  # Wait for the name to actually be released. `podman rm -f` returns while the container is still in its
+  # grace-period shutdown, and start.sh refuses a name that is still held -- "is already stopping, run ./stop.sh
+  # first" -- so a fixed short sleep made the FIRST cell of a run abort for no reason related to what was under
+  # test. Bounded, and reported if it ever times out.
+  for _w in $(seq 1 30); do
+    podman ps -a --format '{{.Names}}' 2>/dev/null | grep -qx "$name" && { sleep 1; continue; }
+    break
+  done
   echo "  before boot: $(memline)"
   # shellcheck disable=SC2086
-  if ! env IMAGE="$IMG" QUANT=exl3-ple8 $envs bash "$REPO/start.sh" $extra_args > "$OUT/$name-start.log" 2>&1; then
+  if ! env REPLACE=1 IMAGE="$IMG" QUANT=exl3-ple8 $envs bash "$REPO/start.sh" $extra_args > "$OUT/$name-start.log" 2>&1; then
     echo "  start.sh FAILED:"; tail -6 "$OUT/$name-start.log" | sed 's/^/    /'; return 1
   fi
   local ctr code=000
