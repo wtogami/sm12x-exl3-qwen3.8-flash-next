@@ -9,6 +9,7 @@ Run:  python3 scripts/test-ple-stream-v2.py [path/to/qwen_ple_stream2.py]
 """
 import argparse
 import importlib.util as import_util
+import os
 import sys
 
 import torch
@@ -90,6 +91,17 @@ def main():
     print("        every fill, which left cur_seq at its initial value; with a shared initial value the")
     print("        mask matched and uninitialized memory was consumed as features. The two sides now")
     print("        start at different values, so an unfilled buffer cannot match whatever happens next.")
+
+    # One knob, asserted on the loaded module rather than on the launcher: staged by default when only
+    # PLE_STREAM is set (bare container runs), and a set-but-falsey V2 still wins -- that explicit pair
+    # is how the historical in-replay cells reproduce.
+    os.environ.pop("PLE_STREAM_V2", None)
+    os.environ["PLE_STREAM"] = "1"
+    check("PLE_STREAM alone selects staged", mod.v2_enabled())
+    os.environ["PLE_STREAM_V2"] = "0"
+    check("explicit V2=0 wins over PLE_STREAM=1", not mod.v2_enabled())
+    os.environ["PLE_STREAM"] = "0"
+
     print(f"\n  {'ALL PASS' if not fails else str(fails) + ' FAILURE(S)'}")
     return 1 if fails else 0
 
