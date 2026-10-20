@@ -1,0 +1,46 @@
+/* Row copy helper for PLE checkpoint streaming.
+ *
+ * The checkpoint table is a flat array of [n_rows, row_bytes] rows in a memory-mapped file.
+ * A gather needs arbitrary rows copied into a contiguous pinned staging buffer. Copying whole
+ * 4 KiB pages would move 4096 bytes to deliver a 160-byte row -- a 25.6x amplification paid on
+ * every page-cache hit, which is ~90% of accesses on real n-gram traces. Copying rows instead
+ * costs the row bytes and nothing else: measured 143x faster than page-granular pread for a
+ * 2048-token batch.
+ *
+ * Kept in C deliberately: one call per thread slice releases the GIL. Calling pread() per row
+ * from Python is GIL-bound and measured *slower* with more threads.
+ */
+#include <string.h>
+#include <stdint.h>
+
+void ple_copy_rows(const unsigned char *src, unsigned char *dst,
+                   const int64_t *byte_off, long n, long row_bytes) {
+  for (long i = 0; i < n; i++) memcpy(dst + i * row_bytes, src + byte_off[i], row_bytes);
+}
+
+/* Same, but folding rows that straddle a page boundary is unnecessary: reads come from the
+ * mapping, not from page-granular slots, so any row_bytes is contiguous by construction. */
+
+/* Scattered-destination row copy: src offsets and dst offsets are both per-row, because a sharded
+ * table writes gathered rows into arbitrary output slots. Kept separate from ple_copy_rows so the
+ * contiguous hot path stays a straight loop. */
+void ple_copy_rows_to(const unsigned char *src, unsigned char *dst,
+                      const int64_t *src_off, const int64_t *dst_off, long n, long row_bytes) {
+  for (long i = 0; i < n; i++) memcpy(dst + dst_off[i], src + src_off[i], row_bytes);
+}
+
+/* One call for a whole batch that spans many shards.
+ *
+ * The per-shard loop in Python (gather_to -> _copy_group) issues one call per shard the batch happens to
+ * touch, and a batch over a 47.7 GiB / 128-shard table touches all 128 once it passes a few hundred rows.
+ * Measured cost of that shape: ~19 us per group and ~3.5 ns per row, so a 864-row decode step paid ~2.4 ms
+ * to move 138 KB. This variant takes the shard index per row and does the whole batch in one call, keeping
+ * locality by receiving the rows already sorted by shard.
+ */
+void ple_copy_rows_multi(unsigned char *dst, const unsigned char *const *bases,
+                         const int64_t *shard_of, const int64_t *src_off,
+                         const int64_t *dst_off, long n, long row_bytes) {
+  for (long i = 0; i < n; i++) {
+    memcpy(dst + dst_off[i], bases[shard_of[i]] + src_off[i], row_bytes);
+  }
+}
