@@ -122,30 +122,17 @@ tolerates FP8, so the half-size table is a memory win, not a quality tax
 (its only measurable cost: one off-by-one orchid repetition miss, 4/5 vs
 5/5).
 
-The measured columns in this section, the § MTP tuning table, and the full
-set in benchmarks/RESULTS.md are the historical record from the v0.1.0–v0.3.1
-era (400 W RTX): the `exl3-ple8` profile's full benchmark matrix with mmap
-enabled from v0.2.0, including its quality checks. The original
-EXL3/NVIDIA columns are unchanged historical results, not new runs; they
-differ in quantization, PLE precision and runtime, so they are not a
-controlled mmap-on/off comparison.
-
-Selected-profile results (historical, pre-rebase v0.3.1-era images): RTX
-columns use one 400 W card; Spark uses one GB10.
-
-| Measurement | EXL3 resident, MTP3 (v0.1.0) | NVFP4 resident, MTP2 (v0.1.0) | EXL3 PLE8 mmap, MTP3 | EXL3 mmap Spark (BF16 PLE), MTP2 |
-|---|---:|---:|---:|---:|
-| C1 seven-workload weighted decode, tokens/s | **152.82** | **151.11** | **147.78** | **31.11** |
-| C1 greedy `merge_intervals` median, tokens/s | 202.99 | 185.55 | 197.74 | 38.12 |
-| C1 sampled async coding task median, tokens/s | 185.55 | 166.92 | 183.45 | 36.21 |
-| C16 sampled-prose aggregate median, tokens/s | 696.96 | 930.71 | 659.75 | 101.00 |
-| Full-context boundary: 261888 input + 256 output | Pass | Pass | Pass | Pass |
-| API tool constraints / retrieval probes | 16/16; 6/6 | 16/16; 6/6 | 16/16; 6/6 | 16/16; 6/6 |
-
-These are different workloads, not interchangeable rates. Full matrices with
-settings, contract failures, tool points and measurement ranges:
-[detailed report](benchmarks/RESULTS.md). Tool evaluation there uses C8
-(eight concurrent cases); its points are not a normalized comparison score.
+The measured numbers retained inline — the § MTP tuning table and the
+kernel-choice comparisons — are historical v0.1.0–v0.3.1-era records
+(400 W RTX; one GB10 for Spark). The full matrices — settings, contract
+failures, tool points and ranges, including the `exl3-ple8` mmap profile
+qualified from v0.2.0 with its quality checks, the per-column C1/C16 rates,
+and the full-context boundary runs — are in
+[benchmarks/RESULTS.md](benchmarks/RESULTS.md). Its tool evaluation uses C8
+(eight concurrent cases); those points are not a normalized score and not
+comparable to the C1 numbers above. The original EXL3/NVIDIA columns differ
+in quantization, PLE precision and runtime, so they are not a controlled
+mmap-on/off comparison.
 
 ## Platforms
 
@@ -470,7 +457,9 @@ sampled prose, prefill matrix, context/decode scaling, the reference coding
 task, tool checks and memory snapshots) live in
 [benchmarks/RESULTS.md](benchmarks/RESULTS.md), generated from the raw
 receipt directories by `scripts/summarize-results.py`. They were measured at
-400 W, at 262144 context, on images predating the v0.30.0/v0.31.0 rebases —
-provenance only. Current measurements:
+400 W, at 262144 context, on images predating the v0.30.0/v0.31.0/v0.32.0
+rebases — provenance only; the MTP-tuning and kernel-choice numbers retained
+inline above belong to the same era and power regime. Current measurements:
 [docs/performance-comparison.md](docs/performance-comparison.md) and
-[docs/quality-comparison.md](docs/quality-comparison.md).
+[docs/quality-comparison.md](docs/quality-comparison.md), with the v0.32
+parity and re-qualification record in [docs/qualification.md](docs/qualification.md).
