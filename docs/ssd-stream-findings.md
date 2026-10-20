@@ -3558,3 +3558,45 @@ at all -- the engine already has a CUDA path (`ple_ngram_ids`, taken when `input
 the 864 ids on device, after which the host only needs a 7 KB D2H before the row gather. Both are bounded by the
 same ceiling: about 1.1 ms of exposed host work per ~28 ms step, which is the ~3 points of decode the phase
 split said was left after the gather fix.
+
+# Streaming on genuinely small hosts: measured cache budget on gg
+
+`scripts/test-gg-cache-pressure.sh`, FP8 checkpoint, `PLE_STREAM_V2=1`, TP1, one GPU, `sudo ple-drop-caches`
+before every boot so each cell starts cold, swap pinned equal to the cap so anon cannot spill and hide the
+effect. Cgroup counters from inside the container (`memory.stat`, `memory.events`), MiB, before -> after the
+drive:
+
+| cap | anon | file cache | refault_file | limit hits | prefill | decode | strict hash |
+|---|---|---|---|---|---|---|---|
+| none | 7,063 -> 7,084 | 80,815 -> 80,864 | 0 -> 0 | 0 | 15,521.6 | 139.9 | `7c1421da…` |
+| 32 GiB | 7,142 -> 7,162 | 24,578 -> 24,627 | 349,903 -> 349,903 | 17,729 | 15,404.6 | 139.9 | identical |
+| 16 GiB | 6,996 -> 7,017 | 8,409 -> 8,462 | 663,348 -> 664,258 | 21,605 | 15,137.4 | 139.0 | identical |
+| 8 GiB | -- | -- | -- | -- | never healthy (1,208 s) | | |
+
+What the numbers say:
+
+* **Host-side anon is a fixed ~7 GiB**, independent of the cap, and it is the thing that decides whether a
+  small host works at all: at an 8 GiB cap only ~1 GiB is left for cache, and the cgroup OOM-killed the
+  container's own runtime (`crun invoked oom-killer … Out of memory and no killable processes` in dmesg). That
+  is a hard stop, not a slow boot, and it is why the launcher's floor sits at 2 GiB of cache rather than being
+  a style preference.
+* **Steady-state serving barely notices the pressure.** From uncached to a 16 GiB cap, prefill falls 2.5% and
+  decode 0.6%. Almost all refaulting happens during boot (refaults climb to 349,903 by health at the 32 GiB cap
+  and 663,348 at 16 GiB); during the whole driven probe at the 16 GiB cap only 910 more pages refault. The
+  working set for this probe traffic is a few GiB, not tens.
+* **The cgroup limit is hammered during boot** -- `max` reaches 17,729 and 21,605 -- while `high` stays 0.
+  Reclaim is doing the work; nothing is being refused outright until the cap approaches the anon footprint.
+* **Greedy output is unaffected by memory pressure.** Same strict hash at every cap that booted, as expected:
+  eviction changes which pages are resident, not what the model computes. If this ever differs, suspect the
+  staging path rather than the cache.
+
+Two earlier claims tighten up against this. The synthetic read-path numbers in `platform-config.sh` (hit rate
+0.744 at 8 GiB of cache, 0.797 at 16 GiB, working set 14.7 GiB) pointed the right way but understated how well
+serving tolerates a small cache -- measured, 8.4 GiB of cache costs 2.5% of prefill. And the warning threshold
+of 16 GiB is now a measurement rather than a guess: at that size the engine boots in under 300 s cold, matches
+the pinned hash exactly, and gives up a couple of percent.
+
+For comparison at the same host and envelope, the pinned arms: `round2` FP8 needs 66.0 GiB and was refused by
+the preflight at every cap tried (206%/413%/825% of installed), `exact` needs 48.9 GiB and served with identical
+output. So below ~50 GiB of RAM the ordering is exact-pin, then stream; below ~9 GiB neither fits because of the
+engine's own anon footprint.
