@@ -52,14 +52,35 @@ COPY patches/port-nvfp4-moe.py /tmp/port-nvfp4-moe.py
 COPY patches/port-mrope-served-window.py /tmp/port-mrope-served-window.py
 COPY patches/port-exl3-ple-fp8.py /tmp/port-exl3-ple-fp8.py
 COPY patches/port-ple-exact-pin.py /tmp/port-ple-exact-pin.py
-RUN python3 /tmp/port-host-embedding.py /usr/local/lib/python3.12/dist-packages/vllm \
+COPY patches/port-ple-stream.py /tmp/port-ple-stream.py
+COPY patches/check-ple-stream.py /tmp/check-ple-stream.py
+COPY patches/check-undefined-globals.py /tmp/check-undefined-globals.py
+COPY patches/qwen_ple_stream.py /usr/local/lib/python3.12/dist-packages/vllm/model_executor/layers/qwen_ple_stream.py
+COPY patches/qwen_ple_stream2.py /usr/local/lib/python3.12/dist-packages/vllm/model_executor/layers/qwen_ple_stream2.py
+COPY patches/qwen_stream_gather.py /usr/local/lib/python3.12/dist-packages/vllm/model_executor/layers/qwen_stream_gather.py
+COPY patches/ple_rowcopy.c /tmp/ple_rowcopy.c
+# Scope check first, and on the installed copies: a name that is not in scope compiles fine and only fails
+# when that line runs, which for these overlays means minutes into an engine start. Cheap enough to put ahead
+# of the port steps so a typo costs seconds rather than a build.
+RUN python3 /tmp/check-undefined-globals.py \
+      /usr/local/lib/python3.12/dist-packages/vllm/model_executor/layers/qwen_ple_stream.py \
+      /usr/local/lib/python3.12/dist-packages/vllm/model_executor/layers/qwen_ple_stream2.py \
+      /usr/local/lib/python3.12/dist-packages/vllm/model_executor/layers/qwen_stream_gather.py \
+      /usr/local/lib/python3.12/dist-packages/vllm/model_executor/layers/qwen_host_embedding.py \
+      /usr/local/lib/python3.12/dist-packages/vllm/model_executor/layers/qwen_pinned_host.py \
+      /usr/local/lib/python3.12/dist-packages/vllm/model_executor/layers/qwen_vocab_projection.py \
+      /usr/local/lib/python3.12/dist-packages/vllm/model_executor/layers/qwen_nvfp4_moe.py \
+  && python3 /tmp/port-host-embedding.py /usr/local/lib/python3.12/dist-packages/vllm \
  && python3 /tmp/port-vocab-projection.py /usr/local/lib/python3.12/dist-packages/vllm \
  && python3 /tmp/port-nvfp4-moe.py /usr/local/lib/python3.12/dist-packages/vllm \
  && python3 /tmp/port-mrope-served-window.py /usr/local/lib/python3.12/dist-packages/vllm \
  && python3 /tmp/port-exl3-ple-fp8.py /usr/local/lib/python3.12/dist-packages/vllm \
  && python3 /tmp/port-ple-exact-pin.py /usr/local/lib/python3.12/dist-packages/vllm \
+ && mkdir -p /opt/qwen38 && gcc -O3 -shared -fPIC -o /opt/qwen38/ple_rowcopy.so /tmp/ple_rowcopy.c \
+ && python3 /tmp/port-ple-stream.py /usr/local/lib/python3.12/dist-packages/vllm \
  && python3 -c 'from vllm.model_executor.layers.quantization import get_quantization_config; assert get_quantization_config("exl3").__name__ == "Exl3Config"' \
- && python3 -c 'import vllm.models.qwen4_exp.nvidia.ple_pageable, vllm.models.qwen4_exp.nvidia.ngram_embedding'
+ && python3 -c 'import vllm.models.qwen4_exp.nvidia.ple_pageable, vllm.models.qwen4_exp.nvidia.ngram_embedding' \
+ && python3 /tmp/check-ple-stream.py /usr/local/lib/python3.12/dist-packages/vllm
 ENV EXL3_TRELLIS_MIN_M=1 \
     EXL3_PREFILL_TRELLIS=1 \
     EXL3_PREFILL_CAPACITY=2048
@@ -68,6 +89,7 @@ ENV EXL3_TRELLIS_MIN_M=1 \
 # XGrammar termination fix (PR 52805) shipped upstream in v0.30.0; these CPU
 # AST regressions keep the fixes verified in the assembled image.
 COPY scripts/test-xgrammar-termination.py scripts/test-structured-output-reasoning.py /opt/qwen38-tests/
+COPY scripts/test-ple-stream-table.py /opt/qwen38-tests/test_stream_table.py
 RUN python3 /opt/qwen38-tests/test-xgrammar-termination.py \
  && python3 /opt/qwen38-tests/test-structured-output-reasoning.py
 LABEL org.opencontainers.image.source="https://github.com/tpurtell/sm12x-exl3-qwen3.8-flash-next" \
