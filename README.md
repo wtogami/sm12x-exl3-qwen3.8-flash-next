@@ -48,14 +48,59 @@ for the defaults; C16 throughput tradeoffs are recorded below.
 | `nvfp4` | [NVIDIA NVFP4](https://huggingface.co/nvidia/Qwen3.8-Flash-Next-NVFP4) | FP8 with shared scale, about 48 GiB | 2 / 2 |
 
 On RTX the PLE table is page-locked in host RAM, so its size is a host memory
-requirement, not a GPU one, and PyTorch rounds every pinned allocation up to a
-power of two that cannot be turned off: the BF16 table is 95.4 GiB of checkpoint but
-128 GiB of pin, and with the token embedding the host must commit 130 GiB. The FP8
-table is 47.7 GiB and pins 64, so it needs 66 GiB. A 128 GiB host therefore serves
-the FP8 profiles but not the BF16 ones, failing as `CUDA error: out of memory` about
-40 s into engine start. `start.sh` sizes this from the checkpoint and refuses
-before creating the container; `QWEN38_SKIP_MEMCHECK=1` overrides. See
+requirement, not a GPU one. `PLE_PIN_STRATEGY=exact` (the default) page-locks
+the true size: BF16 commits 97.4 GiB with the token embedding, FP8 commits
+49.7 GiB. `PLE_PIN_STRATEGY=round2` is PyTorch's `pin_memory` path, which
+rounds every allocation up to a power of two: the same tables commit 130 GiB
+and 66 GiB. Images built without the exact-pin port behave as `round2`
+regardless of the knob. A 128 GiB host therefore serves the FP8 profiles at
+either strategy but only fits BF16 with `exact`, failing as `CUDA error: out
+of memory` about 40 s into engine start otherwise. `start.sh` sizes this from
+the checkpoint and refuses before creating the container;
+`QWEN38_SKIP_MEMCHECK=1` overrides. See
 [host pinned memory](docs/podman-rootless-fedora.md#host-pinned-memory-for-the-ple-table).
+
+## Streaming the PLE table on small hosts (`PLE_STREAM`)
+
+`PLE_STREAM=1` takes the table out of pinned host RAM entirely: rows are read
+from the checkpoint through the page cache, copied by CPU into a staging arena
+of a few MiB, and gathered on the device. `Shmem` settles near 2.2 GiB instead
+of 49.7, so a host smaller than the table can serve it. Greedy output is
+byte-identical to pinned; the cost is in rates, not results. One knob, three
+values — there is no second flag to set:
+
+| Value | Graphs kept | Use |
+|---|---|---|
+| `PLE_STREAM=1` | `FULL_AND_PIECEWISE` | staged streaming; what you want on a small host |
+| `PLE_STREAM=piecewise` | `PIECEWISE` (forced) | diagnostic only — isolates the graph-regime cost |
+| unset (`0`) | default | pinned table, when the host fits it |
+
+Measured on `gg` (FP8 checkpoint, one RTX card, cold cache per boot). All four
+arms share one recorded power envelope: the driver applies `sudo -n nvidia-smi
+-pl 300` before the first cell and prints what the card reports — 300.00 W — so
+the deltas below are paired within a single job. Strict hash `7c1421daade83d79`
+identical on every arm:
+
+| Host RAM | Mode | prefill tok/s | decode tok/s | vs pinned |
+|---|---|---:|---:|---:|
+| ≥ ~50 GiB | pinned table (`exact`) | 11,347.3 | 139.0 | — |
+| any | `PLE_STREAM=1`, uncapped | 10,963.3 | 134.7 | −3.4% / −3.1% |
+| 32 GiB | `PLE_STREAM=1` | 11,084.4 | 135.3 | −2.3% / −2.7% |
+| 16 GiB | `PLE_STREAM=1` | 11,073.1 | 135.1 | −2.4% / −2.8% |
+
+Streaming's steady-state cost is about 3% of both rates against pinned at matched
+wattage — earlier figures near −15% came from comparing cells across different
+power ceilings and are superseded by this paired run. The caps themselves are
+invisible in serving: capped arms matched the uncapped arm within the host's
+noise floor (~1% prefill, ~0.3% decode), because refaulting is a boot-time
+effect — the 16 GiB cell had already taken ~489k refaults by health and gained
+only 22 more across the entire driven probe. What a cap does change is boot
+time: ~171 s uncapped versus ~271–281 s capped at either size, from cold reads
+through a smaller cache. So: 16 GiB total RAM is the working minimum for
+streaming and 32 GiB comfortable — sizing that buys boot margin, not throughput.
+Below ~8 GiB the engine's fixed ~7 GiB anonymous footprint leaves no usable
+cache and the start OOMs rather than slowing. Full record and drivers:
+[`docs/ssd-stream-findings.md`](docs/ssd-stream-findings.md).
 
 EXL3 requires independent K4/K5 allocation for each expert's gate, up and down
 projection. The pinned B12x fork supports this geometry and preserves all 5951
