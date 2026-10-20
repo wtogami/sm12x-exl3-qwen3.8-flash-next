@@ -3646,3 +3646,13 @@ first`). With a fixed 3-second sleep, the first cell of every run lost its boot 
 cells measured anything. All three drivers now wait for the name to be released and pass `REPLACE=1`, so the
 launcher does the stop-and-replace deliberately instead of refusing. The `tp1-round2` numbers above come from a
 re-run after that change, in which the cell booted in ~240 s and produced the hash shown.
+
+### gg reproduction (same pair, second host)
+
+With the fixed driver, gg runs the same TP1 pair: `round2` is refused by the preflight (needs 130.0 GiB against
+125.7 GiB installed, with alternatives printed), `exact` boots healthy in 360 s and pins `Shmem` +97.54 GiB --
+predictions confirmed on a host whose memory is actually tight, which is where the rounding decision matters.
+Its strict hash is `7c1421daade83d79`, matching burst exactly at the same topology, and throughput is prefill
+11,287.7 / decode 133.1 against burst's 11,081.1 / 130.9 (+1.9% / +1.7%), a plausible inter-host spread at the
+same per-card wattage (both hosts show the card at 300.00 W in the drivers' own header). Same profile, two
+hosts: identical bytes out, pinned demand within 0.2 GiB of prediction.
