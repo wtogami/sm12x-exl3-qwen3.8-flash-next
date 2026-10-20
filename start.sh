@@ -356,9 +356,10 @@ fi
 # deliberate. Docker paths in this repo are untested: no docker host was
 # available, so treat that branch as reasoned-about, not verified.
 #
-# Serving is where the GPU is actually needed, and a pull.sh deployment never
-# runs build.sh, so the CDI spec is provisioned here as well. Unlike build.sh
-# this one is fatal: without it the container cannot start at all.
+# Serving is where the GPU is actually needed, and a deployment that skips
+# build.sh (peer-transferred image via podman save/skopeo) never runs it, so
+# the CDI spec is provisioned here as well. Unlike build.sh this one is
+# fatal: without it the container cannot start at all.
 if qwen38_is_podman; then
   qwen38_ensure_cdi
   if [[ -z "${GPU:-}" || "${GPU}" == all ]]; then

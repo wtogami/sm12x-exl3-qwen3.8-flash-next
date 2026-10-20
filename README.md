@@ -191,21 +191,12 @@ bash start.sh
 curl http://127.0.0.1:8001/health
 ```
 
-To use the pinned image instead of building, replace `bash build.sh` with
-`bash pull.sh`. It selects the native image and installs the same local tag
-used by `start.sh`. Immutable image digests are recorded in
-[platform-config.sh](platform-config.sh).
-
-| Platform | Image package | Status |
-|---|---|---|
-| RTX, linux/amd64 | `ghcr.io/tpurtell/rtx6k-exl3-qwen3.8-flash-next` | v0.3.1 (predates the v0.30.0 and v0.31.0 rebases) |
-| Spark, linux/arm64 | `ghcr.io/tpurtell/spark-exl3-qwen3.8-flash-next` | v0.3.1 (predates the v0.30.0 and v0.31.0 rebases) |
-
-The published packages above predate both rebases; `pull.sh` installs
-them until rebased images are published. **Build with `build.sh` to get the
-rebased runtime.** The Spark package currently requires registry
-authentication while its visibility is private. The package owner can enable
-public pulls in GitHub package settings.
+There is no published image: **every deployment builds from source.**
+`build.sh` is one command (~20–45 min cold, minutes on a warm cache) and is
+the only way to get a runtime matching this repo's HEAD. For an offline
+host, build anywhere and transfer the result peer-to-peer, e.g.
+`podman save localhost/qwen38-rtx:local | zstd > qwen38.tar.zst` (load with
+`zstd -d | podman load`), or `skopeo copy docker-archive:...`.
 
 Current RTX test host: two RTX PRO 6000 Blackwell 96 GB cards (4x8-pin),
 driver 615.78.08, on a Threadripper 9970X with ~996 GiB CPU RAM. Test legs
