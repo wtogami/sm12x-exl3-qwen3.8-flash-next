@@ -3674,3 +3674,20 @@ Verified after the change by restarting burst's serving engine with no strategy 
 `Shmem` sits at 101.30 GiB absolute, hash `7c1421daade83d79`, decode 131.6 -- all matching the qualified cells.
 Consequence worth knowing: on a ~126 GiB host like gg, BF16 is now approved by default (97.4 fits) where
 `round2` would refuse it (130.0 against 125.7), and FP8's default reservation drops from 66.4 GiB to 48.9.
+
+# Streaming gets one knob: `PLE_STREAM=1` is the shipping design; `piecewise` is the diagnostic
+
+One variable, three values, resolved in `start.sh` into the pair both old and new images read:
+
+| operator writes | forwards | graphs | what it measures |
+|---|---|---|---|
+| `PLE_STREAM=1` | `PLE_STREAM=1 PLE_STREAM_V2=1` | `FULL_AND_PIECEWISE` | streaming as shipped |
+| `PLE_STREAM=piecewise` | `PLE_STREAM=1 PLE_STREAM_V2=0` + forced PIECEWISE + breakable | `PIECEWISE` | the graph-regime cost alone |
+| unset (`0`) | `PLE_STREAM=0 PLE_STREAM_V2=0` | default | pinned reads |
+An explicitly supplied pair is honoured verbatim, so historical cells keep reproducing. Inside the container the pair stays the contract for the same reason: images built before this change read only the pair, and `v2_enabled()` falls back to `PLE_STREAM` when `PLE_STREAM_V2` is absent — so a bare `PLE_STREAM=1` on a fresh container gets the staged design too.
+
+Why `piecewise` for the diagnostic arm instead of a version tag: it is what the loader prints for that arm (`graph mode: CUDAGraphMode.PIECEWISE`), so the value names the observable regime rather than the revision it came from. Reading a container's env tells you which regime is in force without looking anything up. "v1" would have been accurate history and useless guidance.
+
+What the old `PLE_STREAM=1` meant — staging inside the replay via `RowStager` — remains reachable by the explicit pair, because it is still the fallback gather when no stager is bound: the first steps, the capture passes, and `--enforce-eager`. Removing it would leave streaming with no path outside graphed replays. Its measurements anchor the regime decomposition and do not need a re-run to stay true: the v1-vs-v2 gap was 17.8 points of graph regime against ~4.4 points of staging position.
+
+Gate for the whole table: `scripts/test-ple-knob-resolution.py`, offline, against the fake-docker lifecycle harness — it asserts the exact `-e` pair and graph flags reaching the container for every spelling.

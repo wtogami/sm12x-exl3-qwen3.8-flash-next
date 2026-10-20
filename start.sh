@@ -85,26 +85,40 @@ fi
 
 PLE_PIN_STRATEGY="${PLE_PIN_STRATEGY:-exact}"
 [[ "$PLE_PIN_STRATEGY" == round2 || "$PLE_PIN_STRATEGY" == exact ]] || { echo "PLE_PIN_STRATEGY must be round2 or exact" >&2; exit 2; }
-# PLE_STREAM=1 reads the PLE table from the checkpoint by CPU row copy into pinned staging
-# (patches/qwen_ple_stream.py), instead of page-locking the whole table in host RAM. It exists for
-# hosts with less RAM than the table: the FP8 table pins 47.684 GiB and the BF16 one 95.368 GiB,
-# neither of which a 32 GiB host can commit. It reuses the checkpoint_mapped storage plumbing --
-# including the host page prefetcher, which is what keeps the page cache warm -- and replaces only
-# the gather, because the mapped path asks the GPU to dereference host page-table mappings and
-# discrete RTX parts report PAGEABLE_MEMORY_ACCESS_USES_HOST_PAGE_TABLES=0.
-# Measured on this shape: ~0.5% of prefill exposed at p50, ~0.8% at p99, page-cache hits 74-80%
-# at 8-16 GiB of cache. Default off: the resident pinned table is faster when it fits.
+# PLE_STREAM switches how the PLE table is read on hosts that cannot commit a table-sized pin: instead
+# of page-locking the whole table, the CPU copies this step's rows out of the checkpoint mapping into
+# pinned staging and gathers on the device from DMA-capable memory (patches/qwen_ple_stream.py). The FP8
+# table pins 47.684 GiB and the BF16 one 95.368 GiB; streaming needs a few GiB of page cache instead of
+# either (measured: hits 74-80% at 8-16 GiB of cache, ~0.5% of prefill exposed at p50). Default off: the
+# resident pinned table is faster when it fits.
+# Values:
+#   1          staged reads -- the shipping design (patches/qwen_ple_stream2.py): rows are copied in
+#              prepare_inputs before the step replays, so _lookup is a device-to-device copy and
+#              FULL_AND_PIECEWISE graphs stay on. Decode costs 3.4% against pinned after the single-call
+#              gather fix (burst, both cards at 300 W); greedy output is byte-identical to pinned.
+#   piecewise  same staging, with FULL graphs taken off via cudagraph_mode=PIECEWISE. Diagnostic only:
+#              it isolates the graph-regime cost, which alone is worth 17.8% of decode
+#              (162.8 -> 133.9 tok/s) with streaming switched off entirely. Expect lower numbers.
+#   0          pinned-table reads (default).
+# One knob. It resolves to the pair both old and new images read -- PLE_STREAM selects streaming,
+# PLE_STREAM_V2 selects the staged design within it -- so historical cells keep reproducing: an explicit
+# pair is honoured verbatim, and `piecewise` is the old `PLE_STREAM=1` alone.
 PLE_STREAM="${PLE_STREAM:-${VLLM_PLE_STREAM:-0}}"
-[[ "$PLE_STREAM" == 0 || "$PLE_STREAM" == 1 ]] || { echo "PLE_STREAM must be 0 or 1" >&2; exit 2; }
-# PLE_STREAM_V2=1 selects the staging design: rows are copied into a persistent device buffer from
-# prepare_inputs, before the step replays, so _lookup is a device-to-device copy and FULL cudagraphs stay
-# on. That matters because v1 must run under breakable graphs plus cudagraph_mode=PIECEWISE, and measured
-# on this host that graph regime alone costs 17.8% of decode with streaming switched off entirely
-# (162.8 -> 133.9 tok/s, spreads 1.1%/1.6%) -- most of v1's 22.2% decode loss. v2 implies PLE_STREAM=1 and
-# deliberately does NOT imply the graph-mode downgrades.
-PLE_STREAM_V2="${PLE_STREAM_V2:-${VLLM_PLE_STREAM_V2:-0}}"
-[[ "$PLE_STREAM_V2" == 0 || "$PLE_STREAM_V2" == 1 ]] || { echo "PLE_STREAM_V2 must be 0 or 1" >&2; exit 2; }
+[[ "$PLE_STREAM" == 0 || "$PLE_STREAM" == 1 || "$PLE_STREAM" == piecewise ]] \
+  || { echo "PLE_STREAM must be 0, 1, or piecewise" >&2; exit 2; }
+PLE_STREAM_V2="${PLE_STREAM_V2:-${VLLM_PLE_STREAM_V2:-}}"
+if [[ "$PLE_STREAM" == piecewise ]]; then
+  PLE_STREAM=1
+  [[ -n "$PLE_STREAM_V2" ]] || PLE_STREAM_V2=0
+elif [[ "$PLE_STREAM" != 0 && -z "$PLE_STREAM_V2" ]]; then
+  PLE_STREAM_V2=1
+elif [[ -z "$PLE_STREAM_V2" ]]; then
+  PLE_STREAM_V2=0
+fi
+[[ "$PLE_STREAM_V2" == 0 || "$PLE_STREAM_V2" == 1 ]] \
+  || { echo "PLE_STREAM_V2 must be 0 or 1" >&2; exit 2; }
 if [[ "$PLE_STREAM_V2" == 1 ]]; then
+  # Legacy spelling: PLE_STREAM_V2=1 on its own still means "stream, staged".
   PLE_STREAM=1
 fi
 if [[ "$PLE_STREAM" == 1 && "$PLE_MMAP" == 0 ]]; then

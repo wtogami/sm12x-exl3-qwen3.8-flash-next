@@ -26,16 +26,17 @@ are implemented and counted rather than guessed at:
   tagged for the current step, and increments a visible counter. Silent staleness is the one outcome this
   design is not allowed to have.
 
-Selection: ``PLE_STREAM_V2=1``. ``PLE_STREAM=1`` alone keeps v1 so the two can be A/B'd on one host.
+Selection: the launcher resolves one knob (``PLE_STREAM``) into the pair this module and the loader
+share -- ``PLE_STREAM=1`` means staged, ``PLE_STREAM=piecewise`` selects the diagnostic regime, and an
+explicitly supplied pair is honoured verbatim so historical cells keep reproducing. Read directly (no
+launcher), ``PLE_STREAM_V2`` wins when set; otherwise this follows ``PLE_STREAM``.
 
-STATUS: implemented but NOT wired and NOT measured. Nothing calls ``stage_step_rows`` yet, ``_lookup``
-still runs v1's path, and the pinned qsl/ctx slot capacities below are guesses (16384 x 64) rather than
-the model state's real ``max_num_reqs`` / ``ngram_context_len`` -- they fail loudly on overflow rather than
-silently, but they must be sized from config. Remaining work, in order: (1) size buffers from the model
-state, (2) add the ``prepare_inputs`` hook and the v2 ``_lookup`` to port-ple-stream.py, (3) stop
-start.sh implying breakable+PIECEWISE under v2 so FULL graphs survive, (4) build and run the matrix
-streaming cell, where the falsifiable predictions are decode ~= 160 tok/s (v1: 126.7) and Shmem ~= 2.18
-GiB (v1: 4.44, the difference being the ~2.25 GiB non-FULL-graph surcharge).
+STATUS: shipped, wired through ``port-ple-stream.py``, and measured. Full-step results against pinned
+(BF16 profile, burst, both cards at 300 W): staged keeps ``FULL_AND_PIECEWISE``, hashes identical to
+pinned at TP1 and TP2, decode costs 3.4% after the single-call gather fix; the ``piecewise`` diagnostic
+arm loses what the graph regime costs -- 17.8% of decode on its own with streaming off entirely
+(162.8 -> 133.9 tok/s). The qsl/ctx slot capacities are sized from the model state; overflow refuses to
+serve rather than dropping rows.
 """
 
 from __future__ import annotations
@@ -87,13 +88,16 @@ def _log_every() -> int:
 
 
 def v2_enabled() -> bool:
-    """True when the pre-replay staging design was explicitly asked for.
+    """True when the staged design is in force -- the shipping behaviour of streaming.
 
-    Separate from stream_enabled() because the two designs have opposite graph requirements: v1 needs
-    breakable graphs and PIECEWISE mode, v2 needs FULL graphs left alone. One flag per requirement set,
-    so the loader and the memory preflight cannot disagree about which regime is in force.
+    The launcher always sends the resolved pair, so in practice this reads ``PLE_STREAM_V2``. Without a
+    launcher (a bare container run) ``PLE_STREAM=1`` alone also selects staged: the design with FULL
+    graphs kept, hashes identical to pinned, and the smaller decode cost of the two. A set-but-falsey
+    ``PLE_STREAM_V2`` is an explicit choice of the fallback gather and wins over ``PLE_STREAM``.
     """
-    return os.getenv(MODE_ENV, "0").strip().lower() in ("1", "true", "yes")
+    explicit = os.getenv(MODE_ENV)
+    value = explicit if explicit not in (None, "") else os.getenv("PLE_STREAM", "0")
+    return value.strip().lower() in ("1", "true", "yes")
 
 
 def v2_mode() -> str:

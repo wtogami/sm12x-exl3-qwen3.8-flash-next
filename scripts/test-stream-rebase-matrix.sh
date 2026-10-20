@@ -126,8 +126,8 @@ run pinned-round2  ""
 run pinned-piecewise-json "PLE_PIN_STRATEGY=round2" \
     "--compilation-config {\"cudagraph_mode\":\"PIECEWISE\"}"
 run pinned-exact   "PLE_PIN_STRATEGY=exact"
-run stream-v1      "PLE_STREAM=1"
-run stream-v2      "PLE_STREAM_V2=1"
+run stream-v1      "PLE_STREAM=piecewise"
+run stream-v2      "PLE_STREAM=1"
 echo
 kill $SAMPLER 2>/dev/null
 peak=$(awk -F= '/gpu0_mib/{if($2+0>max)max=$2+0} END{print max+0}' "$OUT/gpu0.log")
