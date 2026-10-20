@@ -102,6 +102,8 @@ Below ~8 GiB the engine's fixed ~7 GiB anonymous footprint leaves no usable
 cache and the start OOMs rather than slowing. Full record and drivers:
 [`docs/ssd-stream-findings.md`](docs/ssd-stream-findings.md).
 
+## EXL3 expert quantization and the `exl3-ple8` variant
+
 EXL3 requires independent K4/K5 allocation for each expert's gate, up and down
 projection. The pinned B12x fork supports this geometry and preserves all 5951
 experts with unequal projection tiers across target and MTP layers. The
