@@ -47,30 +47,36 @@ results = []
 with tempfile.TemporaryDirectory() as folder:
     cfg = config(Path(folder) / 'config.json')
 
-    # gg cannot serve the BF16 table; the preflight must refuse it there. This is
-    # the real outcome the threshold was anchored against, not a synthetic case.
-    refused = check(cfg, 2, 125.68, 121.0)
-    assert refused.returncode != 0, 'BF16 on a 125.68 GiB host must refuse'
+    # gg cannot serve the BF16 table through torch's rounding path; the preflight must refuse
+    # it there with the round2 model. This is the real outcome the threshold was anchored
+    # against, not a synthetic case. The launcher default is exact now, so the same host
+    # without an explicit strategy is allowed: exact pins 95.4+2 against 125.68 installed,
+    # which is what the booted gg cell did (healthy, Shmem +97.54). The refusal still has to
+    # name the streaming path, because hosts smaller than the pin are exactly who it is for.
+    refused = check(cfg, 2, 125.68, 121.0, strategy='round2')
+    assert refused.returncode != 0, 'round2 BF16 on a 125.68 GiB host must refuse'
     assert '%.1f' % TABLE_BF16_GIB in refused.stderr, refused.stderr
     assert 'exl3-ple8' in refused.stderr and 'QWEN38_SKIP_MEMCHECK' in refused.stderr
     # It must refuse for the right reason: 95.4 GiB of checkpoint is 128 GiB of
     # pin, so the host is short by 130 against 125.68, not 95.4 against 69.
     assert '%.1f GiB' % BF16_PIN_GIB in refused.stderr, refused.stderr
     assert '%.1f GiB' % DEMAND_BF16_GIB in refused.stderr, refused.stderr
-    # The 183 GiB qualification host did serve it, at 130/183 = 71.0% of RAM
-    # pinned: must not refuse, but must warn, since that is the highest share
-    # with a recorded successful pin and anything above it is untested.
-    allowed = check(cfg, 2, 183.0, 180.0)
-    assert allowed.returncode == 0, 'BF16 on the qualification host must be allowed'
-    assert 'WARNING' in allowed.stderr, '71.0% of RAM pinned sits in the warn band'
+    default = check(cfg, 2, 125.68, 121.0)
+    assert default.returncode == 0, 'default (exact) must let BF16 through on gg: 97.4 fits'
+    assert 'strategy exact' in default.stderr, default.stderr
+    assert 'WARNING' in default.stderr, 'exact still pins 77.5% of gg: warn band'
     # Same profile on a generously sized host: allowed and quiet.
     quiet = check(cfg, 2, 995.6, 900.0)
     assert quiet.returncode == 0 and 'WARNING' not in quiet.stderr
-    # FP8 halves the table, which is exactly why it fits where BF16 does not.
+    # FP8 halves the table, which is exactly why it fits where BF16 does not. The default
+    # strategy is exact, so the table pins at its own size; round2 must still show the
+    # power-of-two rounding for images that do not carry the port.
     fp8 = check(cfg, 1, 125.68, 121.0)
     assert fp8.returncode == 0 and '%.1f' % TABLE_FP8_GIB in fp8.stderr
-    assert 'WARNING' not in fp8.stderr, 'FP8 pinning 66 of 125.68 GiB should not warn'
-    assert '%.1f GiB pins %.1f GiB' % (TABLE_FP8_GIB, FP8_PIN_GIB) in fp8.stderr, fp8.stderr
+    assert 'WARNING' not in fp8.stderr, 'FP8 exact pins 49.7 of 125.68 GiB; neither refuse nor warn'
+    assert '%.1f GiB pins %.1f GiB' % (TABLE_FP8_GIB, TABLE_FP8_GIB) in fp8.stderr, fp8.stderr
+    fp8_round = check(cfg, 1, 125.68, 121.0, strategy='round2')
+    assert '%.1f GiB pins %.1f GiB' % (TABLE_FP8_GIB, FP8_PIN_GIB) in fp8_round.stderr, fp8_round.stderr
 
     # Regression: the one case the old 55%-of-installed-RAM gate got wrong. A
     # table of exactly 65 GiB is 52.7% of a 125.68 GiB host, so the old bracket
@@ -78,7 +84,7 @@ with tempfile.TemporaryDirectory() as folder:
     # of two, so the pin rounds to 128 GiB and the demand is 130 GiB.
     just_over = config(Path(folder) / 'just_over.json',
                        ngram_vocab_size_base=int(65 * 2**30 / PLE_DIM / 1))
-    rounded = check(just_over, 1, 125.68, 121.0)
+    rounded = check(just_over, 1, 125.68, 121.0, strategy='round2')
     assert rounded.returncode != 0, (
         'a 65 GiB table pins 128 GiB and must be refused on 125.68 GiB; the old '
         'derived-vs-55% rule passed this: %s' % rounded.stderr)

@@ -244,11 +244,11 @@ print(int(text["ngram_vocab_size_base"]), int(text["ple_embed_dim"]),
   table_rank_kib=$(( (table_kib + tp - 1) / tp ))
   embed_rank_kib=$(( (embed_kib + tp - 1) / tp ))
   # PLE_PIN_STRATEGY must agree with what the image's loader actually does; see
-  # patches/port-ple-exact-pin.py. "exact" page-locks the table at its true size via
-  # cudaHostAlloc, which does not round. "round2" (the default) is torch's pin_memory
+  # patches/port-ple-exact-pin.py. "exact" (the default) page-locks the table at its
+  # true size via cudaHostAlloc, which does not round. "round2" is torch's pin_memory
   # path and rounds to a power of two. The token embedding is rounded in BOTH modes --
   # it still goes through pin_memory -- so only the table rounding is conditional.
-  local ple_pin_strategy="${PLE_PIN_STRATEGY:-round2}"
+  local ple_pin_strategy="${PLE_PIN_STRATEGY:-exact}"
   if [[ "$ple_pin_strategy" == "exact" ]]; then
     table_pin_kib=$(( table_rank_kib * tp ))
   else
