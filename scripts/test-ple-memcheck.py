@@ -112,9 +112,12 @@ with tempfile.TemporaryDirectory() as folder:
     assert 'WARNING' in bf16_exact.stderr, 'exact still pins 77.5%% of the host: warn band'
     assert 'only honoured by a build carrying' in bf16_exact.stderr, \
         'exact must warn that an image without the port silently ignores the variable'
+    assert 'as 128.0 GiB' in bf16_exact.stderr, \
+        'the fallback figure in that warning must be the rounded size the broken loader would pin'
     fp8_exact = check(cfg, 1, 125.68, 121.0, strategy='exact')
     assert fp8_exact.returncode == 0 and 'WARNING' not in fp8_exact.stderr, \
         'FP8 exact pins 49.7 of 125.68 GiB; neither refusal nor warning'
+    assert 'as 64.0 GiB' in fp8_exact.stderr, 'same fallback figure, FP8 sizes'
     tiny_exact = check(cfg, 2, 64.0, 60.0, strategy='exact')
     assert tiny_exact.returncode != 0, 'exact must still refuse BF16 on a 64 GiB host'
     bogus = check(cfg, 1, 125.68, 121.0, strategy='nonsense')

@@ -323,13 +323,17 @@ print(int(text["ngram_vocab_size_base"]), int(text["ple_embed_dim"]),
     echo "  GiB host). 77.5% has been pinned by a probe but never served; above 77.5% nothing" >&2
     echo "  has been pinned at all. Expect failure if anything else holds pinned memory." >&2
   fi
-  if [[ "$ple_pin_strategy" == "exact" && "$table_pin_kib" != "$table_kib" ]]; then
-    : # unreachable: exact mode pins the table at its own size
-  fi
   if [[ "$ple_pin_strategy" == "exact" ]]; then
+    # The fallback figure is what an image WITHOUT the port actually pins: torch rounds each rank's
+    # allocation up to a power of two. Quoting table_pin_gib here was wrong -- under exact it equals the
+    # table itself, so the warning read "pins 95.4 GiB as 95.4 GiB", which says nothing. The point of the
+    # note is the concrete cost of silently missing the port, so the note must print the rounded size.
+    local fallback_pin_gib
+    fallback_pin_gib="$(qwen38_next_pow2 "$table_rank_kib")"
+    fallback_pin_gib="$(qwen38_gib "$(( fallback_pin_gib * tp ))")"
     echo "NOTE: PLE_PIN_STRATEGY=exact is only honoured by a build carrying the" >&2
     echo "  qwen_pinned_host port. On an image without it the variable is ignored and" >&2
-    echo "  the table pins ${table_gib} GiB as ${table_pin_gib} GiB instead -- this preflight" >&2
+    echo "  the table pins ${table_gib} GiB as ${fallback_pin_gib} GiB instead -- this preflight" >&2
     echo "  cannot see inside the image, so confirm the loader logs the exact-size line." >&2
   fi
   echo "PLE pinned host memory (strategy ${ple_pin_strategy}, TP ${tp}): table ${table_gib} GiB pins" \
