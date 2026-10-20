@@ -41,10 +41,16 @@ MTP_TOKENS="${MTP_TOKENS:-$( [[ ${QUANT:-exl3} == nvfp4 ]] && echo 2 || echo "$D
 PLE_MMAP="${PLE_MMAP:-${VLLM_PLE_MMAP:-${DEFAULT_PLE_MMAP:-0}}}"
 [[ "$PLE_MMAP" == 0 || "$PLE_MMAP" == 1 ]] || { echo "PLE_MMAP must be 0 or 1" >&2; exit 2; }
 # PLE_PIN_STRATEGY chooses how the PLE table's pinned host memory is allocated.
-# round2 (default) is torch's pin_memory path, which rounds every request up to a power
-# of two -- 47.684 GiB of FP8 table costs 64.000 GiB pinned. exact page-locks the true
-# size through the CUDA driver instead (patches/qwen_pinned_host.py), which does not
-# round. The value has to reach the container as well as the preflight a few lines
+# exact (default) page-locks the true size through the CUDA driver
+# (patches/qwen_pinned_host.py). round2 is torch's pin_memory path, which rounds every
+# request up to a power of two -- 47.684 GiB of FP8 table costs 64.000 GiB pinned --
+# and stays available for images without the port. Qualified on burst and gg: greedy
+# output is byte-identical between the strategies at TP1 and TP2, BF16 and FP8, and
+# throughput sits inside each host's own cross-boot spread (~0.6%), so exact costs
+# nothing and only returns the rounding -- about 17 GiB at FP8, about 33 GiB at BF16,
+# at either width. On an image lacking the port the loader ignores this and rounds as
+# before; the preflight NOTE below says how to tell. The value has to reach the container
+# as well as the preflight a few lines
 # below: the gate sizes the reservation, the loader performs it, and if they disagree
 # the gate approves a footprint the host cannot commit.
 # MEMORY caps the container's memory (podman/docker --memory) so a host with less RAM than the table can be
@@ -77,7 +83,7 @@ if [[ -n "$MEMORY" ]]; then
   memory_args=(--memory "$memory_arg" --memory-swap "$memory_arg")
 fi
 
-PLE_PIN_STRATEGY="${PLE_PIN_STRATEGY:-round2}"
+PLE_PIN_STRATEGY="${PLE_PIN_STRATEGY:-exact}"
 [[ "$PLE_PIN_STRATEGY" == round2 || "$PLE_PIN_STRATEGY" == exact ]] || { echo "PLE_PIN_STRATEGY must be round2 or exact" >&2; exit 2; }
 # PLE_STREAM=1 reads the PLE table from the checkpoint by CPU row copy into pinned staging
 # (patches/qwen_ple_stream.py), instead of page-locking the whole table in host RAM. It exists for

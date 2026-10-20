@@ -3656,3 +3656,15 @@ Its strict hash is `7c1421daade83d79`, matching burst exactly at the same topolo
 11,287.7 / decode 133.1 against burst's 11,081.1 / 130.9 (+1.9% / +1.7%), a plausible inter-host spread at the
 same per-card wattage (both hosts show the card at 300.00 W in the drivers' own header). Same profile, two
 hosts: identical bytes out, pinned demand within 0.2 GiB of prediction.
+
+# `PLE_PIN_STRATEGY=exact` is the launcher default
+
+Both EXL3 profiles (`exl3` BF16 and `exl3-ple8` FP8) share one launcher, so the default lives in one place:
+`start.sh` and the preflight in `platform-config.sh` now fall back to `exact` when the variable is unset.
+`round2` remains accepted and is still what an image without the `qwen_pinned_host` port does regardless, which
+is why the preflight keeps printing the NOTE telling the operator to confirm the loader's exact-size line.
+Verified after the change by restarting burst's serving engine with no strategy set: preflight approves on
+"strategy exact" (97.4 GiB against 96.6 GiB of checkpoint), the loader logs `pinned at exact size 95.368 GiB`,
+`Shmem` sits at 101.30 GiB absolute, hash `7c1421daade83d79`, decode 131.6 -- all matching the qualified cells.
+Consequence worth knowing: on a ~126 GiB host like gg, BF16 is now approved by default (97.4 fits) where
+`round2` would refuse it (130.0 against 125.7), and FP8's default reservation drops from 66.4 GiB to 48.9.
