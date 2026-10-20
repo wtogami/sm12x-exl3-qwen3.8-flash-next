@@ -34,6 +34,16 @@ check("v2 flag off by default", not s2.v2_enabled())
 os.environ["PLE_STREAM_V2"] = "1"
 check("v2 flag reads the env", s2.v2_enabled())
 os.environ["PLE_STREAM_V2"] = "0"
+# One knob: without the V2 name present, PLE_STREAM alone selects the staged design -- that is the
+# shipping behaviour for bare container runs. A set-but-falsey V2 is an explicit choice of the fallback
+# gather and wins over the single knob, which keeps the historical (PLE_STREAM=1, V2=0) cell reachable.
+del os.environ["PLE_STREAM_V2"]
+os.environ["PLE_STREAM"] = "1"
+check("PLE_STREAM alone selects staged", s2.v2_enabled())
+os.environ["PLE_STREAM_V2"] = "0"
+check("explicit pair wins over the single knob", not s2.v2_enabled())
+os.environ["PLE_STREAM"] = "0"
+os.environ["PLE_STREAM_V2"] = "0"
 check("v2 mode defaults to sync", s2.v2_mode() == s2.MODE_SYNC)
 os.environ["PLE_STREAM_V2_MODE"] = "async"
 check("v2 mode reads async", s2.v2_mode() == s2.MODE_ASYNC)
