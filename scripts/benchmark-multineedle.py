@@ -94,10 +94,17 @@ def main():
             output.write(json.dumps(row, ensure_ascii=False) + "\n")
             output.flush()
 
-        for depth in sorted(args.depths):
-            filler = prefill.exact_prompt(args.base_url, args.model,
-                                         max(depth - args.reserve, 256), uuid.uuid4().hex)
-            for needles in sorted(args.needles):
+        # Iterate in the given order so worst-case-first schedules work.
+        for depth in args.depths:
+            for needles in args.needles:
+                # Reserve must cover key lines + instruction (~15 tokens per
+                # needle plus a ~70-token query header, measured) plus chat
+                # template overhead (~100 tokens on this stack); overshooting
+                # costs <0.2% of depth and keeps final prompt ~= depth for
+                # every K, which the receipts record per sample anyway.
+                reserve = max(args.reserve, 64 + 160 * needles)
+                filler = prefill.exact_prompt(args.base_url, args.model,
+                                              max(depth - reserve, 256), uuid.uuid4().hex)
                 ok_needles = ok_samples = 0
                 ttfts = []
                 for sample in range(args.samples):
