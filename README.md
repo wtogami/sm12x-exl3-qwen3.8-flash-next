@@ -7,6 +7,16 @@ scaling of the 262144-native window (`LONGCTX=1`); Spark serves the native
 262144. The scheduler has 16 request slots, and C1 performance is the
 priority for the defaults.
 
+> **How fast is it?** (one card each, TP=1, FP8 KV, MTP on)
+>
+> | Single-stream decode (C1) | RTX PRO 6000 @ 600 W | DGX Spark (GB10) |
+> |---|---:|---:|
+> | **Typical** (mixed content) | **159.5 tok/s** | **31.1 tok/s** |
+> | Best case | ≈260 tok/s | ≈42 tok/s |
+>
+> Context depth, concurrency and power limits move these numbers — the full
+> measurement record is in [docs/performance-comparison.md](docs/performance-comparison.md).
+
 > **Current: vLLM v0.32.0 rebase (2026-10-18); last full comparison day
 > 2026-10-07 (v0.31 image, v0.32 re-qualified at parity).**
 > The runtime builds on the released official `vllm/vllm-openai:v0.32.0`
