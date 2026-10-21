@@ -4,8 +4,8 @@ A TP=1 SM12x serving recipe with host-resident token embeddings and
 mmap-backed (checkpoint-mapped) PLE n-gram tables, FP8 KV cache, vision, CUDA
 graphs, and tuned MTP. RTX defaults to a 524288-token context via YaRN 2.0
 scaling of the 262144-native window (`LONGCTX=1`); Spark serves the native
-262144. The scheduler has 16 request slots. C1 performance is the priority
-for the defaults; C16 throughput tradeoffs are recorded below.
+262144. The scheduler has 16 request slots, and C1 performance is the
+priority for the defaults.
 
 > **Current: vLLM v0.32.0 rebase (2026-10-18); last full comparison day
 > 2026-10-07 (v0.31 image, v0.32 re-qualified at parity).**
@@ -37,10 +37,10 @@ for the defaults; C16 throughput tradeoffs are recorded below.
 > ladder, SM clock-lock sweep, cross-checkpoint concurrency scaling) ·
 > [docs/qualification.md](docs/qualification.md) (full dated record).
 >
-> **Historical:** the benchmark tables further down in this file (and the
-> full set in [benchmarks/RESULTS.md](benchmarks/RESULTS.md)) predate the
-> rebase (v0.1.0–v0.3.1-era images, 400 W RTX, 262144
-> context) and are retained as provenance, not as a current measurement.
+> **Historical:** era-specific measurements (older images and power
+> regimes) are retained as provenance — never as current values —
+> in [benchmarks/RESULTS.md](benchmarks/RESULTS.md) and
+> [docs/tuning-history.md](docs/tuning-history.md).
 > See [PROVENANCE.md](PROVENANCE.md).
 
 | Profile (`QUANT`) | Checkpoint | PLE table format | Default MTP (RTX / Spark) |
@@ -76,20 +76,14 @@ and the next section for hosts too small to pin at all.
 from the checkpoint through the page cache, copied by CPU into a staging arena
 of a few MiB, and gathered on the device. `Shmem` settles near 2.2 GiB instead
 of 49.7, so a host smaller than the table can serve it. Greedy output is
-byte-identical to pinned; the cost is in rates, not results. One knob, three
-values — there is no second flag to set:
+byte-identical to pinned; the cost is in rates, not results. `PLE_STREAM=1`
+is the only knob: on a pinned-capable host you leave it unset; a `piecewise`
+diagnostic value exists for experiments and is documented in
+[docs/ssd-stream-findings.md](docs/ssd-stream-findings.md).
 
-| Value | Graphs kept | Use |
-|---|---|---|
-| `PLE_STREAM=1` | `FULL_AND_PIECEWISE` | staged streaming; what you want on a small host |
-| `PLE_STREAM=piecewise` | `PIECEWISE` (forced) | diagnostic only — isolates the graph-regime cost |
-| unset (`0`) | default | pinned table, when the host fits it |
-
-Measured on `gg` (FP8 checkpoint, one RTX card, cold cache per boot). All four
-arms share one recorded power envelope: the driver applies `sudo -n nvidia-smi
--pl 300` before the first cell and prints what the card reports — 300.00 W — so
-the deltas below are paired within a single job. Strict hash `7c1421daade83d79`
-identical on every arm:
+Measured on `gg` (FP8 checkpoint, one RTX card, cold cache per boot; all
+arms in one job under one recorded 300 W power envelope; strict hash
+`7c1421daade83d79` identical on every arm):
 
 | Host RAM | Mode | prefill tok/s | decode tok/s | vs pinned |
 |---|---|---:|---:|---:|
@@ -98,18 +92,13 @@ identical on every arm:
 | 32 GiB | `PLE_STREAM=1` | 11,084.4 | 135.3 | −2.3% / −2.7% |
 | 16 GiB | `PLE_STREAM=1` | 11,073.1 | 135.1 | −2.4% / −2.8% |
 
-Streaming's steady-state cost is about 3% of both rates against pinned at matched
-wattage — earlier figures near −15% came from comparing cells across different
-power ceilings and are superseded by this paired run. The caps themselves are
-invisible in serving: capped arms matched the uncapped arm within the host's
-noise floor (~1% prefill, ~0.3% decode), because refaulting is a boot-time
-effect — the 16 GiB cell had already taken ~489k refaults by health and gained
-only 22 more across the entire driven probe. What a cap does change is boot
-time: ~171 s uncapped versus ~271–281 s capped at either size, from cold reads
-through a smaller cache. So: 16 GiB total RAM is the working minimum for
-streaming and 32 GiB comfortable — sizing that buys boot margin, not throughput.
-Below ~8 GiB the engine's fixed ~7 GiB anonymous footprint leaves no usable
-cache and the start OOMs rather than slowing. Full record and drivers:
+The steady-state cost is about 3% on both rates at matched power. A RAM cap
+is invisible in serving — refaulting is a boot-time effect — but changes
+boot time (~171 s uncapped vs ~271–281 s capped). So 16 GiB total RAM is the
+working minimum for streaming and 32 GiB comfortable: sizing buys boot
+margin, not throughput. Below ~8 GiB the engine's fixed ~7 GiB anonymous
+footprint leaves no usable cache and the start OOMs rather than slowing.
+Full record, drivers and the knob's graph-regime details:
 [`docs/ssd-stream-findings.md`](docs/ssd-stream-findings.md).
 
 ## EXL3 expert quantization and the `exl3-ple8` variant
@@ -130,17 +119,12 @@ tolerates FP8, so the half-size table is a memory win, not a quality tax
 (its only measurable cost: one off-by-one orchid repetition miss, 4/5 vs
 5/5).
 
-The measured numbers retained inline — the § MTP tuning table and the
-kernel-choice comparisons — are historical v0.1.0–v0.3.1-era records
-(400 W RTX; one GB10 for Spark). The full matrices — settings, contract
-failures, tool points and ranges, including the `exl3-ple8` mmap profile
-qualified from v0.2.0 with its quality checks, the per-column C1/C16 rates,
-and the full-context boundary runs — are in
-[benchmarks/RESULTS.md](benchmarks/RESULTS.md). Its tool evaluation uses C8
-(eight concurrent cases); those points are not a normalized score and not
-comparable to the C1 numbers above. The original EXL3/NVIDIA columns differ
-in quantization, PLE precision and runtime, so they are not a controlled
-mmap-on/off comparison.
+The full historical matrices — settings, contract failures, tool points and
+ranges for every profile, including this variant's mmap qualification and
+quality checks — are in [benchmarks/RESULTS.md](benchmarks/RESULTS.md); tuning
+sweeps and the kernel-choice measurement record are in
+[docs/tuning-history.md](docs/tuning-history.md). Both are provenance from
+earlier images and power regimes, not current measurements.
 
 ## Platforms
 
@@ -165,13 +149,9 @@ Use `B12X_VOCAB=0` for the native vocabulary projection or
 default on either host (`--engram-config` on the command line overrides the
 launcher entirely).
 
-Spark's original BF16 PLE default completed full qualification in the v0.3.x
-era; those receipts stay in-tree — the shipping-default structured-output run
-with its C8 tool pass lives at
-[benchmarks/rtx-structured-final/qualification.json](benchmarks/rtx-structured-final/qualification.json),
-and the Spark-side checks under [benchmarks/](benchmarks). The RTX columns
-retain their historical measurements. Images were never published for these
-rebases and none are planned: build from source (next section).
+Qualification records for both platforms and all profiles:
+[docs/qualification.md](docs/qualification.md). Runtime images are not
+published and none are planned: build from source (next section).
 
 ## Run
 
@@ -197,18 +177,9 @@ host, build anywhere and transfer the result peer-to-peer, e.g.
 `zstd -d | podman load`), or `skopeo copy docker-archive:...`.
 
 Current RTX test host: two RTX PRO 6000 Blackwell 96 GB cards (4x8-pin),
-driver 615.78.08, on a Threadripper 9970X with ~996 GiB CPU RAM. Test legs
-run on **GPU index 1** (`GPU=1`, selected via the podman CDI entity; set to
-600 W with `sudo nvidia-smi -pl 600` — not persistent across reboots); GPU 0
-is reserved. The 2026-10-07 comparison measurements (v0.31.0 image) predate
-the second card and used a single card at 600 W. The historical 400 W columns (above and in
-benchmarks/RESULTS.md) were measured on the same class of card at a 400 W
-limit. Spark uses a GB10 with approximately
-121.63 GiB shared CPU/GPU memory and driver 580.159.03.
-Each target/draft token embedding adds approximately 1.184 GiB of host storage
-beyond the PLE table. Leave additional memory for model loading, the server
-and the operating system; 95/48 GiB are table sizes, not whole-server memory
-requirements. Checkpoint weights are downloaded separately.
+driver 615.78.08, on a Threadripper 9970X with ~996 GiB RAM. Spark test
+host: a GB10 with ~121.63 GiB unified memory, driver 580.159.03. Checkpoint
+weights are downloaded separately (`download.sh`).
 
 ```bash
 # Stop before switching models to release the host tables.
@@ -261,14 +232,13 @@ read-only. The launcher uses the native multiprocessing executor and passes
 the PLE storage mode through `--engram-config`.
 
 Sixteen scheduler slots do **not** mean sixteen simultaneous full-context
-requests (262144 native, 524288 with the YaRN default) fit in the KV pool. The final tests include sixteen overlapping
-short-context client streams and a separate exact full-context boundary test.
-The KV pool is profiled at startup and can differ between hosts even with the
-same memory-utilization setting; runtime receipts retain the actual capacity.
-Measured startup KV pools were 796612 tokens for resident EXL3, 686817 for
-resident NVIDIA and 880600 for EXL3 PLE8 mmap (3.04×, 2.62× and 3.36× the
-configured context); actual scheduling also depends on
-request mix. Use the context and concurrency tables in [benchmarks/RESULTS.md](benchmarks/RESULTS.md) to distinguish those cases.
+requests (262144 native, 524288 with the YaRN default) fit in the KV pool.
+The pool is profiled at startup and can differ between hosts even with the
+same memory-utilization setting — typically a few multiples of the
+configured context — and actual scheduling depends on request mix. Every
+runtime receipt records the pool it measured; qualification runs include
+both sixteen overlapping short-context streams and an exact full-context
+boundary test.
 
 ## Mmap PLE
 
@@ -289,8 +259,7 @@ dereferences pageable host memory through the host page tables
 the CUDA driver checks at startup. DGX Spark (GB10, unified memory) passes and
 defaults to mmap. A discrete RTX PRO 6000 reports the attribute as 0 (measured
 on driver 615.71.09), so the RTX default is `PLE_MMAP=0`: the upstream
-host-offloaded resident table (`cpu_offload`, the same v0.1.0-era behavior as
-the historical RTX benchmark rows). Setting `PLE_MMAP=1` on unsupported
+host-offloaded resident table (`cpu_offload`). Setting `PLE_MMAP=1` on unsupported
 hardware fails fast with the driver-reported attribute. Token embeddings
 remain in host RAM in either mode. Mapped tables cover the checkpoint's
 actual dtype: BF16 for `exl3`, FP8 E4M3 with its scalar scale for
@@ -306,95 +275,41 @@ QUANT=exl3-ple8 GPU=0 bash start.sh  # FP8 PLE, smaller checkpoint/cache footpri
 # PLE_MMAP=1/0 overrides the platform default; Spark defaults to mmap.
 ```
 
-The old PR #54129 gather-based backport and its B12x-era tuning knobs are
-removed with the rebase; its review tests targeted code paths the upstream
-redesign no longer has (streamed-scale comparison). The upstream test suite
-`tests/test_ple_pageable.py` (594 checks at the PR head) is vendored for
-GPU-equipped hosts. Mapped pages remain clean and reclaimable in the file
-cache. The historical mmap snapshots in [benchmarks/RESULTS.md](benchmarks/RESULTS.md) remain valid observations of the
-pre-rebase runtime.
+The upstream test suite `tests/test_ple_pageable.py` (594 checks at the PR
+head) is vendored and runs on GPU-equipped hosts. Mapped pages accumulate in
+the OS file cache but remain clean and reclaimable — mmap is not a memory
+leak and not a fixed memory limit. Benchmarks use the existing page cache
+with explicit warmups, so benchmark numbers never establish cold-disk
+throughput.
 
-Mapped pages may accumulate in Linux's file cache, but remain clean and
-reclaimable. An initial snapshot showed about 2.3 GiB resident across the
-47.68 GiB table mappings, with no anonymous or dirty PLE mapping pages. This
-is not a fixed memory limit. Benchmarks use an ext4 filesystem on a Samsung
-9100 PRO 4TB NVMe, the existing OS page cache and explicit warmups; they do
-not establish cold-disk throughput or a minimum host-RAM requirement.
+## MTP defaults
 
-## MTP tuning and C16 tradeoffs
-
-These RTX v0.1.0 resident-mode development comparisons use the same seven C1 workloads (three measured
-responses each). C8/C16 are shorter probes: 128 forced prose tokens, one measured
-batch after warmup. They are distinct from the final 256-token, three-run client
-matrix in [benchmarks/RESULTS.md](benchmarks/RESULTS.md). Small differences between runs are not a statistical proof of
-superiority; defaults use the best observed mixed C1 result.
-
-| Quant | Draft policy | C1 weighted blend, tokens/s | C8 aggregate | C16 aggregate |
-|---|---|---:|---:|---:|
-| EXL3 | Off | 92.76 | 465.99 | 762.88 |
-| EXL3 | 1 | 131.54 | 561.14 | 861.92 |
-| EXL3 | 2 | 149.16 | 532.52 | 718.39 |
-| EXL3 | **3, default** | **152.97** | — | — |
-| EXL3 | 4 | 150.63 | 408.90 | 486.12 |
-| EXL3 | Adaptive 3 → 1 | 150.71 | 516.51 | 792.07 |
-| NVFP4 | Off | 96.38 | 500.96 | 855.50 |
-| NVFP4 | 1 | 130.35 | 597.43 | 915.16 |
-| NVFP4 | **2, default** | **152.40** | 552.95 | 881.49 |
-| NVFP4 | 3 | 149.46 | 549.68 | 544.11 |
-| NVFP4 | Adaptive 2 → 1 | 146.04 | 585.89 | 858.97 |
-
-Adaptive policies use the longer draft for 1–4 scheduled requests and one draft
-token for 5–16. Neither improved the observed C1 blend. MTP1 is a measured option
-for higher C16 throughput at a substantial C1 cost. The MTP4 EXL3 and MTP3 NVIDIA
-C16 probes reached only 14 and 13 overlapping streams, respectively.
-
-To reproduce the EXL3 adaptive comparison, suppress the automatic static
-configuration and supply the measured scheduler policy explicitly:
-
-```bash
-QUANT=exl3 PLE_MMAP=0 MTP_TOKENS=0 bash start.sh --speculative-config \
-  '{"method":"mtp","num_speculative_tokens":3,"num_speculative_tokens_per_batch_size":[[1,4,3],[5,16,1]]}'
-```
-
-For code-heavy C1 traffic, EXL3 MTP4 reached 217.18 tokens/s on the greedy
-`merge_intervals` workload, versus 202.99 in the qualified MTP3 run. NVIDIA
-MTP3 reached 202.67 versus 182.82 with MTP2. These are workload-specific options:
-set `MTP_TOKENS=4` or `3` respectively. They are not the separate sampled async
-coding task reported in [benchmarks/RESULTS.md](benchmarks/RESULTS.md). Full tuning receipts and exceptions are in the
-[qualification ledger](docs/qualification.md) and [raw benchmarks](benchmarks).
-
-Spark's BF16 mmap comparisons favor **MTP2** for the mixed C1 workload.
-The initial readahead-off sweep measured 26.29, 27.32, 25.72 and 24.14 tokens/s
-for MTP1 through MTP4. Targeted readahead raised the MTP2 blend to 29.21;
-adding B12x vocabulary on the same host raised it to 30.75. The combined
-MTP2 / readahead2048 / B12x vocabulary profile measures **31.11 tokens/s**
-in the completed qualification.
-[All Spark tuning receipts](benchmarks/spark-review/TUNING.md) retain the
-C16 probes and same-host comparisons. The 128-range and 2048-range short
-C16 probes measured 89.09 and 97.14 tokens/s; these single probes are distinct
-from the final client matrix.
+Draft tokens default to **3** for the EXL3 profiles on RTX and **2** for
+`nvfp4` and on Spark — the best measured mixed-C1 blend per profile under
+the C1-priority defaults. Adaptive draft policies (long draft at low
+concurrency, one token at high) were swept and rejected. `MTP_TOKENS=0`
+disables speculation; `MTP_TOKENS=1` trades C1 latency for higher C16
+aggregate. The full sweep tables, the adaptive-policy reproducer, the
+code-heavy workload-specific options, and Spark's tuning trail are in
+[docs/tuning-history.md](docs/tuning-history.md); receipts and exceptions
+in [docs/qualification.md](docs/qualification.md).
 
 ## Kernel choices
 
-- **EXL3 mixed MoE:** B12x, including the Qwen H2560/I640 projection planner fix
-  pushed to the [fork](https://github.com/tpurtell/sparkinfer-glmrt/commit/c76a40ee684cb3ef7d2c223d56a9b9cff25a3a1e).
+- **EXL3 mixed MoE:** B12x, including the Qwen H2560/I640 projection planner
+  fix from the [fork](https://github.com/tpurtell/sparkinfer-glmrt/commit/c76a40ee684cb3ef7d2c223d56a9b9cff25a3a1e).
 - **QSA attention:** native upstream Triton QSA with FP8 main-KV-cache
-  support (PR 55557), shipped in v0.31.0 itself — the v0.30-era vendored
-  copy is gone. The FP8 cache is dequantized inside the QSA kernel with the
-  layer's host-side scales; the indexer side caches and
-  GDN state are unchanged. The former B12x QSA bridge is retired because v0.30.0
-  rejects FP8 main caches and the merged upstream change supersedes the bridge;
-  its pre-rebase measurements remain historical.
-- **NVIDIA MoE:** native FlashInfer CUTLASS. Precise B12x won isolated component
-  timings but lost the end-to-end C1 blend, 136.74 versus 152.40 tokens/s.
-  `B12X_NVFP4=1` retains the tested optional bridge; it is off by default.
-- **Vocabulary projection:** native on RTX; B12x on Spark. B12x did not improve
-  the RTX mixed C1 blend, but improved the same-host Spark comparison from
-  29.21 to 30.75 tokens/s. `B12X_VOCAB` overrides the platform default.
-- **HC and GDN:** native on both platforms. Spark's native HC was faster at
-  decode sizes; the optional B12x GDN path failed its B16/Q3 numerical check
-  and showed no timing advantage in the earlier cases. RTX comparisons also
-  retained native paths. Reproducers and failures remain in the repository.
+  support (PR 55557, shipped in v0.31.0). The FP8 cache is dequantized
+  inside the kernel using the layer's host-side scales; the indexer side
+  cache and GDN state are unchanged.
+- **NVIDIA MoE:** native FlashInfer CUTLASS. A tested B12x bridge is
+  available behind `B12X_NVFP4=1`, off by default.
+- **Vocabulary projection:** native on RTX, B12x on Spark; `B12X_VOCAB`
+  overrides the platform default.
+- **HC and GDN:** native on both platforms.
+
+The measured comparisons behind each choice:
+[docs/tuning-history.md](docs/tuning-history.md).
 
 The [Dockerfile](Dockerfile) pins the base image and B12x revision. The
 [patches](patches) now carry the EXL3 namespace/MTP-mapping loader port, the
@@ -408,16 +323,6 @@ CompressedTensors PLE selection, ModelOpt PLE selection and structured-output
 ports (upstream code since v0.30/v0.31/v0.32).
 [Provenance](PROVENANCE.md) distinguishes borrowed benchmark contracts from new
 integration work. Model licenses apply separately from the recipe's [license](LICENSE).
-
-The v0.1.0 runtime receipts retain the original image IDs. The follow-on
-v0.2.0 release adds mmap support and its reviewed validation fixes, with full
-`exl3-ple8` mmap qualification on RTX; v0.3.0/v0.3.1 add native Spark support
-and the resident-mode repair. The current branch completes three engine
-rebases (v0.30.0, v0.31.0, then released v0.32.0) and carries the 2026-10-07
-RTX comparison in `docs/`. Publishing runtime images was tried and retired:
-the registry packages were the old maintainer's, fell two rebases behind, and
-were deleted as a distribution path on 2026-10-20 — building from source is
-the design, not a fallback. Historical RTX evidence is retained.
 
 ## Reproduce qualification
 
@@ -459,17 +364,14 @@ are targeted checks, not broad capability benchmarks. Exact orchid repetition
 is unreliable, and throughput figures include outputs that fail contracts.
 
 
-## Historical measurement tables
+## Historical results
 
-The complete pre-rebase result tables (v0.1.0 EXL3/NVFP4 resident, v0.2.0
-EXL3 PLE8 mmap, Spark BF16 mmap: seven content workloads, orchid repetition,
-sampled prose, prefill matrix, context/decode scaling, the reference coding
-task, tool checks and memory snapshots) live in
-[benchmarks/RESULTS.md](benchmarks/RESULTS.md), generated from the raw
-receipt directories by `scripts/summarize-results.py`. They were measured at
-400 W, at 262144 context, on images predating the v0.30.0/v0.31.0/v0.32.0
-rebases — provenance only; the MTP-tuning and kernel-choice numbers retained
-inline above belong to the same era and power regime. Current measurements:
+Era-specific measurements (older images, power settings and hosts) are
+provenance, not current documentation. They live in
+[benchmarks/RESULTS.md](benchmarks/RESULTS.md) (generated from the archived
+receipt directories by `scripts/summarize-results.py`),
+[docs/tuning-history.md](docs/tuning-history.md) (MTP sweeps, kernel-choice
+comparisons, release-era notes) and [docs/qualification.md](docs/qualification.md)
+(the dated qualification ledger). Current measurements:
 [docs/performance-comparison.md](docs/performance-comparison.md) and
-[docs/quality-comparison.md](docs/quality-comparison.md), with the v0.32
-parity and re-qualification record in [docs/qualification.md](docs/qualification.md).
+[docs/quality-comparison.md](docs/quality-comparison.md).

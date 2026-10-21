@@ -3736,6 +3736,10 @@ Gate for the whole table: `scripts/test-ple-knob-resolution.py`, offline, agains
 
 # gg cache ladder re-run under one recorded power envelope (supersedes the tables above)
 
+Superseded claim, recorded for completeness: the earlier streaming-vs-pinned
+figures near −15% came from comparing cells measured under different power
+ceilings; this paired single-envelope run supersedes them (~3%).
+
 Same driver, rewritten to pair every arm in one job: `scripts/test-gg-cache-pressure.sh`, FP8 checkpoint, TP1,
 one card. The envelope is recorded before the first cell: `sudo -n nvidia-smi -pl 300` applies on gg -- sudo
 works there, which corrects the earlier note claiming its sudoers made the attempt a no-op -- and the header
