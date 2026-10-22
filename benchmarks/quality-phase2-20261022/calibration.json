@@ -1,0 +1,101 @@
+{
+ "ratio": 0.975,
+ "files": {
+  "qa1_294k.json": {
+   "target": 296296,
+   "samples": 14,
+   "sample0_gpt2_tokens": 302172,
+   "expected_ours_approx": 294617,
+   "measured_ours_mean2": 296296,
+   "nominal": 294912
+  },
+  "qa1_327k.json": {
+   "target": 329248,
+   "samples": 14,
+   "sample0_gpt2_tokens": 335782,
+   "expected_ours_approx": 327387,
+   "measured_ours_mean2": 329248,
+   "nominal": 327680
+  },
+  "qa1_360k.json": {
+   "target": 362581,
+   "samples": 14,
+   "sample0_gpt2_tokens": 369390,
+   "expected_ours_approx": 360155,
+   "measured_ours_mean2": 362581,
+   "nominal": 360448
+  },
+  "qa1_393k.json": {
+   "target": 395908,
+   "samples": 14,
+   "sample0_gpt2_tokens": 402998,
+   "expected_ours_approx": 392923,
+   "measured_ours_mean2": 395908,
+   "nominal": 393216
+  },
+  "qa1_458k.json": {
+   "target": 461837,
+   "samples": 14,
+   "sample0_gpt2_tokens": 470214,
+   "expected_ours_approx": 458458,
+   "measured_ours_mean2": 461837,
+   "nominal": 458752
+  },
+  "qa1_491k.json": {
+   "target": 495212,
+   "samples": 14,
+   "sample0_gpt2_tokens": 503823,
+   "expected_ours_approx": 491227,
+   "measured_ours_mean2": 495212,
+   "nominal": 491520
+  },
+  "qa4_294k.json": {
+   "target": 296296,
+   "samples": 14,
+   "sample0_gpt2_tokens": 302173,
+   "expected_ours_approx": 294618,
+   "measured_ours_mean2": 296296,
+   "nominal": 294912
+  },
+  "qa4_327k.json": {
+   "target": 329249,
+   "samples": 14,
+   "sample0_gpt2_tokens": 335782,
+   "expected_ours_approx": 327387,
+   "measured_ours_mean2": 329249,
+   "nominal": 327680
+  },
+  "qa4_360k.json": {
+   "target": 362581,
+   "samples": 14,
+   "sample0_gpt2_tokens": 369390,
+   "expected_ours_approx": 360155,
+   "measured_ours_mean2": 362581,
+   "nominal": 360448
+  },
+  "qa4_393k.json": {
+   "target": 395905,
+   "samples": 14,
+   "sample0_gpt2_tokens": 402998,
+   "expected_ours_approx": 392923,
+   "measured_ours_mean2": 395905,
+   "nominal": 393216
+  },
+  "qa4_458k.json": {
+   "target": 461836,
+   "samples": 14,
+   "sample0_gpt2_tokens": 470214,
+   "expected_ours_approx": 458458,
+   "measured_ours_mean2": 461836,
+   "nominal": 458752
+  },
+  "qa4_491k.json": {
+   "target": 495213,
+   "samples": 14,
+   "sample0_gpt2_tokens": 503823,
+   "expected_ours_approx": 491227,
+   "measured_ours_mean2": 495213,
+   "nominal": 491520
+  }
+ }
+}

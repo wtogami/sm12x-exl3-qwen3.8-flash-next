@@ -154,11 +154,18 @@ LONGCTX="${LONGCTX:-${DEFAULT_LONGCTX:-0}}"
 [[ "$LONGCTX" == 0 || "$LONGCTX" == 1 ]] || { echo "LONGCTX must be 0 or 1" >&2; exit 2; }
 MAX_MODEL_LEN="${MAX_MODEL_LEN:-$([[ "$LONGCTX" == 1 ]] && echo 524288 || echo 262144)}"
 EXTRA_ARGS=()
+# YARN_FACTOR/YARN_ATTENTION_FACTOR exist for the tuned-vs-untuned rope study
+# (docs/long-context-quality.md follow-ups); unset they reproduce the shipped
+# override byte-for-byte. MAX_MODEL_LEN applies to the override too, so a
+# factor 1.5 arm with MAX_MODEL_LEN=393216 stays internally consistent.
+YARN_FACTOR="${YARN_FACTOR:-2.0}"
+YARN_AF=""
+[[ -z "${YARN_ATTENTION_FACTOR:-}" ]] || YARN_AF=",\"attention_factor\":${YARN_ATTENTION_FACTOR}"
 if [[ "$LONGCTX" == 1 ]]; then
   case " $* " in
     *" --hf-overrides "*|*" --hf-overrides="*) ;;
     *)
-      EXTRA_ARGS+=(--hf-overrides '{"text_config":{"max_position_embeddings":524288,"rope_parameters":{"rope_type":"yarn","factor":2.0,"original_max_position_embeddings":262144}}}')
+      EXTRA_ARGS+=(--hf-overrides "{\"text_config\":{\"max_position_embeddings\":${MAX_MODEL_LEN},\"rope_parameters\":{\"rope_type\":\"yarn\",\"factor\":${YARN_FACTOR},\"original_max_position_embeddings\":262144${YARN_AF}}}}")
       ;;
   esac
 fi

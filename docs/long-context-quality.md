@@ -47,6 +47,50 @@ the Nth row (counting required): 0.58/0.40 at 75 rows (4K), 0.15 at 310,
 Local position binding is flawless; sequential counting collapses within
 thousands of elements -- the same weakness BABILong qa7 measures.
 
+**5. Phase 2 -- N=50 resamples, fine-depth ladder, tuned-YaRN comparison
+(2026-10-22, receipts `benchmarks/quality-phase2-20261022/`).** Two serving
+lanes in parallel: burst TP2 @2x400 W and gg TP1 @350 W (quality is
+power/topology-invariant per section 1-4 parity checks; paired arm-vs-arm
+cells share one host where possible). Generator: BABILong create_tasks
+pipeline over the PG19 test books, sizes converted to our token space with
+the measured ratio 0.975; per-file achieved lengths in `calibration.json`.
+
+Quotable cells at N=50 confirm phase-1 shapes: native qa1 0.94/0.92/0.86
+(8k/64k/128k), qa2 0.50/0.44/0.40, qa3 0.40/0.36/0.28 -- the qa1-vs-multi-fact
+gap is real, not screening noise. qa7 counting stays weak at BOTH lengths
+(0.42/0.38), matching the counting-collapse finding. YaRN arm at the official
+512k bin: qa1 0.72, qa2 0.24. The earlier qa2 inversion (0.40 at N=20)
+regressed to the trend line at N=50 as expected from the CI note. Table probe
+@524,032 reproduced exactly: labeled presence/aligned 1.00/1.00 (n=50),
+ordinal presence 1.00 / aligned 0.00. NoLiMa bracket: 2K 0.74-0.83 across
+depths, 4K 0.62-0.72 -- flat-vs-depth again, level-shift between lengths:
+the length effect, not a position effect.
+
+Fine ladder (generated depths in our tokens, qa1/qa4, N=10, A = shipping
+YaRN f2.0):
+
+| depth | A qa1 | A qa4 | B qa1 | B qa4 | C qa1 | C qa4 |
+|---|---|---|---|---|---|---|
+| 294k | 0.90 | 0.70 | 0.30 | 0.30 | 0.80 | 0.70 |
+| 327k | 0.80 | 0.90 | 0.10 | 0.50 | 0.40 | 0.60 |
+| 360k | 0.80 | 0.80 | 0.10 | 0.20 | 0.50 | 0.50 |
+| 393k | 0.70 | 0.80 | 0.10 | 0.10 | 0.00* | 0.10* |
+| 458k | 0.40 | 0.60 | 0.00 | 0.20 | -- | -- |
+| 491k | 0.70 | 0.70 | 0.10 | 0.10 | -- | -- |
+
+\*C cells at its own window edge: many samples exceed 393,216 tokens and are
+counted skips (answered=3/10). Between the phase-1 bins the curve is gently
+declining, no additional cliff between 294k and the official 512k bin; the
+512k N=50 anchors (qa1 0.72) sit on the trend, not below it.
+
+Arm comparison (same files, same stride subsets, paired cells): shipping
+untuned A scores >= tuned B in **all twelve** pairs (median gap ~0.4), plus
+both 512k anchors. The mscale=1.72 attention_factor is worse than the YaRN
+formula default on this model; keep the shipping config. A-vs-C is close on
+overlapping depths; window-choice (393K vs 524K) stays an ops/concurrency
+decision rather than a quality one. TTFT differs by lane as expected from TPS
+topology (burst ~30-53s @524K vs gg ~47-81s); scores do not.
+
 ## Findings
 
 - **The headline context number is capability-dependent.** "512K context"
@@ -54,10 +98,10 @@ thousands of elements -- the same weakness BABILong qa7 measures.
   practically misleading (multi-fact reasoning crosses its threshold by
   ~8-64K regardless of config; associative retrieval by ~2K).
 - **No YaRN tax was detectable in-window on any of four mechanisms**
-  (retrieval, reasoning, association-independent config, position). This
-  does NOT generalize to tuned-vs-untuned YaRN arms or to mscale ablations
-  (still parked), but the shipping YaRN config is not taxing native-window
-  quality on these instruments.
+  (retrieval, reasoning, association-independent config, position). The
+  tuned-vs-untuned follow-up now closes it: the shipping f2.0 config beats
+  the hand-tuned attention_factor variants on every paired deep cell, so
+  the default is the tuned-for-this-model choice, not a placeholder.
 - **Counting/ordinal arithmetic is the model's sharpest weakness**
   (two independent instruments, floor by ~300 sequential elements). Worth
   stating in user docs; avoid workflows that require enumerating items.
@@ -74,10 +118,13 @@ documents.
 
 ## Caveats and follow-ups
 
-- N=20/25 screening: +-15pp CIs; isolated inversions (qa2 256k vs 512k)
-  are inside noise. Quote-worthy cells need an N=50 pass: BABILong
-  qa1/qa2/qa3 at 8k/64k/128k both arms; qa7 across lengths; NoLiMa 2K/4K
-  to bracket the effective-length crossing; table-labeled 524K.
+- Screening cells with +-15pp CIs were resampled at N=50 for the quotable
+  set (phase 2 above); remaining open: qa2 at 256k/512k with larger N (the
+  shallow-vs-deep non-monotonicity in qa1 @458k/@491k is within N=10 noise
+  and only matters if a per-bin effective-length number gets quoted), and
+  qa7 past 64k. Intermediate attention_factor values (~1.2-1.5) untested;
+  the 12/12 paired win of the default over 1.72 suggests the formula value
+  is already near-optimal for this checkpoint.
 - NoLiMa base (0.81) is itself mid-pack, so its effective length mixes
   task-fluency and length-decay (their base-score convention is applied).
 - BABILong/NoLiMa token lengths come from the released files; our
