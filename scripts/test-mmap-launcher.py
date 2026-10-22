@@ -69,3 +69,29 @@ with tempfile.TemporaryDirectory() as tmp:
     args = subprocess.check_output(['bash', str(root/'start.sh')], env=env, text=True).splitlines()
     assert engram_arg(args)=={'cpu_offload':True,'checkpoint_mapped':False}
     print(json.dumps({'profile': 'exl3', 'explicit_override': True, 'passed': True}))
+    # The scale-out flag is platform-gated, not host-gated, so the host's own
+    # architecture must not decide the outcome: shim uname and cover both
+    # branches from one box, because Spark is not available here. Upstream vLLM
+    # (v0.30.0 onward) answers 403 on /v1/chat/completions/render without the
+    # flag, which is what the coding leg renders through; the partner dev build
+    # Spark still pins has no such argument and vLLM exits 2 on unknown serve
+    # arguments, so the Spark branch adding it would break every Spark boot.
+    uname = fake / 'uname'
+    uname.write_text('#!/bin/sh\nprintf "%s\\n" "$TEST_ARCH"\n')
+    uname.chmod(0o755)
+    for arch, expected in (('x86_64', True), ('aarch64', False)):
+        args = subprocess.check_output(['bash', str(root/'start.sh')],
+            env=env|{'TEST_ARCH':arch,'QUANT':'exl3','PLE_MMAP':'0'}, text=True).splitlines()
+        assert ('--enable-scale-out' in args) is expected, (arch, args[-8:])
+        print(json.dumps({'architecture':arch,'enable_scale_out':expected,'passed':True}))
+    # The opt-out has to be a genuine absence rather than a rewritten flag...
+    args = subprocess.check_output(['bash', str(root/'start.sh')],
+        env=env|{'TEST_ARCH':'x86_64','QUANT':'exl3','PLE_MMAP':'0','ENABLE_SCALE_OUT':'0'},
+        text=True).splitlines()
+    assert '--enable-scale-out' not in args
+    # ...and an operator who names the flag must not get it twice, since the
+    # launcher appends its own arguments after "$@".
+    args = subprocess.check_output(['bash', str(root/'start.sh'),'--enable-scale-out'],
+        env=env|{'TEST_ARCH':'x86_64','QUANT':'exl3','PLE_MMAP':'0'}, text=True).splitlines()
+    assert args.count('--enable-scale-out') == 1, args
+    print(json.dumps({'profile':'exl3','scale_out_optout_and_dedupe':True,'passed':True}))

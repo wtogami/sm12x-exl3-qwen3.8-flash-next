@@ -338,6 +338,45 @@ elif (( TP_SIZE > 1 )); then
   echo "        reject MoE shapes (640/TP is not 128-aligned) unless the" >&2
   echo "        checkpoint geometry changed under you." >&2
 fi
+# Two suites render prompts through the server's own chat template instead of a
+# local one -- benchmark-suite.sh's coding leg (benchmark-code-agent-depth.py)
+# and test-content-vllm.py both POST /v1/chat/completions/render, because a
+# client-side template is not the template the engine will actually tokenize
+# with. On the upstream vLLM line that route is a scale-out endpoint: without
+# this flag the server registers 403 stubs on every scale-out path
+# (entrypoints/scale_out/factories.py, "Scale-out endpoints are disabled") and
+# the leg dies before its first measurement. The flag is present in v0.30.0,
+# v0.31.0 and v0.32.0 alike (checked inside each image), so every image since
+# the v0.31 rebase needs it; the September finals did not, because the partner
+# dev build they ran (0.1.dev20073) served /render ungated and does not define
+# the flag at all.
+#
+# Hence the platform gate rather than an unconditional append: Spark still runs
+# that partner line, where the flag is an UNKNOWN argument, and vLLM's parser
+# stops on those instead of ignoring them -- measured on 0.1.dev20051 with
+# `vllm serve <model> --enable-scale-out`, which exits 2 with
+# "unrecognized arguments: --enable-scale-out" before the model is even
+# resolved. Adding it to the shared argument list would therefore break every
+# Spark boot to repair an RTX-only bench leg. Spark needs nothing here: its
+# engine answers /render unconditionally.
+#
+# The flag only registers routers -- `/render`, `/derender`,
+# `/inference/v1/generate`, `/inference/v1/abort_requests` -- and those paths
+# already exist as 403 stubs when it is off, so nothing about the engine, the
+# KV budget or graph capture moves. It is the API surface that grows, on a
+# host-network listener with no --api-key set: ENABLE_SCALE_OUT=0 is the opt-out
+# for a box exposed beyond the local network, and the coding leg will 403 again
+# if you take it.
+if [[ "$PLATFORM_KIND" == rtx ]] && [[ "${ENABLE_SCALE_OUT:-1}" == 1 ]]; then
+  case " $* " in
+    *" --enable-scale-out "*|*" --enable-scale-out="*) ;;
+    *) EXTRA_ARGS+=(--enable-scale-out) ;;
+  esac
+elif [[ "$PLATFORM_KIND" != rtx && "${ENABLE_SCALE_OUT:-}" == 1 ]]; then
+  echo "  note: ENABLE_SCALE_OUT=1 ignored on Spark: the pinned vLLM there predates" >&2
+  echo "        the flag and rejects unknown serve arguments, and /render is" >&2
+  echo "        already served ungated on that build." >&2
+fi
 # Docker wants --gpus; podman's docker shim rejects its device= syntax and
 # resolves GPUs through CDI instead (see platform-config.sh).
 #

@@ -235,8 +235,14 @@ used in performance tests. The full tool-quality suite uses thinking enabled.
 
 `GPU`, `PORT`, `CONTAINER_NAME`, `HF_CACHE`, `RUNTIME_CACHE`, `CPU_THREADS`,
 `MAX_MODEL_LEN`, `MAX_NUM_SEQS`, `MAX_BATCHED_TOKENS`,
-`GPU_MEMORY_UTILIZATION`, `PLE_MMAP` and `MTP_TOKENS` can override the
-defaults. `MTP_TOKENS=0` disables speculation. Runtime/compiler caches persist
+`GPU_MEMORY_UTILIZATION`, `PLE_MMAP`, `MTP_TOKENS` and `ENABLE_SCALE_OUT` can
+override the defaults. `MTP_TOKENS=0` disables speculation. `ENABLE_SCALE_OUT`
+matters only on RTX, where the launcher adds `--enable-scale-out` by default so
+`/v1/chat/completions/render` answers instead of 403 (see the coding-leg note
+under **Reproduce qualification**); set it to `0` on a box whose port is
+reachable beyond the local network, since the flag also publishes
+`/inference/v1/abort_requests` and the launcher sets no `--api-key`. Spark
+ignores it — the pinned vLLM there has no such argument and renders ungated. Runtime/compiler caches persist
 under `~/.cache/qwen38-rtx/<profile>`; checkpoint caches are mounted
 read-only. The launcher uses the native multiprocessing executor and passes
 the PLE storage mode through `--engram-config`.
@@ -367,6 +373,17 @@ Every suite leg also writes `runtime.json` into `RESULT_DIR`: the image, the
 checkpoint it was pointed at, and the launch facts a client receipt cannot know
 -- which PLE table path (`host-offload` or `checkpoint-mapped`), the server's own
 MTP draft length, and the batch budgets. `SKIP_RUNTIME_CAPTURE=1` omits it.
+
+Only `benchmark-suite.sh` runs the coding leg (`PART=coding`);
+`qualification-legs.sh` has no such step, so a qualification pass cannot notice a
+broken server-side renderer. That is how the coding leg survived the move to
+upstream vLLM untouched: the route it renders through,
+`/v1/chat/completions/render`, is a scale-out endpoint there, and it answers
+`403 Scale-out endpoints are disabled` unless the server was launched with
+`--enable-scale-out`. The RTX launcher adds that flag by default
+(`ENABLE_SCALE_OUT=1`; `test-content-vllm.py` uses the same route), Spark's
+pinned vLLM neither has the flag nor needs it, and both branches are asserted by
+`scripts/test-mmap-launcher.py`.
 
 Tool-eval-bench is pinned at `cf54b4bfe705f12f71e8866f10730572497c8105`.
 The complete reports preserve failed and partial cases. Vision and retrieval
