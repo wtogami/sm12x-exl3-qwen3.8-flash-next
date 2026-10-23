@@ -193,6 +193,43 @@ documented here as the compressed-tensors format reference, where its
 measured strengths (nvidia-matching prefill, EXL3-matching quality) still
 stand. Re-add it to the README if the C16 path is ever explained or fixed.
 
+## TP2 on the x16 pair (2026-10-22, burst, 2x300 W)
+
+EXL3 K4.25 at `TP_SIZE=2 GPU=1,2` — the two Max-Q cards, both on x16 Gen4 — placed
+against the 2026-10-19 TP2 reference, which ran `GPU=0,1` on this same host and so
+included the x8 Workstation card. The third card stayed out of the engine
+throughout (2 MiB, 22.9 W). Same protocol both days: clients mode, 3-run decode
+ladder, MTP3, YaRN 512K, FP8 KV, EP implied, 2x300 W. Different image build: today
+`:local` = `abbde425a717` (carries the [#62409](https://github.com/vllm-project/vllm/pull/62409)
+mrope floor), then `:v0.32-test` = `72f854abdf83`.
+
+| TP2+EP @ 2x300 W | C1 | C2 | C4 | C8 | C16 | TTFT 128K |
+|---|---|---|---|---|---|---|
+| exl3, x8+x16 pair (Oct-19) | **180.1** | **292.7** | **453.3** | **735.4** | 981.9 | 14.9 s |
+| exl3, x16+x16 pair (Oct-22) | 167.1 | 266.8 | 431.1 | 702.0 | **1003.0** | **13.82 s** |
+
+Full-suite detail behind the Oct-22 row: seven weighted blend 209.7 tok/s (draft
+acceptance 53.43%, mean acceptance length 2.603) at 19/21 contracts on the timed
+runs — every miss is the `fable` word-count contract (1/3), the known-unreliable
+class; orchid 329.0 tok/s at 4/5; api-tools 16/16; vision 1/4/16; retrieval 6/6
+with 240K filler at 5/50/95% depth; the 261888 boundary probe at 332.3 tok/s; and
+the coding leg flat at 252–279 tok/s from 0 to 261632 tokens, i.e. no depth cliff
+on the C1 reference edit task. Prefill runs 10325 tok/s at 2048 down to 8994 at
+261632. Receipts: [tp2-maxq-x16-20261022](../benchmarks/tp2-maxq-x16-20261022/),
+with `runtime.json` (flagless launch, ten legs) and `code-agent-runtime.json` (the
+relaunch carrying `--enable-scale-out`, coding leg only) recorded separately.
+
+**Read these as one unpaired comparison, not as a link-width experiment.** The
+wider pair is +2.1% at C16 and 7% faster at 128K TTFT but 7.2% *slower* at C1 and
+4.5–8.9% slower across C2–C8 — a shape, not a win. The two boots differ by image build
+as well as by card pair, and the direction even flips between single-stream and
+aggregate, which is what cross-boot spread looks like at this protocol's run
+counts. Nothing here separates PCIe lane width from the build change, and an x16
+vs x8 claim would need a same-day, same-image, same-power A/B across the two pairs
+under the same-card ladder protocol. What the row does establish is that the pair
+qualifies: the recipe's full eleven-leg suite passes on it, and the coding leg
+passes on v0.32 for the first time.
+
 ## End-to-end eval legs (wall-clock, 16-way concurrent requests)
 
 | Leg | EXL3 | nvidia | RHA | exl3-ple8 |
@@ -226,9 +263,11 @@ FP4-GEMM/trellis paths), not the table size on its own.
   nvidia ships FP8 at 51.2 GB), has the worst eval-leg wall time, and is
   the only build that stalls at C16; keep it as the CT-format reference,
   not the performance pick.
-- No cross-release comparisons: every number above is same-day
-  (2026-10-07) on image `8294c3c914c0`; `nvidia-smi -pl`/`-lgc` do
-  not persist across reboots.
+- No cross-release comparisons: every number in the single-card sections
+  is same-day (2026-10-07) on image `8294c3c914c0`; `nvidia-smi -pl`/`-lgc`
+  do not persist across reboots. **TP2 on the x16 pair** is the one
+  exception in this file — a 2026-10-22 two-card boot on a later image
+  build, deliberately kept out of the build ranking above.
 
 Receipts:
 [clock-sweep-20261007](../benchmarks/clock-sweep-20261007/) (lock sweep
