@@ -1,0 +1,7 @@
+util	status	weights_GiB	kv_GiB	kv_tokens	capture	vram_free_MiB	note
+0.94	OK	72.01	14.55	977726	3 s/0.28 GiB/	5254	probe:pass
+0.95	OK	72.01	15.5	1040074	3 s/0.28 GiB/	4312	probe:pass
+0.96	OK	72.01	16.45	1105255	3 s/0.28 GiB/	3312	probe:pass
+0.97	OK	72.01	17.41	1167603	3 s/0.28 GiB/	2372	probe:pass
+0.98	OK	72.01	18.35	1232785	3 s/0.28 GiB/	1368	probe:pass
+LADDER DONE 2026-10-21T04:42:59Z

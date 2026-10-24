@@ -1,0 +1,6 @@
+util	stress	peak_used_MiB	final_free_MiB	oom_lines	note
+0.95	PASS	93040	4302	0	5, "prompt_tokens": 240070, "passed": true, "response": "574f8fae2625a5f178dd"}
+0.96	PASS	94022	3320	0	5, "prompt_tokens": 240071, "passed": true, "response": "574f8fae2625a5f178dd"}
+0.97	PASS	94982	2360	0	5, "prompt_tokens": 240072, "passed": true, "response": "574f8fae2625a5f178dd"}
+0.98	PASS	95966	1376	0	5, "prompt_tokens": 240072, "passed": true, "response": "574f8fae2625a5f178dd"}
+STRESS DONE 2026-10-24T00:39:39Z

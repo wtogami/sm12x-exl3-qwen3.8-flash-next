@@ -1,0 +1,4 @@
+util	status	weights_GiB	kv_GiB	kv_tokens	capture	vram_free_MiB	note
+0.94	OK	72.25	14.13	949386	3 s/0.28 GiB/	5362	probe:pass host_avail=16.7GiB pin=95.368 GiB
+0.98	OK	72.25	17.94	1204445	3 s/0.28 GiB/	1476	probe:pass host_avail=17.2GiB pin=95.368 GiB
+LADDER DONE 2026-10-24T00:55:41Z
