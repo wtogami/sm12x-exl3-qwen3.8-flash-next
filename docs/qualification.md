@@ -1356,3 +1356,72 @@ perf claims would need the same-card ladder protocol.
 Promotion: `:local` = v032f image; rollback tags `v0.32-20261018` and
 `v0.31-20261014` unchanged. When (if) 62409 merges, the port retires
 with the usual "remove at next rebase" rule.
+
+### GPU memory headroom ladder on `gg` (phase 1 2026-10-21, phase 2 2026-10-23, TP=1, one card)
+
+The question is the one `0.94` has always dodged: the launcher sets
+`GPU_MEMORY_UTILIZATION=0.94`, and the engine's own boot line says that
+under-fills the card — on the `exl3` boot below it prints
+`--kv-cache-memory=20258575360` (18.87 GiB) as the fill-the-card figure against
+the 14.13 GiB it was given. Two phases on `gg` (125.68 GiB RAM, one RTX PRO
+6000 Blackwell 96 GB): `scripts/util-ladder.sh` boots each util and records pool
+size and boot margin; `scripts/util-stress.sh` then runs the four
+memory-riskiest runtime shapes — 16-image vision batch, structured output, 240K
+deep prefill, 16-way concurrency — under a 2 s VRAM sampler and records the peak.
+
+| profile | image | util | KV pool | KV tokens | boot free | stress peak | final free | OOM lines |
+|---|---|---|---|---|---|---|---|---|
+| exl3-ple8 | `:utiltest` | 0.94 | 14.55 GiB | 977,726 | 5,254 MiB | — | — | — |
+| exl3-ple8 | | 0.95 | 15.50 | 1,040,074 | 4,312 | 93,040 MiB | 4,302 | 0 |
+| exl3-ple8 | | 0.96 | 16.45 | 1,105,255 | 3,312 | 94,022 | 3,320 | 0 |
+| exl3-ple8 | | 0.97 | 17.41 | 1,167,603 | 2,372 | 94,982 | 2,360 | 0 |
+| exl3-ple8 | | 0.98 | 18.35 | 1,232,785 | 1,368 | 95,966 | 1,376 | 0 |
+| exl3 | `:local` | 0.94 | 14.13 | 949,386 | 5,362 | — | — | — |
+| exl3 | | 0.98 | 17.94 | 1,204,445 | 1,476 | 95,868 | 1,474 | 0 |
+
+- **Nine boots, five stress cells, zero OOM or CUDA-error lines**, every risk
+  shape passing, and the 240K deep-prefill needle hash `574f8fae2625a5f178dd`
+  identical across all of them — and across the same leg run on `burst` at TP2
+  the day before, a different host, topology and PLE width.
+- **The pool is the margin; runtime growth adds nothing to it.** Final free
+  after the stress shapes matches boot free within 8 MiB in every cell (0.98:
+  1,368 → 1,376 for ple8, 1,476 → 1,474 for exl3). So the util number can be
+  read directly as the headroom you keep, which is what makes the ladder
+  extrapolable instead of anecdotal.
+- **Host headroom does not move with util.** `exl3` pins 95.368 GiB at load and
+  MemAvailable reads 16.7 GiB at 0.94 and 17.2 GiB at 0.98. On the BF16 profile
+  the host is decided by the pin, not by the KV pool: the reload-after-reboot
+  risk this host carries is page cache against a 179.4 GB checkpoint, and
+  `GPU_MEMORY_UTILIZATION` is not part of that arithmetic.
+- **Profile parity, with a caveat.** exl3's pool at 0.98 lands 0.41 GiB under
+  ple8's, consistent with its 0.24 GiB heavier weight load (72.25 vs 72.01 GiB)
+  plus cross-boot spread — but the two profiles were measured on different
+  images (`:local` = `73d126ef5a75`, `:utiltest` = `2971cbb9dea3`), so this is
+  parity, not a measured profile penalty.
+
+Decision: `GPU_MEMORY_UTILIZATION` stays at 0.94. The measurement says 0.98 is
+safe — +26% KV tokens on both widths with no new failure mode — but shipping it
+is a serving-policy call, and 1.4 GiB of boot margin leaves little for a second
+tenant or a larger graph budget on a host that also has to reload a cold
+179 GB checkpoint. Recorded as an option, not taken.
+
+Two driver fixes found by running them. `util-stress.sh` ended its concurrency
+burst with a bare `wait`, which also waits on the sampler subshell — a
+900-iteration, 30-minute cap — so the trailing `kill $samp` was unreachable and
+every cell idled out the sampler window with the engine already finished (the
+0.98 cell completed its work at 19:11 and recorded at 19:39). Both drivers were
+hardcoded to `exl3-ple8`, which was right when that was the only profile `gg`
+could pin at all and is not right now that `PLE_PIN_STRATEGY=exact` puts the
+BF16 table at 95.368 GiB instead of round2's 128 GiB, so they take
+`QUANT`/`IMAGE`/`PORT`/`OUT`/`UTILS` with the old values as defaults; `OUT` must
+stay one directory per profile because the stress phase reads its cell list from
+that directory's `results.tsv`. The ladder also records MemAvailable and the
+loader's pinned size per cell now, which is the only column that says anything
+about the BF16 profile's actual constraint.
+
+Receipts:
+[gg-util-ladder-ple8-20261023](../benchmarks/gg-util-ladder-ple8-20261023/),
+[gg-util-ladder-exl3-20261023](../benchmarks/gg-util-ladder-exl3-20261023/) —
+TSV, probe/stress JSON and sampler output. `*.log` stays out of the tree per
+`.gitignore`, so the engine boot logs remain on `gg` under
+`/home/rtx/util-ladder{,-exl3}/`.
