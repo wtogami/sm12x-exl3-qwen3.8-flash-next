@@ -1,0 +1,5 @@
+util	status	depth_tokens	concurrency	requests_ok	preemptions	peak_waiting	wall_s	note
+0.94	PROBE-FAIL							no measurement rows
+0.96	PROBE-FAIL							no measurement rows
+0.98	PROBE-FAIL							no measurement rows
+DEEP CONCURRENCY DONE 2026-10-24T06:27:43Z

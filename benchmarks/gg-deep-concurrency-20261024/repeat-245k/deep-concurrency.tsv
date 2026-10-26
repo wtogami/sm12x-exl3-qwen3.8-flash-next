@@ -1,0 +1,8 @@
+util	status	depth_tokens	concurrency	requests_ok	preemptions	peak_waiting	wall_s	note
+0.94	OK	245248	4	4/4	1.0	2.0	363.83	
+0.94	OK	245248	4	4/4	1.0	2.0	366.29	
+0.96	OK	245248	4	4/4	7.0	2.0	616.57	
+0.96	OK	245248	4	4/4	7.0	2.0	617.65	
+0.98	OK	245248	4	4/4	0.0	2.0	284.94	
+0.98	OK	245248	4	4/4	0.0	2.0	285.46	
+DEEP CONCURRENCY DONE 2026-10-24T17:34:10Z
