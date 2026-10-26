@@ -1423,5 +1423,86 @@ Receipts:
 [gg-util-ladder-ple8-20261023](../benchmarks/gg-util-ladder-ple8-20261023/),
 [gg-util-ladder-exl3-20261023](../benchmarks/gg-util-ladder-exl3-20261023/) —
 TSV, probe/stress JSON and sampler output. `*.log` stays out of the tree per
-`.gitignore`, so the engine boot logs remain on `gg` under
-`/home/rtx/util-ladder{,-exl3}/`.
+`.gitignore` (the engine logs behind the residency findings below are the one
+exception, kept deliberately: they are in
+`gg-deep-concurrency-20261024/mechanism/`).
+
+#### Deep-arrival residency: 0.96 is worse than 0.94, and pages are why
+
+Pool tokens divided by request length is not a residency guarantee. Four
+concurrent 245,248-token prompts each generating 16,384 tokens demand
+1,046,528 resident tokens, so by that arithmetic 0.96 (1,076,915) fits and 0.94
+(949,386) does not. Measured, 0.96 is 1.7× *slower* than 0.94. `exl3` on `gg`,
+one card, YaRN 524288, MTP3, FP8 KV, four sequences per cell:
+
+| util | pool tokens | = 3200-token pages | attention pages for 4 × 261,632 | evictions | wall |
+|---|---|---|---|---|---|
+| 0.94 | 949,386 | 296 | 328 | 1 | 366 s |
+| 0.95 | 1,011,734 | 316 | 328 | 1 | 375 s |
+| 0.955 | 1,045,742 | 326 | 328 | 1 | 381 s |
+| 0.96 | 1,076,915 | 336 | 328 | **7** | **618 s** |
+| 0.965 | 1,108,089 | 346 | 328 | **10** | **722 s** |
+| 0.97 | 1,139,263 | 356 | 328 | 0 | 282 s |
+| 0.98 | 1,204,445 | 376 | 328 | 0 | 285 s |
+
+Reproduced, not luck: 0.96 evicts seven times in four independent samples (walls
+618/617/621/615 s) and it is always the same arrival, evicted, re-prefilled, and
+returning at 37–40 tok/s while its peers run 86–104.
+
+The cause is in the boot log. This model is hybrid — 36 of 48 layers are GDN
+linear attention — and the KV manager equalizes the two page shapes:
+
+```
+Setting attention block size to 3200 tokens to ensure that attention page size is >= mamba page size.
+Padding mamba page size by 0.25% to ensure that mamba page size and attention page size are exactly equal.
+kv lcm block sizes 3200
+```
+
+Residency is therefore counted in 3200-token pages, not tokens, and two things
+follow. First, the token arithmetic misjudges even the direction: 0.955 is 786
+tokens "short" of demand but 2 whole pages short, so it behaves exactly like
+0.94 — the engine admits three sequences, parks the fourth in the wait queue
+(peak_waiting 2), and queueing is nearly free: one eviction, 366 s. Second, a
+sequence occupies pages for its per-layer state as well as its attention, which
+is why 0.96 can hold the 328 attention pages four sequences need and still
+thrash. Bounding the extra per-sequence cost from the observed clean/dirty
+boundary (346 pages thrash, 356 clean) gives 5–7 pages, i.e. 16,000–22,400
+tokens of state per sequence.
+
+That estimate does not close across every shape, and the discrepancy is on the
+record: the two-sequence 523,776-token cell runs clean at 0.96's 336 pages, which
+implies about 4 state pages per sequence rather than 5–7. The likeliest reason is
+that eviction depends on peak *co-residency*, not on the sum of final lengths —
+with serialized deep prefill (42 s per 245K, 89 s per 524K at
+`max_num_batched_tokens=2048`) the first sequence can finish generating before its
+peers reach full length, so the 512K × 2 cell may never demand 342 pages at once.
+So: page quantization is measured and certain, the per-sequence state allowance is
+bracketed but not pinned, and any capacity plan built on `pool_tokens ÷
+request_length` is built on the wrong unit. The engine's own printed
+`Maximum concurrency for 524,288 tokens per request: 2.05x` is exactly that ratio,
+and it overstates residency on this architecture.
+
+What the concurrency grid says overall, `short-output/`, `residency/`,
+`repeat-245k/`, `band-245k/`, `mechanism/` under
+[gg-deep-concurrency-20261024](../benchmarks/gg-deep-concurrency-20261024/):
+
+- **Output length decides what the probe measures.** With 128-token responses no
+  two sequences are ever resident — a response lives ~1 s against a 42–89 s deep
+  prefill — so all 18 cells showed zero evictions and identical walls at every
+  util, even 1.7× oversubscribed. Long outputs are what make residency bind.
+- **Two full-window sequences need ≥ 0.96**: 0.94 evicts once, second TTFT 338 s,
+  wall 419 s; 0.96 and 0.98 evict never, 183 s and 282 s, agreeing to 0.5 s.
+- **Four full-window sequences are 1.9–2.2× oversubscribed on one card at any
+  util** — 6/3/2 evictions at 0.94/0.96/0.98, 923/589/585 s. The queue absorbs it
+  and nothing errors; this is a TP2 question.
+- **Nothing anywhere in this campaign failed, refused an request, or produced an
+  OOM line.** Every consequence of pressure was latency and eviction.
+
+Decision unchanged: `GPU_MEMORY_UTILIZATION` stays 0.94. The gain at 0.98 is +27%
+KV pages and clean four-way mid-depth load, none of which touches C1 — the
+default's stated priority, where 0.94 and 0.98 measured identical (177 vs 178 s).
+The cost is boot margin, 5,362 → 1,476 MiB, which is what currently absorbs an
+unmeasured device-memory shape. If deep concurrent serving is wanted, go to 0.97
+or 0.98 and never stop at 0.96 or 0.965, which are measured worse than the
+default; if a future workload needs capacity planning, count pages
+(`ceil(length / 3200)` plus a state allowance) and not tokens.

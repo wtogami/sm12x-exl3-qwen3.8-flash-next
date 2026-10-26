@@ -236,13 +236,20 @@ used in performance tests. The full tool-quality suite uses thinking enabled.
 `GPU`, `PORT`, `CONTAINER_NAME`, `HF_CACHE`, `RUNTIME_CACHE`, `CPU_THREADS`,
 `MAX_MODEL_LEN`, `MAX_NUM_SEQS`, `MAX_BATCHED_TOKENS`,
 `GPU_MEMORY_UTILIZATION`, `PLE_MMAP`, `MTP_TOKENS` and `ENABLE_SCALE_OUT` can
-override the defaults. `MTP_TOKENS=0` disables speculation. `ENABLE_SCALE_OUT`
+override the defaults. `MTP_TOKENS=0` disables speculation.
+`GPU_MEMORY_UTILIZATION` is worth touching only for deep concurrent load, and
+the ladder is measured rather than linear: on one RTX card 0.97–0.98 serve four
+concurrent ~245K sequences with no evictions while **0.96 and 0.965 are 1.7×
+and 2.0× slower than the 0.94 default**, because residency is counted in 3200-token
+pages plus per-sequence state, not in tokens (see the deep-arrival residency
+section in [docs/qualification.md](docs/qualification.md)). `ENABLE_SCALE_OUT`
 matters only on RTX, where the launcher adds `--enable-scale-out` by default so
 `/v1/chat/completions/render` answers instead of 403 (see the coding-leg note
 under **Reproduce qualification**); set it to `0` on a box whose port is
 reachable beyond the local network, since the flag also publishes
 `/inference/v1/abort_requests` and the launcher sets no `--api-key`. Spark
-ignores it — the pinned vLLM there has no such argument and renders ungated. Runtime/compiler caches persist
+ignores it — the pinned vLLM there has no such argument and renders ungated.
+Runtime/compiler caches persist
 under `~/.cache/qwen38-rtx/<profile>`; checkpoint caches are mounted
 read-only. The launcher uses the native multiprocessing executor and passes
 the PLE storage mode through `--engram-config`.
