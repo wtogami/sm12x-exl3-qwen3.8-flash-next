@@ -121,6 +121,33 @@ mark() {   # $1 = phase name, $2 = note
   PREV_PEAK=$p
 }
 
+# Positive control. Every phase in this probe can only ever report "no growth", and a
+# sampler that cannot SEE growth would report that forever, correctly-shaped and wrong --
+# which is exactly how util-stress.sh came to record a flat 0.98 line for the wrong
+# reason. So grow the device deliberately, inside the engine's own container, and require
+# the sampler to record it. If this fails, nothing below it means anything.
+control() {
+  local before after hi
+  before=$(peak)
+  # 1536 1 MiB blocks is unambiguous against a background of tens of MiB, and it is well
+  # inside the ~5.2 GiB of slack a 0.94 boot leaves -- so it cannot perturb the phases.
+  docker exec "$NAME" python3 -c '
+import torch, time
+t = [torch.empty(1024*1024, dtype=torch.uint8, device="cuda") for _ in range(1536)]
+torch.cuda.synchronize(); time.sleep(16); del t; torch.cuda.empty_cache()' \
+    >>"$OUT/legs.log" 2>&1 || echo "control: docker exec failed (engine gone?)" >> "$OUT/legs.log"
+  sleep 4
+  after=$(peak); hi=$((after - before))
+  if (( hi >= 1024 )); then
+    printf "control-1.5GiB\t%s\tPASS\t%s\t\t\t\tdevice usage rose %s MiB while 1.5 GiB was held\n" \
+      "$after" "$(nsamples)" "$hi" >> "$ROW"
+    return 0
+  fi
+  printf "control-1.5GiB\t%s\tFAIL\t%s\t\t\t\tdevice usage rose only %s MiB -- the sampler cannot see growth, so every 0 below is uninterpretable\n" \
+    "$after" "$(nsamples)" "$hi" >> "$ROW"
+  return 1
+}
+
 stop_engine
 # NOCACHE=1 boots with the torch caching allocator disabled, so every peak demand
 # becomes a real driver allocation and nvidia-smi stops hiding reuse behind a flat
@@ -147,6 +174,10 @@ grep -hE "Desired GPU memory utilization|peak activation|Available KV cache memo
 
 sanity
 mark baseline "boot+warmup, no legs"
+if ! control; then
+  echo "CONTROL FAILED: this sampler cannot detect device-memory growth; its phase rows are not evidence" >> "$ROW"
+  kill $SAMPLER 2>/dev/null; stop_engine; exit 1
+fi
 python3 scripts/test-vision-vllm.py --base-url $B --model "$MODEL" --image-counts 16 --output "$OUT/shape-vision.json" >>"$OUT/legs.log" 2>&1 || echo "vision leg failed" >>"$OUT/legs.log"
 mark vision "16 images, alone"
 python3 scripts/verify-structured-output-live.py --base-url $B/v1 --model "$MODEL" --output "$OUT/shape-structured.json" >>"$OUT/legs.log" 2>&1 || echo "structured leg failed" >>"$OUT/legs.log"
@@ -174,7 +205,7 @@ hand_pids+=($!)
 for p in "${hand_pids[@]}"; do wait "$p"; done
 sleep 5
 mark all-hands "vision + structured + 2 deep prefills overlapping"
-python3 scripts/benchmark-decode.py --base-url $B/v1 --model "$MODEL" --profile "$QUANT" \
+python3 scripts/benchmark-decode.py --base-url $B/v1 --model "$MODEL" --profile "$QUANT" --mtp-tokens "${MTP_TOKENS:-3}" \
   --concurrency 16 --request-mode clients --output-tokens 512 --warmup-runs 1 --runs 2 \
   --output "$OUT/shape-decode16.json" >>"$OUT/legs.log" 2>&1 || echo "decode16 leg failed" >>"$OUT/legs.log"
 mark decode-16-at-cudagraph-bucket "16-way decode, max bucket"
@@ -199,3 +230,7 @@ print("VERDICT: headroom above the engine's own profile:",
       f"{top - base - act:.0f} MiB REQUIRED -- reduce the pool by at least that")
 PY
 echo "PEAK PROBE DONE $(date -u +%FT%TZ)" >> "$ROW"
+# Release the card. A finished probe that leaves its engine holding 92 GiB is a ghost
+# with a heartbeat: it looks like a running experiment to the next audit and it blocks
+# the next boot on that device.
+stop_engine
