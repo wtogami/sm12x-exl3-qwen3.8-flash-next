@@ -37,7 +37,7 @@ stop_engine() {
 for u in $(awk -F'\t' '$2=="OK" && $1!="0.94" {print $1}' "$OUT/results.tsv"); do
   grep -q "^$u\b" "$SROW" && continue
   stop_engine
-  QUANT=$QUANT IMAGE=$IMG GPU=0 PORT=$PORT GPU_MEMORY_UTILIZATION=$u bash start.sh >>"$OUT/ops.log" 2>&1 &
+  QUANT=$QUANT IMAGE=$IMG GPU=${GPU:-0} PORT=$PORT GPU_MEMORY_UTILIZATION=$u bash start.sh >>"$OUT/ops.log" 2>&1 &
   ready=0
   for i in $(seq 1 100); do curl -sf $B/v1/models >/dev/null 2>&1 && { ready=1; break; }; sleep 10; done
   [[ $ready == 1 ]] || { printf "%s\tBOOT-REFAIL\t\t\t\t\n" "$u" >> "$SROW"; stop_engine; continue; }

@@ -59,9 +59,14 @@ stop_engine() {
 }
 
 run_cell() {  # $1 = utilization
-  local u="$1" log="$OUT/util-$u.log" w kvg kvt cap free status note pin host_avail
+  local u="$1" log="$OUT/util-$u.log"
+  # Every field defaults to empty. With `set -u`, a failed boot -- where the log
+  # has no "Model loading took" line to grep -- aborted the whole ladder at the
+  # printf and never recorded the cell. That is the opposite of what a ceiling
+  # probe needs: the FAILING boot is the result.
+  local w="" kvg="" kvt="" cap="" free="" status="" note="" pin="" host_avail=""
   stop_engine
-  QUANT=$QUANT IMAGE=$IMG GPU=0 PORT=$PORT GPU_MEMORY_UTILIZATION=$u bash start.sh >>"$OUT/ops.log" 2>&1 &
+  QUANT=$QUANT IMAGE=$IMG GPU=${GPU:-0} PORT=$PORT GPU_MEMORY_UTILIZATION=$u bash start.sh >>"$OUT/ops.log" 2>&1 &
   local spid=$! ready=0
   for i in $(seq 1 100); do
     curl -sf $B/v1/models >/dev/null 2>&1 && { ready=1; break; }
