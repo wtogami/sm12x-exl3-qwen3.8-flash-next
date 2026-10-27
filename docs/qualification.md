@@ -1647,6 +1647,51 @@ on the card this default was qualified on. Four full-window sequences is a TP2
 question at any single-card utilization; raising util is not a substitute for the
 second card.
 
+## Greedy decoding on this stack is not batch-invariant
+
+Found while building the eviction-identity test, and more consequential for this ledger than
+the question that surfaced it. `exl3`, v0.32, FP8 KV, MTP3, `temperature=0`, fixed `seed=1234`
+(`scripts/test-eviction-identity.py` plus ad-hoc probes):
+
+| condition | distinct outputs | max per-token logprob drift |
+|---|---|---|
+| same prompt, run alone ×5 | 1 (bit-identical) | **0.000** |
+| same prompt + 1 concurrent filler request ×5 | 1 | 0.452 |
+| + 3 filler ×5 | 1 | 0.469 |
+| + 8 filler ×5 | 1 | 0.323 |
+| + 16 filler ×5 | 1 | 0.385 |
+| 512-token prompts, concurrent, repeats | **2** | — |
+| 245K-token filler prompts, concurrent, 3 boots | 1 (a period-23 cycle) | — |
+
+Three things follow, and the first two are the ones that matter for anyone reading this
+ledger's numbers.
+
+**Repeatability holds only in isolation.** An uncontested request is bit-exact. Add a single
+concurrent request and every emitted token's logprob moves by up to half a nat. Note that the
+drift does *not* scale with batch size (16 fillers drift *less* than 1) — it is driven by batch
+*shape* selecting a different kernel and reduction order, not by contention or load.
+
+**Token streams are more stable than logprobs, but not invariant.** At 4,096 tokens of depth,
+five repeats under four different batch shapes produced one output. At 512 tokens of depth, the
+stream itself differed. The distinction is not depth: what survived was a highly deterministic
+continuation, where sub-nat perturbation cannot flip an argmax, and what flipped was a
+low-margin choice. Which side a given workload falls on is not knowable in advance, so a
+divergence seen under load is not automatically a defect.
+
+**This bounds what the eviction-identity test can claim.** Judging an evicted sequence against
+a *solo* reference would report a correctness veto for behaviour present in every deployment —
+and the first version of that test did exactly that, "failing" a run with zero preemptions. The
+only usable control is another boot at the same utilization with the same cold prompts, so
+ordinary cross-run variance is measured rather than assumed. Where the two rates are equal, the
+honest answer is INCONCLUSIVE, not PASS.
+
+Operational consequence for this recipe: legs that assert on generated content across runs
+(`retrieval`, `boundary`, the seven/orchid suites, `api-tools`) are comparing outputs produced
+under different batch schedules. Assert on the answer-bearing span, use a fixed seed *and* a
+fixed request mix, and treat a token-level mismatch as something to reproduce under isolation
+before treating it as a regression. Do not gate on logprob equality; on this engine it is
+meaningless.
+
 ## Verdict: `GPU_MEMORY_UTILIZATION` default 0.94 → 0.98
 
 Adopted decision rule (2026-10-26, owner): C1 stays important, and 0.98 becomes the
@@ -1678,11 +1723,19 @@ Ordered by what they could still change.
    it ever fails). Its result is what makes the flat growth rows interpretable. Still open
    underneath it: a cold page cache and a co-tenant boot-margin sample at 0.98, which is
    item 3.
-2. **Output identity under eviction.** Same prompt and seed, once with zero evictions and
-   once in the thrash regime (0.96, 4 × 245K), comparing full token and logprob hashes.
-   Eviction means re-prefill, and with FP8 KV, chunked prefill and MTP drafting, "the
-   recompute matches" is an assumption. This is the only candidate *correctness* veto
-   over any utilization at or above the band, and it has not been run.
+2. **Output identity under eviction — open, six attempts, each invalidated on a different
+   axis.** Same prompt and seed, once with zero evictions and once in the thrash regime,
+   comparing token ids. This is the only candidate *correctness* veto over any utilization at
+   or above the band, and it has not yet produced a verdict I would act on. The two
+   self-invalidating failure modes worth remembering: comparing against a *solo* run reports a
+   veto for ordinary batch-shape variance (see *Greedy decoding on this stack is not
+   batch-invariant*, above — the first version failed a run with zero preemptions), and a
+   filler continuation is a period-23 repetition cycle in which agreement is guaranteed by
+   construction (run 10: 10 evictions, unanimous agreement across three boots, 22 distinct
+   tokens in 65,536 — rejected by the entropy gate). Current design: three legs, two at 0.98
+   as a null control and one at 0.96 as the subject, cold prompt sets, question placed last.
+   **PASS is not the expected outcome** — given measured cross-run variance, the modal honest
+   result is INCONCLUSIVE, which is a statement about test power, not about eviction safety.
 3. **Cold-cache and co-tenant boot margin at 0.98.** Every boot in this campaign saw an
    exclusively held, warm device (`94.51/95.06 GiB`). Since the engine refuses to start
    when free < util × total, a ~1.4 GiB co-tenant is a hard refusal at 0.98 and a non-
