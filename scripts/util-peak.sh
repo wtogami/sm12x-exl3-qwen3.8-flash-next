@@ -160,10 +160,19 @@ mark deep-4x-concurrent "4 concurrent deep prefills, short outputs"
 # All-hands: the riskiest shapes overlapping, which is the only interleaving that can
 # exceed every individual peak if the allocator cannot reuse across them.
 python3 scripts/test-vision-vllm.py --base-url $B --model "$MODEL" --image-counts 16 --output "$OUT/shape-all-vision.json" >>"$OUT/legs.log" 2>&1 &
+hand_pids=($!)
 python3 scripts/verify-structured-output-live.py --base-url $B/v1 --model "$MODEL" --output "$OUT/shape-all-structured.json" >>"$OUT/legs.log" 2>&1 &
+hand_pids+=($!)
 python3 scripts/benchmark-deep-concurrency.py --base-url $B/v1 --model "$MODEL" \
   --fractions 0.42 --concurrency 2 --output-tokens 512 --output "$OUT/shape-all-deep2.jsonl" >>"$OUT/legs.log" 2>&1 &
-wait
+hand_pids+=($!)
+# A bare `wait` also waits for the sampler subshell, whose loop runs to its iteration
+# cap -- the driver then hangs for the rest of the sampling window with every leg
+# already finished and the GPU idle. This is the same defect util-stress.sh carries a
+# comment about (its grid recorded nothing for 30 minutes after the engine stopped);
+# wait on the requests only.
+for p in "${hand_pids[@]}"; do wait "$p"; done
+sleep 5
 mark all-hands "vision + structured + 2 deep prefills overlapping"
 python3 scripts/benchmark-decode.py --base-url $B/v1 --model "$MODEL" --profile "$QUANT" \
   --concurrency 16 --request-mode clients --output-tokens 512 --warmup-runs 1 --runs 2 \
