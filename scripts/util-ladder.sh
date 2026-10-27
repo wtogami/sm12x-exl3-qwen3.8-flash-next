@@ -14,7 +14,8 @@
 # OUT must stay one-directory-per-profile: util-stress.sh reads results.tsv from
 # the same directory, and a shared file would stress another profile's cells.
 set -uo pipefail
-cd /home/rtx/sm12x-exl3-qwen3.8-flash-next
+# Repo-relative, not a hardcoded /home/rtx path: this driver runs on gg and on burst.
+cd "$(cd -- "$(dirname -- "${BASH_SOURCE[0]}")/.." && pwd)"
 QUANT="${QUANT:-exl3-ple8}"
 MODEL="${MODEL:-qwen38-$QUANT}"          # served alias, matches start.sh's default
 NAME="${CONTAINER_NAME:-qwen38-$QUANT}"  # and so is the container name

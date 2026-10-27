@@ -3,7 +3,8 @@
 # memory-riskiest runtime shapes (vision batch, structured output, deep prefill,
 # 16-way concurrency) while sampling VRAM every 2 s; record peak used.
 set -uo pipefail
-cd /home/rtx/sm12x-exl3-qwen3.8-flash-next
+# Repo-relative, not a hardcoded /home/rtx path: this driver runs on gg and on burst.
+cd "$(cd -- "$(dirname -- "${BASH_SOURCE[0]}")/.." && pwd)"
 # Same override surface as util-ladder.sh, and the same requirement that OUT
 # match: this script derives its cell list from that directory's results.tsv.
 QUANT="${QUANT:-exl3-ple8}"

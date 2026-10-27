@@ -11,7 +11,10 @@
 # rather than silently re-run, because benchmark-deep-concurrency.py refuses to
 # overwrite its own receipt.
 set -uo pipefail
-cd /home/rtx/sm12x-exl3-qwen3.8-flash-next
+# Work from the repo this script sits in, not a hardcoded host path: the same
+# driver now runs on gg and on burst, and a /home/rtx literal made it
+# unusable anywhere else.
+cd "$(cd -- "$(dirname -- "${BASH_SOURCE[0]}")/.." && pwd)"
 QUANT="${QUANT:-exl3}"
 MODEL="${MODEL:-qwen38-$QUANT}"
 NAME="${CONTAINER_NAME:-qwen38-$QUANT}"
