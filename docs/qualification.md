@@ -1711,11 +1711,19 @@ at all, where 0.94 would have tolerated ~5.7 GiB.
 
 Since co-tenancy is unsupported, `start.sh` now enforces the second one at launch rather than
 discovering it two minutes into a three-minute boot, as a CUDA error pointing at the GPU: it prints
-the budget arithmetic per device and refuses in under a second, naming the holder.
-`ALLOW_CO_TENANT=1`
-opts out. That converts "raise the default and pray nobody else touches the card" into "raise
-the default and get told immediately if the card is not yours", which is why the 0.97-vs-0.98
-margin question is now settled in favour of the concurrency win.
+the budget arithmetic per device and refuses in under a second, naming the holder. It runs *before*
+the preflight that stops a container under this name, and it attributes each holder through its
+cgroup, so the memory of the engine being replaced is not counted as a neighbour's and a `REPLACE=1`
+handoff is unaffected. `ALLOW_CO_TENANT=1` opts out. Both properties exist because the first version
+had neither and it cost a live engine: it sat next to `docker run`, so on a single-GPU host it died on
+an unguarded `$GPU` under `set -u` -- nothing sets `GPU` there, the recipe treats it as optional --
+*after* `REPLACE=1` had already stopped and removed the container that was serving. A guard written
+to protect boots took a service down. The check itself was right; the placement was not, which is
+worth stating because placement is the part a reviewer cannot see in the diff.
+
+That converts "raise the default and pray nobody else touches the card" into "raise the default and
+get told immediately if the card is not yours", which is why the 0.97-vs-0.98 margin question is now
+settled in favour of the concurrency win.
 
 Measured since this section was first written: allocator fragmentation under sustained concurrent
 load (75 minutes at 0.98 with a 0.94 reference alongside: the peak stepped 494 MiB once and moved
