@@ -11,6 +11,7 @@
     {
       "util": "0.94",
       "pool_pages": 303,
+      "tp": 1,
       "host": "burst",
       "image_id": "abbde425a717",
       "vllm": "0.32.0",
@@ -21,6 +22,7 @@
     {
       "util": "0.96",
       "pool_pages": 344,
+      "tp": 1,
       "host": "burst",
       "image_id": "abbde425a717",
       "vllm": "0.32.0",
@@ -30,6 +32,7 @@
     {
       "util": "0.97",
       "pool_pages": 363,
+      "tp": 1,
       "host": "burst",
       "image_id": "abbde425a717",
       "vllm": "0.32.0",
@@ -39,6 +42,7 @@
     {
       "util": "0.98",
       "pool_pages": 384,
+      "tp": 1,
       "host": "burst",
       "image_id": "abbde425a717",
       "vllm": "0.32.0",
@@ -48,6 +52,7 @@
     {
       "util": "0.94",
       "pool_pages": 296,
+      "tp": 1,
       "host": "gg",
       "image_id": "73d126ef5a75",
       "vllm": "0.31.0",
@@ -58,6 +63,7 @@
     {
       "util": "0.96",
       "pool_pages": 336,
+      "tp": 1,
       "host": "gg",
       "image_id": "73d126ef5a75",
       "vllm": "0.31.0",
@@ -67,6 +73,7 @@
     {
       "util": "0.97",
       "pool_pages": 356,
+      "tp": 1,
       "host": "gg",
       "image_id": "73d126ef5a75",
       "vllm": "0.31.0",
@@ -76,6 +83,7 @@
     {
       "util": "0.98",
       "pool_pages": 376,
+      "tp": 1,
       "host": "gg",
       "image_id": "73d126ef5a75",
       "vllm": "0.31.0",

@@ -1,0 +1,11 @@
+{
+  "cache_config_labels": {
+    "attention_block_size": "3200",
+    "num_gpu_blocks": "2420",
+    "mamba_block_size": "16",
+    "mamba_cache_mode": "align",
+    "gpu_memory_utilization": "0.98",
+    "kv_cache_size_tokens": "6858253",
+    "printed_max_concurrency": "13.08108108108108"
+  }
+}

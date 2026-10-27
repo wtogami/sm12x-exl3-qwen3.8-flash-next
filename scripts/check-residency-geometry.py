@@ -34,7 +34,14 @@ EXPECTED_BLOCK_SIZE = 3200  # tokens; the page unit vLLM picks for this hybrid m
 
 def cache_config(base_url: str) -> dict[str, str]:
     """Pull vllm:cache_config_info's label set -- the engine's own statement of geometry."""
-    url = base_url.rstrip("/") + "/metrics"
+    # /metrics is served at the server root, not under the OpenAI prefix. Callers pass
+    # the familiar "$B/v1" because that is what every other script in the repo takes, so
+    # stripping it here (rather than requiring every caller to remember) is the difference
+    # between a working leg and a 404 that reads like "engine has no metrics".
+    root = base_url.rstrip("/")
+    if root.endswith("/v1"):
+        root = root[: -len("/v1")]
+    url = root + "/metrics"
     with urllib.request.urlopen(url, timeout=30) as response:
         body = response.read().decode("utf-8", "replace")
     for line in body.splitlines():
@@ -48,6 +55,28 @@ def cache_config(base_url: str) -> dict[str, str]:
     raise LookupError(f"no vllm:cache_config_info gauge on {url}")
 
 
+def tensor_parallel(container: str | None) -> int | None:
+    """Rank count, from the serve args. Pool size scales with it, so a TP2 boot is not
+    evidence that a rebase moved the pool -- comparing across topologies is how a
+    correct engine gets flagged as drifted."""
+    import subprocess
+    if not container:
+        return None
+    try:
+        out = subprocess.run(["docker", "inspect", container], capture_output=True,
+                             text=True, timeout=20).stdout
+        args = json.loads(out)[0].get("Args") or []
+    except Exception:  # noqa: BLE001 - no docker, no container, no opinion
+        return None
+    for i, a in enumerate(args):
+        if a == "--tensor-parallel-size" and i + 1 < len(args):
+            try:
+                return int(args[i + 1])
+            except ValueError:
+                return None
+    return 1  # vLLM's default when the flag is absent
+
+
 def main() -> int:
     ap = argparse.ArgumentParser(description=__doc__)
     ap.add_argument("--base-url", default="http://127.0.0.1:8001/v1")
@@ -57,6 +86,9 @@ def main() -> int:
                     help="pages of drift tolerated before WARN (default 2)")
     ap.add_argument("--output", type=Path, help="write the observed geometry here")
     ap.add_argument("--host", help="only compare against baseline entries for this host")
+    ap.add_argument("--container", help="read rank count from this container's serve args; "
+                    "pool drift is only comparable within one topology")
+    ap.add_argument("--tp", type=int, help="explicit rank count (overrides --container)")
     ap.add_argument("--warn-only", action="store_true",
                     help="report drift but exit 0 (for legs that record without gating)")
     args = ap.parse_args()
@@ -114,13 +146,20 @@ def main() -> int:
 
     if args.baseline and args.util and block and tokens:
         table = json.loads(args.baseline.read_text())
+        tp = args.tp if args.tp is not None else tensor_parallel(args.container)
         entry = next((e for e in table["entries"]
                       if str(e.get("util")) == str(args.util)
-                      and (args.host is None or e.get("host") == args.host)), None)
+                      and (args.host is None or e.get("host") == args.host)
+                      and (tp is None or e.get("tp", 1) == tp)), None)
         if entry is None:
-            problems.append(f"no baseline entry for util={args.util}"
-                            + (f" host={args.host}" if args.host else "")
-                            + f" in {args.baseline}")
+            # Not a failure: an unqualified topology (TP2, another card, another image)
+            # simply has no comparable baseline, so only the mechanism check is meaningful.
+            notes.append(
+                f"no baseline entry for util={args.util}"
+                + (f" host={args.host}" if args.host else "")
+                + (f" tp={tp}" if tp is not None else "")
+                + " -- comparing mechanism only; record this geometry before quoting any"
+                  " utilization breakpoint for it")
         else:
             now_pages = tokens / block
             was_pages = float(entry["pool_pages"])
