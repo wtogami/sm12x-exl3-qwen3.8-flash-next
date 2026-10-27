@@ -369,7 +369,12 @@ else
     echo "  co-tenant check: GPU unset, need ${_ct_need} of ${#_ct_ids[@]} cards free of foreign holders"
   elif [[ "${GPU}" =~ ^[0-9]+(,[0-9]+)*$ ]]; then
     IFS=',' read -ra _ct_ids <<< "${GPU}"
+    # The run needs TP_SIZE cards AND they have to be the pinned ones, so the requirement is the
+    # larger of the two. Asking only for len(GPU) let "GPU=0 TP_SIZE=2" on a single-GPU host report
+    # "needs 1 card" -- the launcher's own device-count check still rejects it moments later, so this
+    # is a clarity fix, not a hole, but a refusal that states the wrong requirement is a bad lead.
     _ct_need="${#_ct_ids[@]}"
+    (( TP_SIZE > _ct_need )) && _ct_need="$TP_SIZE"
     _ct_pinned=1
   else
     echo "  co-tenant check: skipped (GPU=\"${GPU}\" is not an index list)"
