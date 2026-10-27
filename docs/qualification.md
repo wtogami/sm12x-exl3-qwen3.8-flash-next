@@ -1692,6 +1692,49 @@ fixed request mix, and treat a token-level mismatch as something to reproduce un
 before treating it as a regression. Do not gate on logprob equality; on this engine it is
 meaningless.
 
+## What protects the 0.98 default, and from what
+
+Two distinct hazards were investigated, and they behave differently enough that the ledger
+kept conflating them.
+
+**Runtime device-memory growth** — torch demanding physical VRAM beyond its reserved KV pool.
+Measured with `scripts/util-peak.sh` (above): 0 MiB on one card, +490 MiB on another, against a
+1.29 GiB profiled activation reserve, with the sampler's positive control proving it could see
+a deliberate 1.5 GiB. The KV pool is a fixed reservation, so growth can only be satisfied from
+what the utilization fraction left behind: **1,395 MiB at 0.98 on the Workstation Edition card**
+(measured, printed by `start.sh`), versus ~5.2 GiB at 0.94.
+
+**Boot-time refusal** — the engine will not start when free-at-startup < util x total. This is
+the sharper of the two, because it is a hard failure rather than a slowdown, and the tolerance
+at 0.98 is that same 1,395 MiB: a neighbour holding ~1.5 GiB prevents the engine from starting
+at all, where 0.94 would have tolerated ~5.7 GiB.
+
+Since co-tenancy is unsupported, `start.sh` now enforces the second one at launch rather than
+discovering it seven minutes deep as a CUDA error pointing at the GPU: it prints the budget
+arithmetic per device and refuses in under a second, naming the holder. `ALLOW_CO_TENANT=1`
+opts out. That converts "raise the default and pray nobody else touches the card" into "raise
+the default and get told immediately if the card is not yours", which is why the 0.97-vs-0.98
+margin question is now settled in favour of the concurrency win.
+
+Still unmeasured: allocator fragmentation under sustained concurrent load, which the soak leg of
+`scripts/util-peak.sh` now measures, and cold-page-cache restart latency -- reclassified below,
+because it cannot move the reservation but it does move restart time, and every boot duration
+quoted in this ledger has quietly been a warm-cache one.
+
+Two claims this section originally carried were wrong, and are retracted here rather than edited
+away. First, "needs root to drop caches; no passwordless sudo": `burst` grants
+`sudo /usr/local/bin/ple-drop-caches` without a password, along with `compsize`, `dmesg` and
+`nvidia-smi`. I ran `sudo -n true`, watched it fail, and generalised to "no sudo here" -- while
+`docs/ssd-stream-findings.md` had not only recorded the grant but recorded that drawing this
+conclusion earlier was a mistake. Second, the checkpoint is not largely absent from the page
+cache; it is 100 % resident. The 60 MiB-of-95-GiB reading behind that belief measured the *nvfp4*
+profile's directory on a host holding several checkpoints, and `vmtouch` without `-f` on a
+Hugging Face snapshot reports the symlink entries rather than the blobs they point at, so it
+returns ~0 % for a model that is entirely in RAM. Both artifacts manufacture a confident "already
+cold, so it cannot matter". `scripts/boot-latency.sh` resolves the checkpoint by sourcing
+`model-profiles.sh` instead of re-deriving a path, always passes `-f`, and refuses to label a boot
+cold or warm until it has asserted the residency it is claiming.
+
 ## Verdict: `GPU_MEMORY_UTILIZATION` default 0.94 → 0.98
 
 Adopted decision rule (2026-10-26, owner): C1 stays important, and 0.98 becomes the
@@ -1723,23 +1766,42 @@ Ordered by what they could still change.
    it ever fails). Its result is what makes the flat growth rows interpretable. Still open
    underneath it: a cold page cache and a co-tenant boot-margin sample at 0.98, which is
    item 3.
-2. **Output identity under eviction — open, six attempts, each invalidated on a different
-   axis.** Same prompt and seed, once with zero evictions and once in the thrash regime,
-   comparing token ids. This is the only candidate *correctness* veto over any utilization at
-   or above the band, and it has not yet produced a verdict I would act on. The two
-   self-invalidating failure modes worth remembering: comparing against a *solo* run reports a
-   veto for ordinary batch-shape variance (see *Greedy decoding on this stack is not
-   batch-invariant*, above — the first version failed a run with zero preemptions), and a
+2. **Output identity under eviction — six attempts, no verdict, and I recommend stopping
+   here.** Same prompt and seed, once with zero evictions and once in the thrash regime,
+   comparing token ids. It is the only candidate *correctness* veto over any utilization at or
+   above the band, and it has not produced a verdict I would act on. Each attempt invalidated
+   itself on a *different* axis, which is the useful output: comparing against a *solo* run
+   reports a veto for ordinary batch-shape variance (the first version failed a run with zero
+   preemptions); empty token streams score as agreement (four empty comparisons "passed"); a
    filler continuation is a period-23 repetition cycle in which agreement is guaranteed by
-   construction (run 10: 10 evictions, unanimous agreement across three boots, 22 distinct
-   tokens in 65,536 — rejected by the entropy gate). Current design: three legs, two at 0.98
-   as a null control and one at 0.96 as the subject, cold prompt sets, question placed last.
-   **PASS is not the expected outcome** — given measured cross-run variance, the modal honest
-   result is INCONCLUSIVE, which is a statement about test power, not about eviction safety.
-3. **Cold-cache and co-tenant boot margin at 0.98.** Every boot in this campaign saw an
-   exclusively held, warm device (`94.51/95.06 GiB`). Since the engine refuses to start
-   when free < util × total, a ~1.4 GiB co-tenant is a hard refusal at 0.98 and a non-
-   event at 0.94. Needs a distribution, not a point estimate.
+   construction (run 10: 10 evictions, unanimous across three boots, 22 distinct tokens in
+   65,536 — caught by the entropy gate); and the served model is **chat-tuned**, so a plain
+   text-completion probe answers with a reasoning block or with immediate end-of-text, which is
+   what aborted run 11 at its smoke gate before any real leg booted. Fixing that last one means
+   driving the harness through the chat endpoint with a single system turn and no history, i.e.
+   a seventh campaign.
+   **I recommend against it**, for two reasons. First, given the measured cross-run variance,
+   INCONCLUSIVE is the modal outcome: two clean boots are likely to differ by as much as the
+   evicting boot does, which is a statement about test power, not about eviction. Second, a
+   FAIL would not change the default. Raising utilization only ever *reduces* eviction
+   frequency — 0.98 measured zero evictions at 245K x 4 where 0.94 had one — so this default
+   cannot make the behaviour worse than the default it replaced. A genuine mismatch would be a
+   content defect in the preempt-and-restore path, present at 0.94, 0.96 and 0.98 alike, and
+   reportable upstream; the remedy would be admission control, not a different number.
+   What remains worth doing is the opposite axis: item 3, the boot-margin measurement, is the
+   only open item that could argue for *lowering* the default.
+3. **Cold-page-cache restart latency at 0.98.** Every boot in this campaign saw an exclusively
+   held, warm device (`94.51/95.06 GiB` free). The co-tenant half of this item is closed: since
+   sharing is unsupported, `start.sh` now measures the margin and refuses at launch rather than
+   absorbing a neighbour, and the number it prints on these cards is **1,395 MiB** at 0.98. The
+   cold-cache half is reclassified here, because it had been mis-scoped as a headroom question:
+   free-at-startup is a *device* quantity, and 22 burst boots read 94.50/95.06 GiB while host-side
+   available memory ranged 662 to 893 GiB -- a 231 GiB swing with a 10 MiB device response. Page
+   cache cannot move the reservation. What it does move is how long a restart takes, and that has
+   never been measured: the recipe's checkpoint (`Qwen3.8-Flash-Next-EXL3-K4.25-v1`, 168 GiB over
+   37 files) is **100 % resident** on this host, so every boot duration quoted in this ledger is a
+   warm-cache boot, unlabelled as such. `scripts/boot-latency.sh` measures the cold/warm pair and
+   asserts the cache state before trusting either arm.
 4. **MTP draft length re-sweep under concurrent deep load.** The 3/2 defaults were chosen
    as the best *C1* blend, and C1 is no longer the overriding priority; draft tokens also
    consume per-sequence residency, so util and MTP were never swept together. Marked
