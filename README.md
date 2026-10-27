@@ -245,8 +245,9 @@ leaves roughly 1.4 GiB for everything else, so a neighbour makes the boot fail m
 with an error that blames the GPU. `start.sh` checks the target cards first thing, before it
 stops anything, and refuses in under a second naming the holder with its pid and size. Memory
 belonging to the container you are replacing is attributed to you and does not count as a
-neighbour, so `REPLACE=1` handoffs are unaffected; an unset `GPU` (single-GPU hosts) resolves to
-the cards the engine would bind. `CO_TENANT_TOLERANCE_MiB` (default 256) sets how much foreign
+neighbour, so `REPLACE=1` handoffs are unaffected. With `GPU` unset the check measures every card and
+requires room on `TP_SIZE` of them, then warns that the engine picks by container enumeration rather
+than by emptiness -- on a multi-GPU host those differ, so pin `GPU=<index[,index]>` when it matters. `CO_TENANT_TOLERANCE_MiB` (default 256) sets how much foreign
 use is tolerated; `ALLOW_CO_TENANT=1` skips the check and accepts the failure mode. A card left
 busy by a crashed engine is the usual cause, and the message prints who is holding it.
 `GPU_MEMORY_UTILIZATION` defaults to **0.98 on RTX**, which is worth ~80 KV pages over
