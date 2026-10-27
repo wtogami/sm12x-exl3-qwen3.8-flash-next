@@ -81,7 +81,10 @@ run_cell() {  # $1 = utilization
   pin=$(grep -oE "PLE weight pinned at exact size [0-9.]+ GiB|[0-9.]+ GiB of pinned host memory" "$log" | tail -1 | grep -oE "[0-9.]+ GiB" | head -1)
   if [[ $ready == 1 ]]; then
     python3 scripts/test-context-retrieval.py --base-url $B/v1 --model "$MODEL" --filler-tokens 8000 --output "$OUT/probe-$u.json" >>"$log" 2>&1 && note="probe:pass" || note="probe:FAIL"
-    free=$(docker exec "$NAME" true 2>/dev/null && nvidia-smi --query-gpu=memory.free --format=csv,noheader,nounits | head -1)
+    # Scoped to the card under test: with no --id, nvidia-smi lists every GPU and
+    # `head -1` silently reports card 0 -- on a 3-GPU host that is another job's card,
+    # which is how a 0.99 cell on card 2 came to record 97,340 MiB free.
+    free=$(docker exec "$NAME" true 2>/dev/null && nvidia-smi --id="${GPU%%,*}" --query-gpu=memory.free --format=csv,noheader,nounits)
     status=OK
   else
     status=FAILED; note=$(grep -iE "out of memory|CUDA error|No available memory|raise|Error" "$log" | tail -1 | cut -c1-90)

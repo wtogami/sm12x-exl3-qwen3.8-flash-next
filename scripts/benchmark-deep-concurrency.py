@@ -47,7 +47,8 @@ def metrics(base):
     except Exception:
         return None
     wanted = ("vllm:num_preemptions_total", "vllm:num_requests_waiting",
-              "vllm:num_requests_running", "vllm:gpu_cache_usage_perc")
+              "vllm:num_requests_running", "vllm:gpu_cache_usage_perc",
+              "vllm:kv_cache_usage_perc")
     out = {}
     for line in body.splitlines():
         name = line.split("{", 1)[0].split(" ", 1)[0]
@@ -76,8 +77,17 @@ class Sampler(threading.Thread):
             self.stop_at.wait(self.interval)
 
     def peak(self, key):
-        values = [s[key] for s in self.samples if key in s]
-        return max(values) if values else None
+        """`key` may be a tuple; the first name present in any sample wins.
+
+        vLLM renamed the KV occupancy gauge (gpu_cache_usage_perc -> kv_cache_usage_perc
+        by v0.32). A probe that hardcodes one spelling reports None on the other image
+        and looks like "no pressure observed" rather than "instrument not reading".
+        """
+        keys = (key,) if isinstance(key, str) else tuple(key)
+        present = next((k for k in keys for s in self.samples if k in s), None)
+        if present is None:
+            return None
+        return max(s[present] for s in self.samples if present in s)
 
 
 def main():
@@ -156,7 +166,7 @@ def main():
                                       "vllm:num_preemptions_total" in after else None,
                        "peak_waiting": sampler.peak("vllm:num_requests_waiting"),
                        "peak_running": sampler.peak("vllm:num_requests_running"),
-                       "peak_gpu_cache_usage": sampler.peak("vllm:gpu_cache_usage_perc"),
+                       "peak_kv_cache_usage": sampler.peak(("vllm:gpu_cache_usage_perc", "vllm:kv_cache_usage_perc")),
                        "errors": [r["error"] for r in results if not r.get("ok")],
                        "prompts_sha256": [hashlib.sha256(p.encode()).hexdigest()[:16]
                                           for p in prompts]}
