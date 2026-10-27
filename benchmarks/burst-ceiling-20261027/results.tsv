@@ -1,0 +1,5 @@
+util	status	weights_GiB	kv_GiB	kv_tokens	capture	vram_free_MiB	note
+0.98	OK	72.01	18.26	1227117	4 s/0.28 GiB/	2350	probe:pass host_avail=662.0GiB pin=95.368 GiB
+0.99	OK	72.01	19.21	1289465	4 s/0.28 GiB/	97340	probe:pass host_avail=710.1GiB pin=95.368 GiB
+1.0	FAILED						RuntimeError: Engine core initialization failed. See root cause above. Failed core proc(s) host_avail=893.7GiB pin=unrecorded
+LADDER DONE 2026-10-27T05:27:09Z
