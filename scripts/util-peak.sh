@@ -42,7 +42,14 @@ PORT="${PORT:-8199}"
 OUT="${OUT:?set OUT to a per-campaign directory}"; mkdir -p "$OUT"
 B=http://127.0.0.1:"$PORT"
 IMG="${IMAGE:-qwen38-rtx:local}"
+GPU="${GPU:-0}"
 UTIL="${UTIL:-0.94}"                     # slack is the instrument; do not raise it
+# Unscoped nvidia-smi prints one line PER GPU, and command substitution keeps the
+# newlines, so an unspecifying sampler appends several cards to one sample and the
+# peak silently becomes the busiest neighbour. This script exists to measure a
+# single card under a single tenant; holding it to one index is the whole point.
+CARD="${GPU%%,*}"
+[[ "$CARD" =~ ^[0-9]+$ ]] || { echo "GPU=$GPU does not start with an index; the sampler needs one" >&2; exit 2; }
 DEEP="${DEEP:-220000}"                   # per-request prefill tokens for the storm
 NOCACHE="${NOCACHE:-0}"
 ROW="$OUT/peak.tsv"; [[ -e "$ROW" ]] || printf "phase\tpeak_used_MiB\tdelta_over_prev_peak_MiB\tsamples\tpreemptions\tpeak_kv_usage\tpool_pages\tnote\n" > "$ROW"
@@ -61,7 +68,7 @@ stop_engine() {
 start_sampler() {
   : > "$OUT/samples.txt"; : > "$OUT/metrics.txt"
   ( for i in $(seq 1 3600); do
-      printf "%s\t%s\n" "$(date +%s)" "$(nvidia-smi --query-gpu=memory.used --format=csv,noheader,nounits)" >> "$OUT/samples.txt"
+      printf "%s\t%s\n" "$(date +%s)" "$(nvidia-smi --id="$CARD" --query-gpu=memory.used --format=csv,noheader,nounits)" >> "$OUT/samples.txt"
       # Sum over label sets: what matters per sample is the aggregate, and vLLM emits
       # one line per label set. One awk process per sample, so a missing endpoint is
       # simply an empty metric line rather than a gap in the series.
@@ -77,7 +84,28 @@ start_sampler() {
   trap 'kill $SAMPLER 2>/dev/null' EXIT
 }
 
-peak() { sort -n "$OUT/samples.txt" | cut -f2 | tail -1; }   # max used over all samples so far
+peak() { awk -F'\t' 'NF==2 && $2 ~ /^[0-9]+$/ && $2>m{m=$2}END{print m+0}' "$OUT/samples.txt"; }
+# Cross-check against the host-side view of the same card. If the sample is not
+# consistent with what nvidia-smi says is free right now, the probe is reading the
+# wrong device -- fail here rather than report a neighbour's footprint.
+sanity() {
+  local base free total
+  # NOT head -1 of the sample file: sampling starts before the container exists, so the
+  # first line is an idle card (measured: 2 MiB). The baseline is this instant.
+  base=$(peak)
+  # `read` consumes ONE LINE: it splits fields, it does not read records. The first
+  # version of this piped the two CSV fields through tr ',' '\n' and got free=<value>
+  # total=<empty>, because the second value was on line 2 -- so the guard below
+  # arithmetic'd against nothing and could never fire. Keep both fields on one line.
+  read -r free total < <(nvidia-smi --id="$CARD" --query-gpu=memory.free,memory.total \
+    --format=csv,noheader,nounits | tr ',' ' ')
+  echo "baseline ${base} MiB used vs free=${free}/${total} on card $CARD (expect used+free ~= total)" >> "$OUT/engine-accounting.txt"
+  [[ -n "${free:-}" ]] || return 0
+  if (( base + free < total - 2048 || base + free > total + 2048 )); then
+    echo "SAMPLER SANITY FAILED: card $CARD baseline $base + free $free != total $total" | tee -a "$ROW" >&2
+    kill "$SAMPLER" 2>/dev/null; exit 1
+  fi
+}
 nsamples() { wc -l < "$OUT/samples.txt"; }
 PREV_PEAK=0
 mark() {   # $1 = phase name, $2 = note
@@ -117,6 +145,7 @@ echo "pool_pages=$POOL_PAGES $(sed 's/,/ /g' "$OUT/cache-config.txt" | grep -oE 
 grep -hE "Desired GPU memory utilization|peak activation|Available KV cache memory|Setting attention block size" \
   "$OUT/engine-$UTIL.log" | sed 's/^[^ ]* //' >> "$OUT/engine-accounting.txt" || true
 
+sanity
 mark baseline "boot+warmup, no legs"
 python3 scripts/test-vision-vllm.py --base-url $B --model "$MODEL" --image-counts 16 --output "$OUT/shape-vision.json" >>"$OUT/legs.log" 2>&1 || echo "vision leg failed" >>"$OUT/legs.log"
 mark vision "16 images, alone"

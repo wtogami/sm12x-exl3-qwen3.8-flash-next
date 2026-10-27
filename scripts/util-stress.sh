@@ -43,7 +43,13 @@ for u in $(awk -F'\t' '$2=="OK" && $1!="0.94" {print $1}' "$OUT/results.tsv"); d
   [[ $ready == 1 ]] || { printf "%s\tBOOT-REFAIL\t\t\t\t\n" "$u" >> "$SROW"; stop_engine; continue; }
   # VRAM sampler
   : > "$OUT/samples-$u.txt"
-  ( for s in $(seq 1 900); do nvidia-smi --query-gpu=memory.used --format=csv,noheader,nounits >> "$OUT/samples-$u.txt"; sleep 2; done ) & samp=$!
+  # --id is not decoration: unscoped nvidia-smi emits one line per GPU and the redirect
+  # appends all of them, so on a 3-card host the "peak" is the busiest neighbour. The
+  # original run on gg was safe only because that box has one card (receipts confirm:
+  # samples-0.98.txt has exactly one field per line). The same bug on burst produced a
+  # peak probe that measured a different card than it booted on.
+  CARD="${GPU%%,*}"
+  ( for s in $(seq 1 900); do nvidia-smi --id="$CARD" --query-gpu=memory.used --format=csv,noheader,nounits >> "$OUT/samples-$u.txt"; sleep 2; done ) & samp=$!
   fail=""
   burst_pids=()
   # Note the asymmetry, because it is a trap: test-vision-vllm.py takes --base-url
@@ -64,7 +70,7 @@ for u in $(awk -F'\t' '$2=="OK" && $1!="0.94" {print $1}' "$OUT/results.tsv"); d
   # Wait on the requests only.
   for p in "${burst_pids[@]}"; do wait "$p"; done
   sleep 5; kill $samp 2>/dev/null; wait $samp 2>/dev/null
-  peak=$(sort -n "$OUT/samples-$u.txt" | tail -1); final_free=$(nvidia-smi --query-gpu=memory.free --format=csv,noheader,nounits | head -1)
+  peak=$(sort -n "$OUT/samples-$u.txt" | tail -1); final_free=$(nvidia-smi --id="$CARD" --query-gpu=memory.free --format=csv,noheader,nounits | head -1)
   docker logs "$NAME" 2>&1 | grep -icE "out of memory|CUDA error" > "$OUT/oom-$u.txt" || true
   printf "%s\t%s\t%s\t%s\t%s\t%s\n" "$u" "${fail:-PASS}" "$peak" "$final_free" "$(cat "$OUT/oom-$u.txt")" "$(tail -c 80 "$OUT/stress-$u.log" | tr -d '\n')" >> "$SROW"
   stop_engine

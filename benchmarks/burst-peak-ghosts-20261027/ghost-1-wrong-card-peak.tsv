@@ -1,0 +1,5 @@
+phase	peak_used_MiB	delta_over_prev_peak_MiB	samples	preemptions	peak_kv_usage	pool_pages	note
+baseline	95986	95986	294	0	0.000	342	boot+warmup, no legs
+vision	95986	0	294	0	0.000	342	16 images, alone
+structured	95986	0	321	0	0.422	342	FSM constrained decode, alone
+prefill-240k	95986	0	477	0	0.422	342	single deep prefill, alone
