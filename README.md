@@ -240,6 +240,13 @@ used in performance tests. The full tool-quality suite uses thinking enabled.
 `MAX_MODEL_LEN`, `MAX_NUM_SEQS`, `MAX_BATCHED_TOKENS`,
 `GPU_MEMORY_UTILIZATION`, `PLE_MMAP`, `MTP_TOKENS` and `ENABLE_SCALE_OUT` can
 override the defaults. `MTP_TOKENS=0` disables speculation.
+**Sharing a card is not supported.** The RTX default reserves 0.98 of the device, which
+leaves roughly 1.4 GiB for everything else, so a neighbour makes the boot fail minutes deep
+with a CUDA error. `start.sh` now checks the target card before loading weights and refuses
+in under a second, naming the process that holds the memory. `CO_TENANT_TOLERANCE_MiB`
+(default 256) sets how much foreign use is tolerated; `ALLOW_CO_TENANT=1` skips the check and
+accepts the failure mode. A card left busy by a crashed engine is the usual cause, and the
+message prints who is holding it.
 `GPU_MEMORY_UTILIZATION` defaults to **0.98 on RTX**, which is worth ~80 KV pages over
 0.94 and is what makes four concurrent ~245K sequences finish in 277s with no evictions
 instead of 357s with one; C1 pays at most 1.9% for it. The ladder is **not** monotone, so

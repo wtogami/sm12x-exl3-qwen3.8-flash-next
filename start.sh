@@ -484,6 +484,50 @@ if [[ -n "${CONTAINER_ENV:-}" ]]; then
   unset _ce _ce_parts
 fi
 
+# Co-tenancy is unsupported, so say so before loading 96 GiB of weights rather than
+# after seven minutes, as a CUDA allocation failure inside a worker. The engine refuses to
+# start whenever free-at-startup is below util x total, and at the RTX default of 0.98 that
+# tolerance is only ~1.4 GiB -- so a second holder, a monitoring agent, or a container left
+# up by an earlier crash converts this launch into a slow failure whose message points at
+# the GPU instead of at the neighbour. Note the check looks at who ELSE holds memory: the
+# preflight that stops a stale container under our own name runs earlier, so anything
+# arriving here is genuinely somebody else.
+co_tenant_tolerance="${CO_TENANT_TOLERANCE_MiB:-256}"
+if [[ "${ALLOW_CO_TENANT:-0}" == 1 ]]; then
+  echo "  co-tenant check: skipped (ALLOW_CO_TENANT=1); sharing a card with this engine is unsupported"
+elif [[ "$GPU" == "all" || ! "$GPU" =~ ^[0-9]+(,[0-9]+)*$ ]]; then
+  echo "  co-tenant check: skipped (GPU=\"$GPU\" is not an index list)"
+else
+  IFS=',' read -ra _ct_ids <<< "$GPU"
+  _ct_bad=0
+  for _ct in "${_ct_ids[@]}"; do
+    # One row per id: nvidia-smi prints one line for each GPU named by --id, which is what
+    # lets this stay scoped to the devices the run will actually occupy.
+    read -r _ct_used _ct_free _ct_total < <(nvidia-smi --id="$_ct" \
+        --query-gpu=memory.used,memory.free,memory.total --format=csv,noheader,nounits | tr ',' ' ')
+    [[ -n "${_ct_free:-}" ]] || { echo "  co-tenant check: skipped (no nvidia-smi reading for GPU $_ct)"; continue; }
+    _ct_budget=$(awk -v u="$GPU_MEMORY_UTILIZATION" -v t="$_ct_total" 'BEGIN{printf "%d", u*t}')
+    _ct_margin=$(awk -v f="$_ct_free" -v b="$_ct_budget" 'BEGIN{printf "%d", f-b}')
+    printf '  GPU %s: %s MiB used, %s MiB free, budget %s MiB (util %s of %s MiB), margin %s MiB\n' \
+      "$_ct" "$_ct_used" "$_ct_free" "$_ct_budget" "$GPU_MEMORY_UTILIZATION" "$_ct_total" "$_ct_margin"
+    if (( _ct_used > co_tenant_tolerance )) || (( _ct_margin < 0 )); then
+      echo "  holders:" >&2
+      nvidia-smi --id="$_ct" --query-compute-apps=pid,process_name,used_memory --format=csv,noheader >&2 \
+        || echo "    (none reported by nvidia-smi; a container or driver allocation is holding it)" >&2
+      _ct_bad=1
+    fi
+  done
+  if (( _ct_bad )); then
+    { echo "Refusing to start on a card that is not exclusively free."
+      echo "  This engine reserves util x total VRAM and has no room to share: at 0.98 the"
+      echo "  tolerance for anything else on the device is roughly 1.4 GiB, so a neighbour"
+      echo "  that looks harmless makes the boot fail, minutes deep, with a CUDA error."
+      echo "  Clear the holder, or lower GPU_MEMORY_UTILIZATION, or set ALLOW_CO_TENANT=1 to"
+      echo "  start anyway and accept that failure mode." >&2; }
+    exit 2
+  fi
+fi
+
 docker run -d --name "$container_name" \
   "${GPU_ARGS[@]}" \
   "${memory_args[@]}" \
