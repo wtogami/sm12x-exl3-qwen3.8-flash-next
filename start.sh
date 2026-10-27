@@ -3,7 +3,6 @@ set -euo pipefail
 RECIPE_DIR="$(cd -- "$(dirname -- "${BASH_SOURCE[0]}")" && pwd)"
 source "$RECIPE_DIR/model-profiles.sh"
 source "$RECIPE_DIR/platform-config.sh"
-GPU_MEMORY_UTILIZATION="${GPU_MEMORY_UTILIZATION:-$DEFAULT_GPU_MEMORY_UTILIZATION}"
 # TP_SIZE>1 runs one vLLM engine across TP_SIZE GPUs (tensor parallel). The
 # n-gram table and the host token embedding are both vocab-parallel shards --
 # each rank pins only its own rows -- so the pinned-memory preflight below
@@ -12,6 +11,40 @@ GPU_MEMORY_UTILIZATION="${GPU_MEMORY_UTILIZATION:-$DEFAULT_GPU_MEMORY_UTILIZATIO
 # what a single-node TP run uses.
 TP_SIZE="${TP_SIZE:-1}"
 [[ "$TP_SIZE" =~ ^[0-9]+$ ]] && (( TP_SIZE >= 1 )) || { echo "TP_SIZE must be an integer >= 1" >&2; exit 2; }
+
+# GPU_MEMORY_UTILIZATION, resolved after TP_SIZE because the two interact.
+#
+# Single GPU takes the platform default (0.98 on RTX). Tensor-parallel runs take 0.94, because the
+# scarce thing differs by topology. At TP_SIZE=1 the extra fraction buys KV residency the pool does
+# not otherwise have -- that purchase is the whole reason 0.94 was replaced -- and a pool short of
+# residency is what the 0.96/0.965 evict-then-back-out band punishes. At TP_SIZE>1 the shard already
+# supplies it: weights halve per rank, so each rank's pool roughly triples, measured this session at
+# 54.03 GiB and 2,144 pages against 425 pages single-GPU. The largest concurrent deep load ever
+# modelled here is 356 pages (4 x 245K), and four sequences at the full 524,288-token window need
+# about 656, so a TP pool sits several times clear of any residency requirement at 0.94 as well.
+#
+# What 0.98 does cost at TP_SIZE>1 is the buffer for allocations the memory profiler never sees, and
+# that cost is per rank. Both TP2 ranks overshot their own reservation by ~1,093 MiB against ~481 MiB
+# at TP1, leaving 864 MiB of device free instead of 1,476 MiB -- the difference being cross-rank
+# machinery (NCCL workspace and the custom all-reduce IPC buffer) that initialises on the first
+# collective, after determine_available_memory() has already handed the rest of the budget to KV. The
+# one-time 494 MiB step on the structured-decode path is 35% of 1,476 and 57% of 864.
+#
+# So 0.94 at TP_SIZE>1 returns ~1,958 MiB per card of remainder while giving up residency that was
+# never the constraint. 0.94 is also the value TP2 shipped and was qualified under before the
+# single-GPU flip; it is not re-measured here. Spark is untouched: its default is 0.7 and its own
+# validation rejects anything above that, which is what the numeric guard below is for -- it fires
+# only on hosts whose platform default is already above 0.94.
+if [[ -z "${GPU_MEMORY_UTILIZATION:-}" ]] && (( TP_SIZE > 1 )) \
+   && awk -v d="$DEFAULT_GPU_MEMORY_UTILIZATION" 'BEGIN{exit !(d+0 > 0.94)}'; then
+  GPU_MEMORY_UTILIZATION=0.94
+  echo "  GPU_MEMORY_UTILIZATION=0.94: tensor-parallel default (single GPU would use $DEFAULT_GPU_MEMORY_UTILIZATION)."
+  echo "  TP pools are already multiples of any residency requirement; the fraction buys nothing here"
+  echo "  and costs per-rank room for post-profiling collective buffers. Override explicitly to change."
+else
+  GPU_MEMORY_UTILIZATION="${GPU_MEMORY_UTILIZATION:-$DEFAULT_GPU_MEMORY_UTILIZATION}"
+fi
+
 if [[ "$PLATFORM_KIND" == spark ]]; then
   for argument in "$@"; do
     case "$argument" in

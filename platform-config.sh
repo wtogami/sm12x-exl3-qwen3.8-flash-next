@@ -30,6 +30,10 @@ case "$(uname -m)" in
     # it sits exactly on the boundary, with zero margin. Re-measure the band after any
     # rebase: scripts/check-residency-geometry.py is a gating leg that fails when the
     # page geometry moves. See docs/qualification.md.
+    # Tensor-parallel runs are the exception and take 0.94; start.sh applies that after resolving
+    # TP_SIZE, because the residency this fraction buys is already provided by sharding the weights,
+    # while the room it costs is per rank (post-profiling collective buffers leave 864 MiB free at
+    # 0.98 against 1,476 MiB at TP1). Do not "simplify" this back to one number.
     DEFAULT_GPU_MEMORY_UTILIZATION=0.98
     DEFAULT_CUTE_DSL_ARCH=sm_120a
     DEFAULT_LONGCTX=1

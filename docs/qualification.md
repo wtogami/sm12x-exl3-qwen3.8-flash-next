@@ -1764,7 +1764,7 @@ at C1, and (c) clearly better under concurrent deep load. **Adopted 2026-10-27:
   shape that fails at 0.94 fails by thrashing (up to 2.6x with evictions) while the shape
   where 0.94 leads loses 16% of wall clock and nothing else. But read (c) as "under long
   concurrent generations", which is what it was measured under.
-- **(a) satisfied as measured, and now measured at the shipped utilization**: 0.99 boots, so 0.98 is
+- **(a) satisfied as measured, and now measured at the shipped utilization (at `TP_SIZE=1`)**: 0.99 boots, so 0.98 is
   not at a cliff edge. Sustained load -- 75 minutes, 25 rounds of structured decode + 4 concurrent
   deep prefills + vision, with the 0.94 default soaking alongside on the same host -- stepped the
   peak by **494 MiB once**, on the constrained-decode path, and moved 0 MiB across every subsequent
@@ -1777,6 +1777,29 @@ at C1, and (c) clearly better under concurrent deep load. **Adopted 2026-10-27:
   free (608 MiB held against 1,352 MiB free; 1,163 MiB of rise recorded), which is what licenses
   reading the flat rows as real zeros rather than a blind sampler. No OOM line in any cell of any
   run in this campaign. Receipts: `benchmarks/burst-soak-20261027/`.
+
+**Exception, added 2026-10-27 by owner directive: `TP_SIZE>1` takes 0.94.** `start.sh` resolves the
+default after `TP_SIZE`, so `DEFAULT_GPU_MEMORY_UTILIZATION` stays 0.98 and a tensor-parallel run uses
+0.94 unless overridden explicitly. Not re-measured for this change -- 0.94 is what TP2 shipped and was
+qualified under before the flip above. What prompted it is observational, from a live TP2 engine on
+burst against the TP1 engine on gg, both at 0.98:
+
+| per card at util 0.98 | TP1 (gg) | TP2 (burst, each rank) |
+|---|---|---|
+| device free | 1,476 MiB | 864 MiB |
+| overshoot past its own reservation | +481 MiB | +1,093 MiB |
+| KV pool | 17.94 GiB / 425 pages | 54.03 GiB / 2,144 pages |
+| weights per rank | 72.01 GiB | 37.08 GiB |
+
+Two things follow. The residency that 0.98 exists to buy is already there at TP2 -- 2,144 pages
+against a modelled 356 for 4 x 245K, or ~656 for four full-window sequences -- so the extra fraction
+purchases nothing. And the room it costs is real: both ranks overshoot the reservation they were
+profiled against by ~1,093 MiB rather than ~481, the difference being per-rank collective buffers
+(NCCL workspace and the custom all-reduce IPC region) that initialise on the first collective, after
+`determine_available_memory()` has already given the remainder to KV. The one-time 494 MiB
+structured-decode step is 35% of a TP1 remainder and 57% of a TP2 one. So criterion (a) below is
+topology-scoped: all of it was measured at `TP_SIZE=1`, and the TP2 overshoot is an observation of a
+running engine, not a decomposition I have verified by experiment.
 
 0.97 is not the answer even though it is clean: it is the boundary itself (356 pages on
 gg against a modelled 4 × 89 = 356 requirement — zero margin), and 0.98 costs nothing

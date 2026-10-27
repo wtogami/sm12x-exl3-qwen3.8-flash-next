@@ -151,7 +151,7 @@ for checkpoint pages and the host. A lower value is configurable.
 | Recipe default | RTX SM120 | Spark SM121 |
 |---|---|---|
 | Native architecture | x86_64 | arm64 |
-| GPU memory utilization | 0.98 | 0.7 maximum |
+| GPU memory utilization | 0.98 (0.94 at `TP_SIZE>1`) | 0.7 maximum |
 | EXL3 MTP draft tokens | 3 | 2 |
 | Vocabulary projection | Native | B12x |
 | PLE storage | host-offloaded resident table | BF16 mmap checkpoint mapping |
@@ -250,7 +250,8 @@ requires room on `TP_SIZE` of them, then warns that the engine picks by containe
 than by emptiness -- on a multi-GPU host those differ, so pin `GPU=<index[,index]>` when it matters. `CO_TENANT_TOLERANCE_MiB` (default 256) sets how much foreign
 use is tolerated; `ALLOW_CO_TENANT=1` skips the check and accepts the failure mode. A card left
 busy by a crashed engine is the usual cause, and the message prints who is holding it.
-`GPU_MEMORY_UTILIZATION` defaults to **0.98 on RTX**, which is worth ~80 KV pages over
+`GPU_MEMORY_UTILIZATION` defaults to **0.98 on RTX for a single GPU, and 0.94 when `TP_SIZE>1`**.
+The single-GPU number is worth ~80 KV pages over
 0.94 and is what makes four concurrent ~245K sequences finish in 277s with no evictions
 instead of 357s with one; C1 pays at most 1.9% for it. The ladder is **not** monotone, so
 do not tune by feel: **0.96 and 0.965 are 1.2–2.0× slower than 0.94 was**, because
