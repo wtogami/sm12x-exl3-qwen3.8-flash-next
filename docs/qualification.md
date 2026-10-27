@@ -1716,10 +1716,12 @@ opts out. That converts "raise the default and pray nobody else touches the card
 the default and get told immediately if the card is not yours", which is why the 0.97-vs-0.98
 margin question is now settled in favour of the concurrency win.
 
-Still unmeasured: allocator fragmentation under sustained concurrent load, which the soak leg of
-`scripts/util-peak.sh` now measures, and cold-page-cache restart latency -- reclassified below,
-because it cannot move the reservation but it does move restart time, and every boot duration
-quoted in this ledger has quietly been a warm-cache one.
+Measured since this section was first written: allocator fragmentation under sustained concurrent
+load. 75 minutes at 0.98 with a 0.94 reference alongside: the peak stepped 494 MiB once and moved
+0 MiB across the remaining 25 rounds, so there is no creep and no segment-accumulation effect at
+this window. Still unmeasured: cold-page-cache restart latency -- reclassified below, because it
+cannot move the reservation but it does move restart time, and every boot duration quoted in this
+ledger has quietly been a warm-cache one.
 
 Two claims this section originally carried were wrong, and are retracted here rather than edited
 away. First, "needs root to drop caches; no passwordless sudo": `burst` grants
@@ -1745,13 +1747,28 @@ at C1, and (c) clearly better under concurrent deep load. **Adopted 2026-10-27:
 - **(b) satisfied**: ≤1.9% on every C1 leg, above.
 - **(c) satisfied on two images**: 245K × 4 goes 357 s → 276 s (gg) and 357 s → 277 s
   (burst) with zero evictions instead of one; 512K × 2 goes 409 s → 270 s; and 0.98
-  clears the 0.96–0.965 trap band on both.
-- **(a) satisfied as measured**: 0.99 boots, so 0.98 is not at a cliff edge; runtime
-  growth over the boot baseline is 0–490 MiB against ~1.4 GiB of headroom and a 1.29 GiB
-  profiled activation reserve; and the probe's positive control passed — 1,553 MiB of
-  rise recorded while 1.5 GiB was deliberately held inside the engine container, which is
-  what licenses reading those flat rows as real zeros rather than as a blind sampler. No
-  OOM line in any cell of any run in this campaign.
+  clears the 0.96–0.965 trap band on both. Scope of that win, narrowed by the soak: it is
+  a win against *co-residency*, not against concurrency in general. With 512-token
+  outputs, where four deep sequences never need to be resident at depth simultaneously,
+  0.94 completed each round in 123 s against 0.98's 146 s -- admitting three and queueing
+  the fourth hands each prefill the whole 2,048-token batch budget, whereas admitting four
+  splits it -- with zero evictions either way. The default still favours 0.98, because the
+  shape that fails at 0.94 fails by thrashing (up to 2.6x with evictions) while the shape
+  where 0.94 leads loses 16% of wall clock and nothing else. But read (c) as "under long
+  concurrent generations", which is what it was measured under.
+- **(a) satisfied as measured, and now measured at the shipped utilization**: 0.99 boots, so 0.98 is
+  not at a cliff edge. Sustained load -- 75 minutes, 25 rounds of structured decode + 4 concurrent
+  deep prefills + vision, with the 0.94 default soaking alongside on the same host -- stepped the
+  peak by **494 MiB once**, on the constrained-decode path, and moved 0 MiB across every subsequent
+  round. Identical to the MiB at both utilizations, so the step belongs to the FSM path and not to
+  the fraction. And it lands *inside* the reservation: the plateau is 61 MiB above the 0.98 budget
+  and 48 MiB above the 0.94 one, because the 1.29 GiB profiled activation reserve sits within
+  `util x total`. Runtime growth therefore does **not** consume the 1,395 MiB remainder, which an
+  earlier version of this section asserted it did -- the remainder is precisely what the engine left
+  alone. The positive control passed on the same boot at a size derived from the memory actually
+  free (608 MiB held against 1,352 MiB free; 1,163 MiB of rise recorded), which is what licenses
+  reading the flat rows as real zeros rather than a blind sampler. No OOM line in any cell of any
+  run in this campaign. Receipts: `benchmarks/burst-soak-20261027/`.
 
 0.97 is not the answer even though it is clean: it is the boundary itself (356 pages on
 gg against a modelled 4 × 89 = 356 requirement — zero margin), and 0.98 costs nothing
@@ -1763,9 +1780,11 @@ Ordered by what they could still change.
 
 1. ~~**Sampler positive control**~~ — **done, passed** (1,553 MiB recorded while 1.5 GiB
    was held in the engine container; the probe now aborts instead of reporting phases if
-   it ever fails). Its result is what makes the flat growth rows interpretable. Still open
-   underneath it: a cold page cache and a co-tenant boot-margin sample at 0.98, which is
-   item 3.
+   it ever fails). Its result is what makes the flat growth rows interpretable. Re-run on the
+   sustained-load boot, at a size derived from the memory actually free: 1,163 MiB of rise against
+   608 MiB held at 0.98, 2,091 against 1,536 at 0.94. What was open underneath it -- co-tenant
+   boot margin -- is now refused at launch rather than sampled, and the remaining cold-page-cache
+   question is latency, not margin, which is item 3.
 2. **Output identity under eviction — six attempts, no verdict, and I recommend stopping
    here.** Same prompt and seed, once with zero evictions and once in the thrash regime,
    comparing token ids. It is the only candidate *correctness* veto over any utilization at or
