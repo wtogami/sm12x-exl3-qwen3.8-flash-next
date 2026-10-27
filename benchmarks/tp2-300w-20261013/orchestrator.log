@@ -1,0 +1,184 @@
++ cd /home/opencode/sm12x-exl3-qwen3.8-flash-next
++ B=/tmp/opencode/bench-300w-20261013
++ PORT=8125
+++ date -Is
++ echo '=== leg 1: TP=2+EP 2026-10-13T00:39:38-05:00'
+=== leg 1: TP=2+EP 2026-10-13T00:39:38-05:00
++ run_decode tp2-ep qwen38-tp2-test
++ local tag=tp2-ep cont=qwen38-tp2-test
++ local sp
+++ sample tp2-ep-decode-power
+++ echo 18208
+++ nvidia-smi --query-gpu=timestamp,index,power.draw,clocks.sm,utilization.gpu --format=csv,noheader -lms 500
++ sp=18208
++ python3 scripts/benchmark-decode.py --base-url http://127.0.0.1:8125/v1 --model qwen38-exl3 --profile exl3 --mtp-tokens 3 --request-mode clients --output-tokens 256 --concurrency 1 2 4 8 16 --runs 3 --server-container qwen38-tp2-test --output /tmp/opencode/bench-300w-20261013/tp2-ep-decode.json
++ tee /tmp/opencode/bench-300w-20261013/tp2-ep-decode.log
+exl3 static MTP3 C1 run 1/3: 179.46 tok/s
+exl3 static MTP3 C1 run 2/3: 167.72 tok/s
+exl3 static MTP3 C1 run 3/3: 172.72 tok/s
+exl3 static MTP3 C2 run 1/3: 279.86 tok/s
+exl3 static MTP3 C2 run 2/3: 265.25 tok/s
+exl3 static MTP3 C2 run 3/3: 286.75 tok/s
+exl3 static MTP3 C4 run 1/3: 473.45 tok/s
+exl3 static MTP3 C4 run 2/3: 443.52 tok/s
+exl3 static MTP3 C4 run 3/3: 437.28 tok/s
+exl3 static MTP3 C8 run 1/3: 691.72 tok/s
+exl3 static MTP3 C8 run 2/3: 671.78 tok/s
+exl3 static MTP3 C8 run 3/3: 711.25 tok/s
+exl3 static MTP3 C16 run 1/3: 977.76 tok/s
+exl3 static MTP3 C16 run 2/3: 977.95 tok/s
+exl3 static MTP3 C16 run 3/3: 954.78 tok/s
++ kill 18208
++ run_prefill tp2-ep qwen38-tp2-test
++ local tag=tp2-ep cont=qwen38-tp2-test
++ local sp
+++ sample tp2-ep-prefill-power
+++ echo 18415
+++ nvidia-smi --query-gpu=timestamp,index,power.draw,clocks.sm,utilization.gpu --format=csv,noheader -lms 500
++ sp=18415
++ python3 scripts/benchmark-prefill.py --base-url http://127.0.0.1:8125/v1 --model qwen38-exl3 --profile exl3 --prompt-tokens 131072 261632 523264 --runs 3 --server-container qwen38-tp2-test --output /tmp/opencode/bench-300w-20261013/tp2-ep-prefill.json
++ tee /tmp/opencode/bench-300w-20261013/tp2-ep-prefill.log
+exl3 131,072 run 1/3: 8005.0 tok/s, TTFT 16.374 s
+exl3 131,072 run 2/3: 7976.7 tok/s, TTFT 16.432 s
+exl3 131,072 run 3/3: 7950.6 tok/s, TTFT 16.486 s
+exl3 261,632 run 1/3: 7672.4 tok/s, TTFT 34.101 s
+exl3 261,632 run 2/3: 7649.1 tok/s, TTFT 34.204 s
+exl3 261,632 run 3/3: 7635.7 tok/s, TTFT 34.264 s
+exl3 523,264 run 1/3: 7239.8 tok/s, TTFT 72.276 s
+exl3 523,264 run 2/3: 7219.7 tok/s, TTFT 72.477 s
+exl3 523,264 run 3/3: 7232.0 tok/s, TTFT 72.354 s
++ kill 18415
+++ date -Is
++ echo '=== swap to TP=1 GPU0 2026-10-13T00:49:12-05:00'
+=== swap to TP=1 GPU0 2026-10-13T00:49:12-05:00
++ docker stop qwen38-tp2-test
++ QUANT=exl3
++ TP_SIZE=1
++ GPU=0
++ CONTAINER_NAME=qwen38-tp1-bench
++ PORT=8125
++ ./start.sh
+PLE pinned host memory (strategy round2, TP 1): table 95.4 GiB pins 128.0 GiB (128.0/rank x 1); with token embeddings 130.0 GiB pinned against 96.6 GiB of checkpoint, on 995.6 GiB installed (13%).
+Emulate Docker CLI using podman. Create /etc/containers/nodocker to quiet msg.
+4c5d901a8b6613b365d7113993dea895a4c98f409fabe84882ca2c7b1d944bd2
++ wait_ready
+++ seq 1 90
++ for _ in $(seq 1 90)
++ curl -sf http://127.0.0.1:8125/v1/models
++ sleep 10
++ for _ in $(seq 1 90)
++ curl -sf http://127.0.0.1:8125/v1/models
++ sleep 10
++ for _ in $(seq 1 90)
++ curl -sf http://127.0.0.1:8125/v1/models
++ sleep 10
++ for _ in $(seq 1 90)
++ curl -sf http://127.0.0.1:8125/v1/models
++ sleep 10
++ for _ in $(seq 1 90)
++ curl -sf http://127.0.0.1:8125/v1/models
++ sleep 10
++ for _ in $(seq 1 90)
++ curl -sf http://127.0.0.1:8125/v1/models
++ sleep 10
++ for _ in $(seq 1 90)
++ curl -sf http://127.0.0.1:8125/v1/models
++ sleep 10
++ for _ in $(seq 1 90)
++ curl -sf http://127.0.0.1:8125/v1/models
++ sleep 10
++ for _ in $(seq 1 90)
++ curl -sf http://127.0.0.1:8125/v1/models
++ sleep 10
++ for _ in $(seq 1 90)
++ curl -sf http://127.0.0.1:8125/v1/models
++ sleep 10
++ for _ in $(seq 1 90)
++ curl -sf http://127.0.0.1:8125/v1/models
++ sleep 10
++ for _ in $(seq 1 90)
++ curl -sf http://127.0.0.1:8125/v1/models
++ sleep 10
++ for _ in $(seq 1 90)
++ curl -sf http://127.0.0.1:8125/v1/models
++ sleep 10
++ for _ in $(seq 1 90)
++ curl -sf http://127.0.0.1:8125/v1/models
++ sleep 10
++ for _ in $(seq 1 90)
++ curl -sf http://127.0.0.1:8125/v1/models
++ sleep 10
++ for _ in $(seq 1 90)
++ curl -sf http://127.0.0.1:8125/v1/models
++ sleep 10
++ for _ in $(seq 1 90)
++ curl -sf http://127.0.0.1:8125/v1/models
++ sleep 10
++ for _ in $(seq 1 90)
++ curl -sf http://127.0.0.1:8125/v1/models
++ sleep 10
++ for _ in $(seq 1 90)
++ curl -sf http://127.0.0.1:8125/v1/models
++ sleep 10
++ for _ in $(seq 1 90)
++ curl -sf http://127.0.0.1:8125/v1/models
++ sleep 10
++ for _ in $(seq 1 90)
++ curl -sf http://127.0.0.1:8125/v1/models
++ sleep 10
++ for _ in $(seq 1 90)
++ curl -sf http://127.0.0.1:8125/v1/models
++ return 0
++ nvidia-smi --query-gpu=index,enforced.power.limit --format=csv,noheader
+0, 300.00 W
+1, 300.00 W
+++ date -Is
++ echo '=== leg 2: TP=1 2026-10-13T00:53:04-05:00'
+=== leg 2: TP=1 2026-10-13T00:53:04-05:00
++ run_decode tp1 qwen38-tp1-bench
++ local tag=tp1 cont=qwen38-tp1-bench
++ local sp
+++ sample tp1-decode-power
+++ echo 19363
+++ nvidia-smi --query-gpu=timestamp,index,power.draw,clocks.sm,utilization.gpu --format=csv,noheader -lms 500
++ sp=19363
++ python3 scripts/benchmark-decode.py --base-url http://127.0.0.1:8125/v1 --model qwen38-exl3 --profile exl3 --mtp-tokens 3 --request-mode clients --output-tokens 256 --concurrency 1 2 4 8 16 --runs 3 --server-container qwen38-tp1-bench --output /tmp/opencode/bench-300w-20261013/tp1-decode.json
++ tee /tmp/opencode/bench-300w-20261013/tp1-decode.log
+exl3 static MTP3 C1 run 1/3: 127.16 tok/s
+exl3 static MTP3 C1 run 2/3: 114.49 tok/s
+exl3 static MTP3 C1 run 3/3: 118.87 tok/s
+exl3 static MTP3 C2 run 1/3: 200.04 tok/s
+exl3 static MTP3 C2 run 2/3: 192.27 tok/s
+exl3 static MTP3 C2 run 3/3: 199.01 tok/s
+exl3 static MTP3 C4 run 1/3: 315.28 tok/s
+exl3 static MTP3 C4 run 2/3: 302.29 tok/s
+exl3 static MTP3 C4 run 3/3: 308.27 tok/s
+exl3 static MTP3 C8 run 1/3: 478.82 tok/s
+exl3 static MTP3 C8 run 2/3: 478.78 tok/s
+exl3 static MTP3 C8 run 3/3: 479.68 tok/s
+exl3 static MTP3 C16 run 1/3: 610.33 tok/s
+exl3 static MTP3 C16 run 2/3: 638.98 tok/s
+exl3 static MTP3 C16 run 3/3: 600.86 tok/s
++ kill 19363
++ run_prefill tp1 qwen38-tp1-bench
++ local tag=tp1 cont=qwen38-tp1-bench
++ local sp
+++ sample tp1-prefill-power
+++ echo 19571
+++ nvidia-smi --query-gpu=timestamp,index,power.draw,clocks.sm,utilization.gpu --format=csv,noheader -lms 500
++ sp=19571
++ python3 scripts/benchmark-prefill.py --base-url http://127.0.0.1:8125/v1 --model qwen38-exl3 --profile exl3 --prompt-tokens 131072 261632 523264 --runs 3 --server-container qwen38-tp1-bench --output /tmp/opencode/bench-300w-20261013/tp1-prefill.json
++ tee /tmp/opencode/bench-300w-20261013/tp1-prefill.log
+exl3 131,072 run 1/3: 5848.8 tok/s, TTFT 22.410 s
+exl3 131,072 run 2/3: 5830.7 tok/s, TTFT 22.480 s
+exl3 131,072 run 3/3: 5817.9 tok/s, TTFT 22.529 s
+exl3 261,632 run 1/3: 5680.1 tok/s, TTFT 46.061 s
+exl3 261,632 run 2/3: 5673.9 tok/s, TTFT 46.111 s
+exl3 261,632 run 3/3: 5671.4 tok/s, TTFT 46.132 s
+exl3 523,264 run 1/3: 5467.0 tok/s, TTFT 95.714 s
+exl3 523,264 run 2/3: 5468.4 tok/s, TTFT 95.688 s
+exl3 523,264 run 3/3: 5474.1 tok/s, TTFT 95.589 s
++ kill 19571
+++ date -Is
++ echo 'BENCH_DONE 2026-10-13T01:05:54-05:00'
+BENCH_DONE 2026-10-13T01:05:54-05:00

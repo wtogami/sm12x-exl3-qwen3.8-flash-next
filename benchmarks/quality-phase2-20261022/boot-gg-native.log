@@ -1,0 +1,11 @@
+WARNING: this profile pins 97.4 GiB, 77% of the 125.7 GiB installed.
+  The highest share that has actually served an engine is 71.0% (130 GiB on a 183
+  GiB host). 77.5% has been pinned by a probe but never served; above 77.5% nothing
+  has been pinned at all. Expect failure if anything else holds pinned memory.
+NOTE: PLE_PIN_STRATEGY=exact is only honoured by a build carrying the
+  qwen_pinned_host port. On an image without it the variable is ignored and
+  the table pins 95.4 GiB as 128.0 GiB instead -- this preflight
+  cannot see inside the image, so confirm the loader logs the exact-size line.
+PLE pinned host memory (strategy exact, TP 1): table 95.4 GiB pins 95.4 GiB (95.4/rank x 1); with token embeddings 97.4 GiB pinned against 96.6 GiB of checkpoint, on 125.7 GiB installed (77%).
+Emulate Docker CLI using podman. Create /etc/containers/nodocker to quiet msg.
+c173f607042018741378bdbdf5f2734b315f4ee5ead5e3b8b8fa60432a7006e4

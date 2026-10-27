@@ -1,0 +1,4 @@
+{"fraction": 0.5, "depth_tokens": 245248, "concurrency": 2, "requests_ok": 2, "preemptions": 0.0, "peak_waiting": 0.0, "wall_seconds": 171.09}
+{"fraction": 0.5, "depth_tokens": 245248, "concurrency": 4, "requests_ok": 4, "preemptions": 1.0, "peak_waiting": 2.0, "wall_seconds": 356.7}
+{"fraction": 1.0, "depth_tokens": 507392, "concurrency": 2, "requests_ok": 2, "preemptions": 1.0, "peak_waiting": 1.0, "wall_seconds": 408.71}
+{"fraction": 1.0, "depth_tokens": 507392, "concurrency": 4, "requests_ok": 4, "preemptions": 6.0, "peak_waiting": 3.0, "wall_seconds": 905.29}

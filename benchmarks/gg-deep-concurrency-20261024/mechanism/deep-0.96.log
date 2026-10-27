@@ -1,0 +1,1 @@
+{"fraction": 0.5, "depth_tokens": 245248, "concurrency": 4, "requests_ok": 4, "preemptions": 7.0, "peak_waiting": 2.0, "wall_seconds": 614.74}

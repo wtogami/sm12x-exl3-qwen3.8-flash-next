@@ -1,0 +1,92 @@
+2026-10-22T13:19:42Z ARM A verified
+2026-10-22T13:19:42Z STAGE A1-table start
+2026-10-22T13:25:25Z ARM gg-native verified (qwen38-exl3)
+2026-10-22T13:25:25Z ARM gg-native verified (qwen38-exl3)
+2026-10-22T13:25:25Z STAGE GG-N1-babilong-native-N50 start
+2026-10-22T13:25:25Z STAGE GG-N1-babilong-native-N50 start
+qa1 128k: acc=0.86 answered=50 skipped=0 ttft=21.03
+qa2 128k: acc=0.4 answered=50 skipped=0 ttft=16.2
+labeled len=524032: presence=1.0 aligned=1.0 rows=9124 skipped=0
+qa3 128k: acc=0.28 answered=50 skipped=0 ttft=19.67
+qa1 64k: acc=0.92 answered=50 skipped=0 ttft=9.7
+qa2 64k: acc=0.44 answered=50 skipped=0 ttft=9.65
+qa3 64k: acc=0.36 answered=50 skipped=0 ttft=9.74
+qa1 8k: acc=0.94 answered=50 skipped=0 ttft=1.19
+qa2 8k: acc=0.5 answered=50 skipped=0 ttft=1.19
+qa3 8k: acc=0.4 answered=50 skipped=0 ttft=1.2
+2026-10-22T14:39:31Z STAGE bash -> rc=0 2026-10-22T14:39:31Z
+2026-10-22T14:39:31Z STAGE bash -> rc=0 2026-10-22T14:39:31Z
+2026-10-22T14:39:31Z STAGE GG-N2-qa7-native-N50 start
+2026-10-22T14:39:31Z STAGE GG-N2-qa7-native-N50 start
+qa7 64k: acc=0.38 answered=50 skipped=0 ttft=9.62
+qa7 8k: acc=0.42 answered=50 skipped=0 ttft=1.2
+2026-10-22T14:48:32Z STAGE bash -> rc=0 2026-10-22T14:48:32Z
+2026-10-22T14:48:32Z STAGE bash -> rc=0 2026-10-22T14:48:32Z
+2026-10-22T14:48:32Z STAGE GG-N3-nolima-bracket start
+2026-10-22T14:48:32Z STAGE GG-N3-nolima-bracket start
+length=4096: contains=0.6793 em=0.6793 answered=290 skipped=0
+length=2048: contains=0.7759 em=0.7759 answered=290 skipped=0
+2026-10-22T14:54:01Z STAGE bash -> rc=0 2026-10-22T14:54:01Z
+2026-10-22T14:54:01Z STAGE bash -> rc=0 2026-10-22T14:54:01Z
+2026-10-22T14:54:01Z GG CHAIN COMPLETE
+2026-10-22T14:54:01Z GG CHAIN COMPLETE
+ordinal len=524032: presence=0.0 aligned=0.0 rows=9994 skipped=0
+2026-10-22T14:58:13Z STAGE bash -> rc=0 2026-10-22T14:58:13Z
+2026-10-22T14:58:13Z STAGE A2-babilong-512k-N50 start
+qa1 512k: acc=0.72 answered=50 skipped=0 ttft=53.51
+qa2 512k: acc=0.24 answered=50 skipped=0 ttft=53.72
+2026-10-22T16:27:27Z STAGE bash -> rc=0 2026-10-22T16:27:27Z
+2026-10-22T16:27:27Z pregen calibrated
+2026-10-22T16:27:27Z STAGE A3-fine-ladder-armA start
+qa1 491k: acc=0.7 answered=10 skipped=0 ttft=52.67
+qa4 491k: acc=0.7 answered=10 skipped=0 ttft=52.99
+qa1 458k: acc=0.4 answered=10 skipped=0 ttft=48.93
+qa4 458k: acc=0.6 answered=10 skipped=0 ttft=49.18
+qa1 393k: acc=0.7 answered=10 skipped=0 ttft=41.23
+qa4 393k: acc=0.8 answered=10 skipped=0 ttft=41.71
+qa1 360k: acc=0.8 answered=10 skipped=0 ttft=37.54
+qa4 360k: acc=0.8 answered=10 skipped=0 ttft=37.74
+qa1 327k: acc=0.8 answered=10 skipped=0 ttft=34.11
+qa4 327k: acc=0.9 answered=10 skipped=0 ttft=33.88
+qa1 294k: acc=0.9 answered=10 skipped=0 ttft=30.53
+qa4 294k: acc=0.7 answered=10 skipped=0 ttft=30.51
+2026-10-22T17:48:55Z STAGE bash -> rc=0 2026-10-22T17:48:55Z
+2026-10-22T17:52:03Z ARM B verified
+2026-10-22T17:52:03Z STAGE B1-fine-ladder-armB start
+Traceback (most recent call last):
+  File "/home/opencode/sm12x-exl3-qwen3.8-flash-next/scripts/eval-babilong.py", line 100, in <module>
+    main()
+    ~~~~^^
+  File "/home/opencode/sm12x-exl3-qwen3.8-flash-next/scripts/eval-babilong.py", line 50, in main
+    with args.output.open("x") as output:
+         ~~~~~~~~~~~~~~~~^^^^^
+  File "/usr/lib64/python3.14/pathlib/__init__.py", line 771, in open
+    return io.open(self, mode, buffering, encoding, errors, newline)
+           ~~~~~~~^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+FileExistsError: [Errno 17] File exists: 'benchmarks/quality-phase2-20261022/fine-ladder-armB.jsonl'
+2026-10-22T17:52:03Z STAGE bash -> rc=1 2026-10-22T17:52:03Z
+2026-10-22T17:52:03Z STAGE B2-anchor-512k-N25 start
+Traceback (most recent call last):
+  File "/home/opencode/sm12x-exl3-qwen3.8-flash-next/scripts/eval-babilong.py", line 100, in <module>
+    main()
+    ~~~~^^
+  File "/home/opencode/sm12x-exl3-qwen3.8-flash-next/scripts/eval-babilong.py", line 50, in main
+    with args.output.open("x") as output:
+         ~~~~~~~~~~~~~~~~^^^^^
+  File "/usr/lib64/python3.14/pathlib/__init__.py", line 771, in open
+    return io.open(self, mode, buffering, encoding, errors, newline)
+           ~~~~~~~^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+FileExistsError: [Errno 17] File exists: 'benchmarks/quality-phase2-20261022/babilong-512k-armB-N25.jsonl'
+2026-10-22T17:52:03Z STAGE bash -> rc=1 2026-10-22T17:52:03Z
+2026-10-22T17:55:21Z ARM C verified
+2026-10-22T17:55:21Z STAGE C1-fine-ladder-armC start
+qa1 393k: acc=0.0 answered=3 skipped=7 ttft=39.14
+qa4 393k: acc=0.3333 answered=3 skipped=7 ttft=40.33
+qa1 360k: acc=0.5 answered=10 skipped=0 ttft=37.71
+qa4 360k: acc=0.5 answered=10 skipped=0 ttft=37.79
+qa1 327k: acc=0.4 answered=10 skipped=0 ttft=33.72
+qa4 327k: acc=0.6 answered=10 skipped=0 ttft=33.98
+qa1 294k: acc=0.8 answered=10 skipped=0 ttft=30.4
+qa4 294k: acc=0.7 answered=10 skipped=0 ttft=30.27
+2026-10-22T18:33:17Z STAGE bash -> rc=0 2026-10-22T18:33:17Z
+2026-10-22T18:33:17Z PIPELINE COMPLETE

@@ -1,0 +1,8 @@
+WARNING: this profile pins 66.0 GiB but the host reports only 65.3 GiB available. Free memory or drop another
+  serving container before starting, or this will fail when the table is pinned.
+PLE pinned host memory (strategy round2): table 47.7 GiB pins 64.0 GiB; with token embeddings 66.0 GiB pinned against 48.9 GiB of checkpoint, on 125.7 GiB installed (53%).
+Stopping running container qwen38-exl3-ple8 to replace it (REPLACE=1)
+Emulate Docker CLI using podman. Create /etc/containers/nodocker to quiet msg.
+Emulate Docker CLI using podman. Create /etc/containers/nodocker to quiet msg.
+Emulate Docker CLI using podman. Create /etc/containers/nodocker to quiet msg.
+f93abe7406a002ece29559416f197bbf841d824ca644c5d19950045bd9ed407b

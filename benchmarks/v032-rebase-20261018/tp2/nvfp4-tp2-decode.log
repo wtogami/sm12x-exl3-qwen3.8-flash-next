@@ -1,0 +1,15 @@
+nvfp4 static MTP3 C1 run 1/3: 195.69 tok/s
+nvfp4 static MTP3 C1 run 2/3: 178.23 tok/s
+nvfp4 static MTP3 C1 run 3/3: 184.42 tok/s
+nvfp4 static MTP3 C2 run 1/3: 312.83 tok/s
+nvfp4 static MTP3 C2 run 2/3: 295.12 tok/s
+nvfp4 static MTP3 C2 run 3/3: 305.97 tok/s
+nvfp4 static MTP3 C4 run 1/3: 469.41 tok/s
+nvfp4 static MTP3 C4 run 2/3: 465.94 tok/s
+nvfp4 static MTP3 C4 run 3/3: 462.87 tok/s
+nvfp4 static MTP3 C8 run 1/3: 754.23 tok/s
+nvfp4 static MTP3 C8 run 2/3: 780.43 tok/s
+nvfp4 static MTP3 C8 run 3/3: 773.50 tok/s
+nvfp4 static MTP3 C16 run 1/3: 1218.57 tok/s
+nvfp4 static MTP3 C16 run 2/3: 1243.44 tok/s
+nvfp4 static MTP3 C16 run 3/3: 1223.35 tok/s

@@ -1,0 +1,34 @@
+2026-10-22T15:12:38Z gg/B up, model=qwen38-exl3
+2026-10-22T15:12:38Z STAGE GGB1-fine-ladder-armB start
+qa1 491k: acc=0.1 answered=10 skipped=0 ttft=80.99
+qa4 491k: acc=0.1 answered=10 skipped=0 ttft=81.31
+qa1 458k: acc=0.0 answered=10 skipped=0 ttft=75.64
+qa4 458k: acc=0.2 answered=10 skipped=0 ttft=75.52
+qa1 393k: acc=0.1 answered=10 skipped=0 ttft=64.17
+qa4 393k: acc=0.1 answered=10 skipped=0 ttft=63.92
+qa1 360k: acc=0.1 answered=10 skipped=0 ttft=58.36
+qa4 360k: acc=0.2 answered=10 skipped=0 ttft=58.51
+qa1 327k: acc=0.1 answered=10 skipped=0 ttft=52.8
+qa4 327k: acc=0.5 answered=10 skipped=0 ttft=52.82
+qa1 294k: acc=0.3 answered=10 skipped=0 ttft=47.42
+qa4 294k: acc=0.3 answered=10 skipped=0 ttft=47.62
+2026-10-22T17:18:37Z STAGE bash -> rc=0
+2026-10-22T17:18:37Z STAGE GGB2-anchor-512k-N25 start
+qa1 512k: acc=0.16 answered=25 skipped=0 ttft=82.45
+qa2 512k: acc=0.16 answered=25 skipped=0 ttft=82.43
+2026-10-22T18:27:11Z STAGE bash -> rc=0
+2026-10-22T18:34:02Z gg/C up, model=qwen38-exl3
+2026-10-22T18:34:02Z STAGE GGC1-fine-ladder-armC start
+Traceback (most recent call last):
+  File "/home/opencode/sm12x-exl3-qwen3.8-flash-next/scripts/eval-babilong.py", line 100, in <module>
+    main()
+    ~~~~^^
+  File "/home/opencode/sm12x-exl3-qwen3.8-flash-next/scripts/eval-babilong.py", line 50, in main
+    with args.output.open("x") as output:
+         ~~~~~~~~~~~~~~~~^^^^^
+  File "/usr/lib64/python3.14/pathlib/__init__.py", line 771, in open
+    return io.open(self, mode, buffering, encoding, errors, newline)
+           ~~~~~~~^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+FileExistsError: [Errno 17] File exists: 'benchmarks/quality-phase2-20261022/fine-ladder-armC.jsonl'
+2026-10-22T18:34:03Z STAGE bash -> rc=1
+2026-10-22T18:34:03Z GG FOLLOW COMPLETE

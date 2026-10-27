@@ -1,0 +1,38 @@
+depth=  8192 K=1 needles=1.000 all-or-nothing=1.000 ttft=0.89s
+depth=  8192 K=2 needles=1.000 all-or-nothing=1.000 ttft=0.90s
+depth=  8192 K=4 needles=1.000 all-or-nothing=1.000 ttft=0.92s
+depth=  8192 K=8 needles=1.000 all-or-nothing=1.000 ttft=0.95s
+depth= 16384 K=1 needles=1.000 all-or-nothing=1.000 ttft=1.55s
+depth= 16384 K=2 needles=1.000 all-or-nothing=1.000 ttft=1.93s
+depth= 16384 K=4 needles=1.000 all-or-nothing=1.000 ttft=1.94s
+depth= 16384 K=8 needles=1.000 all-or-nothing=1.000 ttft=1.97s
+depth= 32768 K=1 needles=1.000 all-or-nothing=1.000 ttft=2.34s
+depth= 32768 K=2 needles=1.000 all-or-nothing=1.000 ttft=3.44s
+depth= 32768 K=4 needles=1.000 all-or-nothing=1.000 ttft=3.82s
+depth= 32768 K=8 needles=1.000 all-or-nothing=1.000 ttft=3.85s
+depth= 49152 K=1 needles=1.000 all-or-nothing=1.000 ttft=3.53s
+depth= 49152 K=2 needles=1.000 all-or-nothing=1.000 ttft=4.99s
+depth= 49152 K=4 needles=1.000 all-or-nothing=1.000 ttft=5.72s
+depth= 49152 K=8 needles=1.000 all-or-nothing=1.000 ttft=5.73s
+depth= 65536 K=1 needles=1.000 all-or-nothing=1.000 ttft=4.63s
+depth= 65536 K=2 needles=1.000 all-or-nothing=1.000 ttft=6.43s
+depth= 65536 K=4 needles=1.000 all-or-nothing=1.000 ttft=7.25s
+depth= 65536 K=8 needles=1.000 all-or-nothing=1.000 ttft=7.66s
+depth= 98304 K=1 needles=1.000 all-or-nothing=1.000 ttft=7.56s
+depth= 98304 K=2 needles=1.000 all-or-nothing=1.000 ttft=9.79s
+depth= 98304 K=4 needles=1.000 all-or-nothing=1.000 ttft=10.92s
+depth= 98304 K=8 needles=1.000 all-or-nothing=1.000 ttft=11.65s
+depth=131072 K=1 needles=1.000 all-or-nothing=1.000 ttft=10.02s
+depth=131072 K=2 needles=1.000 all-or-nothing=1.000 ttft=12.61s
+depth=131072 K=4 needles=1.000 all-or-nothing=1.000 ttft=14.13s
+depth=131072 K=8 needles=1.000 all-or-nothing=1.000 ttft=15.15s
+depth=163840 K=1 needles=1.000 all-or-nothing=1.000 ttft=12.62s
+depth=163840 K=2 needles=1.000 all-or-nothing=1.000 ttft=15.61s
+depth=163840 K=4 needles=1.000 all-or-nothing=1.000 ttft=17.88s
+depth=163840 K=8 needles=1.000 all-or-nothing=1.000 ttft=19.02s
+depth=196608 K=1 needles=1.000 all-or-nothing=1.000 ttft=12.66s
+depth=196608 K=2 needles=1.000 all-or-nothing=1.000 ttft=19.01s
+depth=196608 K=4 needles=1.000 all-or-nothing=1.000 ttft=21.54s
+depth=196608 K=8 needles=1.000 all-or-nothing=1.000 ttft=23.07s
+depth=229376 K=1 needles=1.000 all-or-nothing=1.000 ttft=17.18s
+depth=229376 K=2 needles=1.000 all-or-nothing=1.000 ttft=22.89s

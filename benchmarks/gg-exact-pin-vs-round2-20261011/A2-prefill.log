@@ -1,0 +1,10 @@
+exl3-ple8 2,048 run 1/2: 10481.6 tok/s, TTFT 0.195 s
+exl3-ple8 2,048 run 2/2: 10108.2 tok/s, TTFT 0.203 s
+exl3-ple8 8,192 run 1/2: 8717.5 tok/s, TTFT 0.940 s
+exl3-ple8 8,192 run 2/2: 8557.8 tok/s, TTFT 0.957 s
+exl3-ple8 32,768 run 1/2: 7990.2 tok/s, TTFT 4.101 s
+exl3-ple8 32,768 run 2/2: 8123.6 tok/s, TTFT 4.034 s
+exl3-ple8 131,072 run 1/2: 7941.7 tok/s, TTFT 16.504 s
+exl3-ple8 131,072 run 2/2: 7892.5 tok/s, TTFT 16.607 s
+exl3-ple8 261,632 run 1/2: 7736.0 tok/s, TTFT 33.820 s
+exl3-ple8 261,632 run 2/2: 7738.4 tok/s, TTFT 33.810 s

@@ -1,0 +1,7 @@
+length=1024: contains=0.8069 em=0.8034 answered=290 skipped=0
+length=8192: contains=0.5276 em=0.5276 answered=290 skipped=0
+length=16384: contains=0.4207 em=0.4207 answered=290 skipped=0
+length=32768: contains=0.3379 em=0.3379 answered=290 skipped=0
+length=65536: contains=0.3069 em=0.3069 answered=290 skipped=0
+length=131072: contains=0.1276 em=0.1276 answered=290 skipped=0
+NOLIMA MATRIX EXIT=0 2026-10-21T23:45:15Z

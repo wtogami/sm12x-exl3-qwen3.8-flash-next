@@ -1,0 +1,15 @@
+exl3 static MTP3 C1 run 1/3: 117.78 tok/s
+exl3 static MTP3 C1 run 2/3: 111.27 tok/s
+exl3 static MTP3 C1 run 3/3: 117.64 tok/s
+exl3 static MTP3 C2 run 1/3: 201.50 tok/s
+exl3 static MTP3 C2 run 2/3: 206.16 tok/s
+exl3 static MTP3 C2 run 3/3: 193.39 tok/s
+exl3 static MTP3 C4 run 1/3: 328.39 tok/s
+exl3 static MTP3 C4 run 2/3: 314.35 tok/s
+exl3 static MTP3 C4 run 3/3: 309.83 tok/s
+exl3 static MTP3 C8 run 1/3: 462.12 tok/s
+exl3 static MTP3 C8 run 2/3: 452.95 tok/s
+exl3 static MTP3 C8 run 3/3: 449.31 tok/s
+exl3 static MTP3 C16 run 1/3: 592.01 tok/s
+exl3 static MTP3 C16 run 2/3: 589.77 tok/s
+exl3 static MTP3 C16 run 3/3: 593.26 tok/s

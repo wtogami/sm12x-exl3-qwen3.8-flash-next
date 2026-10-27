@@ -1,0 +1,31 @@
+WORST-FIRST START 2026-10-21T14:01:02Z
+Traceback (most recent call last):
+  File "/home/opencode/sm12x-exl3-qwen3.8-flash-next/scripts/benchmark-multineedle.py", line 132, in <module>
+    main()
+    ~~~~^^
+  File "/home/opencode/sm12x-exl3-qwen3.8-flash-next/scripts/benchmark-multineedle.py", line 108, in main
+    result = workloads.request(args.base_url, args.model, prompt,
+                               max(32, 24 * needles + 32))
+  File "/home/opencode/sm12x-exl3-qwen3.8-flash-next/scripts/benchmark-workloads.py", line 64, in request
+    with urllib.request.urlopen(req, timeout=900) as response:
+         ~~~~~~~~~~~~~~~~~~~~~~^^^^^^^^^^^^^^^^^^
+  File "/usr/lib64/python3.14/urllib/request.py", line 187, in urlopen
+    return opener.open(url, data, timeout)
+           ~~~~~~~~~~~^^^^^^^^^^^^^^^^^^^^
+  File "/usr/lib64/python3.14/urllib/request.py", line 493, in open
+    response = meth(req, response)
+  File "/usr/lib64/python3.14/urllib/request.py", line 602, in http_response
+    response = self.parent.error(
+        'http', request, response, code, msg, hdrs)
+  File "/usr/lib64/python3.14/urllib/request.py", line 531, in error
+    return self._call_chain(*args)
+           ~~~~~~~~~~~~~~~~^^^^^^^
+  File "/usr/lib64/python3.14/urllib/request.py", line 464, in _call_chain
+    result = func(*args)
+  File "/usr/lib64/python3.14/urllib/request.py", line 611, in http_error_default
+    raise HTTPError(req.full_url, code, msg, hdrs, fp)
+urllib.error.HTTPError: HTTP Error 400: Bad Request
+WORSTCASE RUN FAILED
+WORST-FIRST START 2026-10-21T16:12:02Z
+depth=524288 K=8 needles=1.000 all-or-nothing=1.000 ttft=64.26s
+FAMILY SATURATED: 524K K=8 flat at N=25 (>=88% at 95% conf). Stopping ladder; native tail is decoration. 2026-10-21T16:39:05Z

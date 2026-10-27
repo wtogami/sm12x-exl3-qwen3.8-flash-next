@@ -1,0 +1,9 @@
+exl3 131,072 run 1/3: 5614.7 tok/s, TTFT 23.345 s
+exl3 131,072 run 2/3: 5600.9 tok/s, TTFT 23.402 s
+exl3 131,072 run 3/3: 5596.9 tok/s, TTFT 23.419 s
+exl3 261,632 run 1/3: 5478.5 tok/s, TTFT 47.756 s
+exl3 261,632 run 2/3: 5481.5 tok/s, TTFT 47.730 s
+exl3 261,632 run 3/3: 5479.0 tok/s, TTFT 47.751 s
+exl3 523,264 run 1/3: 5306.5 tok/s, TTFT 98.608 s
+exl3 523,264 run 2/3: 5300.9 tok/s, TTFT 98.713 s
+exl3 523,264 run 3/3: 5308.2 tok/s, TTFT 98.577 s

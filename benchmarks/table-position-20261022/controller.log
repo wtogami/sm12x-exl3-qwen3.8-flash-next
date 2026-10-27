@@ -1,0 +1,28 @@
+STAGE1 native start 2026-10-22T02:20:41Z
+ordinal len=229376: presence=0.0 aligned=0.0 rows=4373 skipped=0
+ordinal len=131072: presence=0.05 aligned=0.0 rows=2498 skipped=0
+ordinal len=65536: presence=0.0 aligned=0.0 rows=1247 skipped=0
+ordinal len=16384: presence=0.15 aligned=0.0 rows=310 skipped=0
+ordinal len=4096: presence=0.575 aligned=0.4 rows=75 skipped=0
+labeled len=229376: presence=1.0 aligned=1.0 rows=3992 skipped=0
+labeled len=131072: presence=1.0 aligned=1.0 rows=2280 skipped=0
+labeled len=65536: presence=1.0 aligned=1.0 rows=1139 skipped=0
+labeled len=16384: presence=1.0 aligned=1.0 rows=283 skipped=0
+labeled len=4096: presence=1.0 aligned=1.0 rows=69 skipped=0
+STAGE1 EXIT=0 2026-10-22T02:57:03Z
+STAGE2 yarn start 2026-10-22T03:00:11Z
+ordinal len=524032: presence=0.0 aligned=0.0 rows=9994 skipped=0
+ordinal len=393216: presence=0.0 aligned=0.0 rows=7498 skipped=0
+ordinal len=229376: presence=0.0 aligned=0.0 rows=4373 skipped=0
+ordinal len=131072: presence=0.05 aligned=0.0 rows=2498 skipped=0
+ordinal len=65536: presence=0.0 aligned=0.0 rows=1247 skipped=0
+ordinal len=16384: presence=0.1 aligned=0.0 rows=310 skipped=0
+ordinal len=4096: presence=0.6 aligned=0.35 rows=75 skipped=0
+labeled len=524032: presence=1.0 aligned=1.0 rows=9124 skipped=0
+labeled len=393216: presence=1.0 aligned=1.0 rows=6845 skipped=0
+labeled len=229376: presence=1.0 aligned=1.0 rows=3992 skipped=0
+labeled len=131072: presence=1.0 aligned=1.0 rows=2280 skipped=0
+labeled len=65536: presence=1.0 aligned=1.0 rows=1139 skipped=0
+labeled len=16384: presence=1.0 aligned=1.0 rows=283 skipped=0
+labeled len=4096: presence=1.0 aligned=1.0 rows=69 skipped=0
+TABLE POSITION PIPELINE EXIT=0 2026-10-22T04:56:09Z

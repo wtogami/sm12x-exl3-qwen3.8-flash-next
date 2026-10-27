@@ -1,0 +1,15 @@
+nvfp4 2,048 run 1/3: 13906.0 tok/s, TTFT 0.147 s
+nvfp4 2,048 run 2/3: 13569.4 tok/s, TTFT 0.151 s
+nvfp4 2,048 run 3/3: 13513.6 tok/s, TTFT 0.152 s
+nvfp4 8,192 run 1/3: 12348.8 tok/s, TTFT 0.663 s
+nvfp4 8,192 run 2/3: 12405.2 tok/s, TTFT 0.660 s
+nvfp4 8,192 run 3/3: 12382.7 tok/s, TTFT 0.662 s
+nvfp4 32,768 run 1/3: 11906.4 tok/s, TTFT 2.752 s
+nvfp4 32,768 run 2/3: 11929.8 tok/s, TTFT 2.747 s
+nvfp4 32,768 run 3/3: 11899.2 tok/s, TTFT 2.754 s
+nvfp4 65,536 run 1/3: 11718.3 tok/s, TTFT 5.593 s
+nvfp4 65,536 run 2/3: 11694.2 tok/s, TTFT 5.604 s
+nvfp4 65,536 run 3/3: 11704.2 tok/s, TTFT 5.599 s
+nvfp4 128,000 run 1/3: 11480.7 tok/s, TTFT 11.149 s
+nvfp4 128,000 run 2/3: 11423.2 tok/s, TTFT 11.205 s
+nvfp4 128,000 run 3/3: 11441.0 tok/s, TTFT 11.188 s

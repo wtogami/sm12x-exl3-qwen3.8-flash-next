@@ -1,0 +1,21 @@
+{"run": 0, "case": "code", "contract": {"quality_contract_passed": true, "quality_contract_issues": []}, "decode_tps": 210.38533321126735}
+{"run": 0, "case": "math", "contract": {"quality_contract_passed": true, "quality_contract_issues": []}, "decode_tps": 221.662592553855}
+{"run": 0, "case": "fable", "contract": {"quality_contract_passed": false, "quality_contract_issues": ["response does not end with a moral about sharing credit"]}, "decode_tps": 130.23520994578394}
+{"run": 0, "case": "hello", "contract": {"quality_contract_passed": true, "quality_contract_issues": []}, "decode_tps": 196.57846443766536}
+{"run": 0, "case": "topic", "contract": {"quality_contract_passed": true, "quality_contract_issues": []}, "decode_tps": 154.9444177585674}
+{"run": 0, "case": "structured-json", "contract": {"quality_contract_passed": true, "quality_contract_issues": []}, "decode_tps": 186.9359837645841}
+{"run": 0, "case": "multilingual", "contract": {"quality_contract_passed": true, "quality_contract_issues": []}, "decode_tps": 128.1985643157406}
+{"run": 1, "case": "code", "contract": {"quality_contract_passed": true, "quality_contract_issues": []}, "decode_tps": 217.1648210488612}
+{"run": 1, "case": "math", "contract": {"quality_contract_passed": true, "quality_contract_issues": []}, "decode_tps": 217.00236857188932}
+{"run": 1, "case": "fable", "contract": {"quality_contract_passed": true, "quality_contract_issues": []}, "decode_tps": 136.70001407051095}
+{"run": 1, "case": "hello", "contract": {"quality_contract_passed": true, "quality_contract_issues": []}, "decode_tps": 194.26299498635456}
+{"run": 1, "case": "topic", "contract": {"quality_contract_passed": true, "quality_contract_issues": []}, "decode_tps": 150.2094869049393}
+{"run": 1, "case": "structured-json", "contract": {"quality_contract_passed": true, "quality_contract_issues": []}, "decode_tps": 186.81655033481323}
+{"run": 1, "case": "multilingual", "contract": {"quality_contract_passed": true, "quality_contract_issues": []}, "decode_tps": 123.41161352052566}
+{"run": 2, "case": "code", "contract": {"quality_contract_passed": true, "quality_contract_issues": []}, "decode_tps": 208.81540760728402}
+{"run": 2, "case": "math", "contract": {"quality_contract_passed": true, "quality_contract_issues": []}, "decode_tps": 230.0132388423759}
+{"run": 2, "case": "fable", "contract": {"quality_contract_passed": false, "quality_contract_issues": ["fable has 178 words, outside 140..170"]}, "decode_tps": 124.27071205724639}
+{"run": 2, "case": "hello", "contract": {"quality_contract_passed": true, "quality_contract_issues": []}, "decode_tps": 195.5868564350848}
+{"run": 2, "case": "topic", "contract": {"quality_contract_passed": true, "quality_contract_issues": []}, "decode_tps": 147.01520196912887}
+{"run": 2, "case": "structured-json", "contract": {"quality_contract_passed": true, "quality_contract_issues": []}, "decode_tps": 183.97234583175185}
+{"run": 2, "case": "multilingual", "contract": {"quality_contract_passed": true, "quality_contract_issues": []}, "decode_tps": 122.59215985546565}

@@ -1,0 +1,13 @@
+[18:54:07] v2 start
+[18:54:07] source sync ok
+143
+0d691f68cbf8793ecf109a14780d97b296ef5da4029cf0351de0fbff8d5cf5ed
+[18:54:08] smoke launched
+ -- Quantized: model.language_model.layers.0                                                              bpw:  6.33  rfn: 0.003414  cos: 0.000002  sqnr: 57.273778  [553.62 s]  rss: 49.10 GB
+time="2026-10-14T19:04:14-05:00" level=warning msg="StopSignal SIGTERM failed to stop container gg-smoke in 10 seconds, resorting to SIGKILL"
+gg-smoke
+[19:04:35] qtensor pulled: 2052875947 bytes
+{"bit_identical": false, "keys_a": 6166, "keys_b": 6166, "mean_rel_rmse_8t": 0.0}
+[19:04:41] compare recorded
+eaabcff8c2572281374d4c753497e5273df5353f7775aae095dccdd25e49639c
+[19:04:42] gg-ref4 launched

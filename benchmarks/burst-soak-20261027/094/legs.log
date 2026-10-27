@@ -1,0 +1,2892 @@
+{
+  "schema": "qwen38-vllm-vision.v1",
+  "model": "qwen38-exl3",
+  "supported_image_counts": {
+    "16": {
+      "passed": true,
+      "status": 200,
+      "expected": [
+        1,
+        2,
+        3,
+        4,
+        5,
+        6,
+        7,
+        8,
+        9,
+        10,
+        11,
+        12,
+        13,
+        14,
+        15,
+        16
+      ],
+      "observed": [
+        1,
+        2,
+        3,
+        4,
+        5,
+        6,
+        7,
+        8,
+        9,
+        10,
+        11,
+        12,
+        13,
+        14,
+        15,
+        16
+      ],
+      "response": "1, 2, 3, 4, 5, 6, 7, 8, 9, 10, 11, 12, 13, 14, 15, 16",
+      "usage": {
+        "prompt_tokens": 3209,
+        "total_tokens": 3263,
+        "completion_tokens": 54,
+        "prompt_tokens_details": null,
+        "completion_tokens_details": {
+          "reasoning_tokens": 0
+        }
+      }
+    }
+  },
+  "configured_image_limit": null,
+  "overflow_rejected": null,
+  "passed": true
+}
+exact-upstream-0: PASS
+exact-upstream-1: PASS
+exact-upstream-2: PASS
+upstream-2048-0: PASS
+upstream-2048-1: PASS
+upstream-2048-2: PASS
+concurrent-thinking-0: PASS
+concurrent-thinking-2: PASS
+concurrent-thinking-4: PASS
+concurrent-thinking-6: PASS
+concurrent-thinking-8: PASS
+concurrent-thinking-10: PASS
+concurrent-thinking-12: PASS
+concurrent-thinking-14: PASS
+concurrent-thinking-1: PASS
+concurrent-thinking-3: PASS
+concurrent-thinking-5: PASS
+concurrent-thinking-7: PASS
+concurrent-thinking-9: PASS
+concurrent-thinking-11: PASS
+concurrent-thinking-15: PASS
+concurrent-thinking-13: PASS
+strict-json-normal-eos-0: PASS
+strict-json-normal-eos-1: PASS
+strict-json-normal-eos-2: PASS
+strict-json-normal-eos-3: PASS
+strict-json-normal-eos-4: PASS
+ignore-eos-explicit-stop-0: PASS
+ignore-eos-explicit-stop-1: PASS
+ignore-eos-explicit-stop-2: PASS
+ignore-eos-explicit-stop-3: PASS
+ignore-eos-explicit-stop-4: PASS
+{"schema_version": 2, "started_at": "2026-10-27T14:22:27.462455+00:00", "finished_at": "2026-10-27T14:22:44.335883+00:00", "model": "qwen38-exl3", "concurrency": 16, "expected_cases": 29, "completed_cases": 29, "failed_cases": 0, "diagnostic_budget_limited_cases": 0, "speculation_metrics_before": {"vllm:spec_decode_num_drafts_total": 14.0, "vllm:spec_decode_num_draft_tokens_total": 42.0, "vllm:spec_decode_num_accepted_tokens_total": 40.0}, "speculation_metrics_after": {"vllm:spec_decode_num_drafts_total": 931.0, "vllm:spec_decode_num_draft_tokens_total": 2725.0, "vllm:spec_decode_num_accepted_tokens_total": 2309.0}, "speculation_metrics_delta": {"vllm:spec_decode_num_drafts_total": 917.0, "vllm:spec_decode_num_draft_tokens_total": 2683.0, "vllm:spec_decode_num_accepted_tokens_total": 2269.0}, "speculation_active": true, "scope": "29 complete JSON/schema/stop checks plus 3 separate verbatim 500-token diagnostics; ignore-EOS complete cases use explicit stop; server log audit is separate", "status": "PASS"}
+{"filler_tokens": 240000, "position": 0.05, "prompt_tokens": 240073, "passed": true, "response": "5f4e8d43fa8bdc26a912"}
+{"filler_tokens": 240000, "position": 0.5, "prompt_tokens": 240069, "passed": true, "response": "aa82e911598f0b119f92"}
+{"filler_tokens": 240000, "position": 0.95, "prompt_tokens": 240070, "passed": true, "response": "574f8fae2625a5f178dd"}
+{"fraction": 0.42, "depth_tokens": 219176, "concurrency": 4, "requests_ok": 4, "preemptions": 0.0, "peak_waiting": 2.0, "wall_seconds": 122.99}
+{
+  "schema": "qwen38-vllm-vision.v1",
+  "model": "qwen38-exl3",
+  "supported_image_counts": {
+    "16": {
+      "passed": true,
+      "status": 200,
+      "expected": [
+        1,
+        2,
+        3,
+        4,
+        5,
+        6,
+        7,
+        8,
+        9,
+        10,
+        11,
+        12,
+        13,
+        14,
+        15,
+        16
+      ],
+      "observed": [
+        1,
+        2,
+        3,
+        4,
+        5,
+        6,
+        7,
+        8,
+        9,
+        10,
+        11,
+        12,
+        13,
+        14,
+        15,
+        16
+      ],
+      "response": "1,2,3,4,5,6,7,8,9,10,11,12,13,14,15,16",
+      "usage": {
+        "prompt_tokens": 3209,
+        "total_tokens": 3248,
+        "completion_tokens": 39,
+        "prompt_tokens_details": null,
+        "completion_tokens_details": {
+          "reasoning_tokens": 0
+        }
+      }
+    }
+  },
+  "configured_image_limit": null,
+  "overflow_rejected": null,
+  "passed": true
+}
+exact-upstream-0: PASS
+exact-upstream-1: PASS
+exact-upstream-2: PASS
+upstream-2048-0: PASS
+upstream-2048-1: PASS
+upstream-2048-2: PASS
+concurrent-thinking-0: PASS
+concurrent-thinking-2: PASS
+concurrent-thinking-4: PASS
+concurrent-thinking-6: PASS
+concurrent-thinking-8: PASS
+concurrent-thinking-10: PASS
+concurrent-thinking-12: PASS
+concurrent-thinking-14: PASS
+{"fraction": 0.42, "depth_tokens": 219176, "concurrency": 2, "requests_ok": 2, "preemptions": 0.0, "peak_waiting": 1.0, "wall_seconds": 64.2}
+concurrent-thinking-1: PASS
+concurrent-thinking-3: PASS
+concurrent-thinking-5: PASS
+concurrent-thinking-7: PASS
+concurrent-thinking-9: PASS
+concurrent-thinking-11: PASS
+concurrent-thinking-13: PASS
+concurrent-thinking-15: PASS
+strict-json-normal-eos-0: PASS
+strict-json-normal-eos-1: PASS
+strict-json-normal-eos-2: PASS
+strict-json-normal-eos-3: PASS
+strict-json-normal-eos-4: PASS
+ignore-eos-explicit-stop-0: PASS
+ignore-eos-explicit-stop-1: PASS
+ignore-eos-explicit-stop-2: PASS
+ignore-eos-explicit-stop-3: PASS
+ignore-eos-explicit-stop-4: PASS
+{"schema_version": 2, "started_at": "2026-10-27T14:26:38.238593+00:00", "finished_at": "2026-10-27T14:27:55.583541+00:00", "model": "qwen38-exl3", "concurrency": 16, "expected_cases": 29, "completed_cases": 29, "failed_cases": 0, "diagnostic_budget_limited_cases": 0, "speculation_metrics_before": {"vllm:spec_decode_num_drafts_total": 1469.0, "vllm:spec_decode_num_draft_tokens_total": 4339.0, "vllm:spec_decode_num_accepted_tokens_total": 3882.0}, "speculation_metrics_after": {"vllm:spec_decode_num_drafts_total": 2685.0, "vllm:spec_decode_num_draft_tokens_total": 7915.0, "vllm:spec_decode_num_accepted_tokens_total": 6915.0}, "speculation_metrics_delta": {"vllm:spec_decode_num_drafts_total": 1216.0, "vllm:spec_decode_num_draft_tokens_total": 3576.0, "vllm:spec_decode_num_accepted_tokens_total": 3033.0}, "speculation_active": true, "scope": "29 complete JSON/schema/stop checks plus 3 separate verbatim 500-token diagnostics; ignore-EOS complete cases use explicit stop; server log audit is separate", "status": "PASS"}
+exl3 static MTP3 C16 run 1/2: 706.19 tok/s
+exl3 static MTP3 C16 run 2/2: 702.72 tok/s
+exact-upstream-0: PASS
+exact-upstream-1: PASS
+exact-upstream-2: PASS
+upstream-2048-0: PASS
+upstream-2048-1: PASS
+upstream-2048-2: PASS
+concurrent-thinking-0: PASS
+concurrent-thinking-2: PASS
+concurrent-thinking-4: PASS
+concurrent-thinking-6: PASS
+concurrent-thinking-8: PASS
+concurrent-thinking-12: PASS
+concurrent-thinking-14: PASS
+concurrent-thinking-10: PASS
+concurrent-thinking-1: PASS
+concurrent-thinking-3: PASS
+concurrent-thinking-5: PASS
+concurrent-thinking-7: PASS
+concurrent-thinking-9: PASS
+concurrent-thinking-11: PASS
+concurrent-thinking-13: PASS
+concurrent-thinking-15: PASS
+strict-json-normal-eos-0: PASS
+strict-json-normal-eos-1: PASS
+strict-json-normal-eos-2: PASS
+strict-json-normal-eos-3: PASS
+strict-json-normal-eos-4: PASS
+ignore-eos-explicit-stop-0: PASS
+ignore-eos-explicit-stop-1: PASS
+ignore-eos-explicit-stop-2: PASS
+ignore-eos-explicit-stop-3: PASS
+ignore-eos-explicit-stop-4: PASS
+{"schema_version": 2, "started_at": "2026-10-27T14:28:36.519922+00:00", "finished_at": "2026-10-27T14:28:52.922567+00:00", "model": "qwen38-exl3", "concurrency": 16, "expected_cases": 29, "completed_cases": 29, "failed_cases": 0, "diagnostic_budget_limited_cases": 0, "speculation_metrics_before": {"vllm:spec_decode_num_drafts_total": 14601.0, "vllm:spec_decode_num_draft_tokens_total": 43663.0, "vllm:spec_decode_num_accepted_tokens_total": 19565.0}, "speculation_metrics_after": {"vllm:spec_decode_num_drafts_total": 15518.0, "vllm:spec_decode_num_draft_tokens_total": 46346.0, "vllm:spec_decode_num_accepted_tokens_total": 21834.0}, "speculation_metrics_delta": {"vllm:spec_decode_num_drafts_total": 917.0, "vllm:spec_decode_num_draft_tokens_total": 2683.0, "vllm:spec_decode_num_accepted_tokens_total": 2269.0}, "speculation_active": true, "scope": "29 complete JSON/schema/stop checks plus 3 separate verbatim 500-token diagnostics; ignore-EOS complete cases use explicit stop; server log audit is separate", "status": "PASS"}
+{"fraction": 0.42, "depth_tokens": 219176, "concurrency": 4, "requests_ok": 4, "preemptions": 0.0, "peak_waiting": 2.0, "wall_seconds": 123.02}
+{
+  "schema": "qwen38-vllm-vision.v1",
+  "model": "qwen38-exl3",
+  "supported_image_counts": {
+    "16": {
+      "passed": true,
+      "status": 200,
+      "expected": [
+        1,
+        2,
+        3,
+        4,
+        5,
+        6,
+        7,
+        8,
+        9,
+        10,
+        11,
+        12,
+        13,
+        14,
+        15,
+        16
+      ],
+      "observed": [
+        1,
+        2,
+        3,
+        4,
+        5,
+        6,
+        7,
+        8,
+        9,
+        10,
+        11,
+        12,
+        13,
+        14,
+        15,
+        16
+      ],
+      "response": "1,2,3,4,5,6,7,8,9,10,11,12,13,14,15,16",
+      "usage": {
+        "prompt_tokens": 3209,
+        "total_tokens": 3248,
+        "completion_tokens": 39,
+        "prompt_tokens_details": null,
+        "completion_tokens_details": {
+          "reasoning_tokens": 0
+        }
+      }
+    }
+  },
+  "configured_image_limit": null,
+  "overflow_rejected": null,
+  "passed": true
+}
+exact-upstream-0: PASS
+exact-upstream-1: PASS
+exact-upstream-2: PASS
+upstream-2048-0: PASS
+upstream-2048-1: PASS
+upstream-2048-2: PASS
+concurrent-thinking-0: PASS
+concurrent-thinking-2: PASS
+concurrent-thinking-4: PASS
+concurrent-thinking-6: PASS
+concurrent-thinking-8: PASS
+concurrent-thinking-10: PASS
+concurrent-thinking-12: PASS
+concurrent-thinking-14: PASS
+concurrent-thinking-1: PASS
+concurrent-thinking-3: PASS
+concurrent-thinking-5: PASS
+concurrent-thinking-7: PASS
+concurrent-thinking-11: PASS
+concurrent-thinking-13: PASS
+concurrent-thinking-9: PASS
+concurrent-thinking-15: PASS
+strict-json-normal-eos-0: PASS
+strict-json-normal-eos-1: PASS
+strict-json-normal-eos-2: PASS
+strict-json-normal-eos-3: PASS
+strict-json-normal-eos-4: PASS
+ignore-eos-explicit-stop-0: PASS
+ignore-eos-explicit-stop-1: PASS
+ignore-eos-explicit-stop-2: PASS
+ignore-eos-explicit-stop-3: PASS
+ignore-eos-explicit-stop-4: PASS
+{"schema_version": 2, "started_at": "2026-10-27T14:31:13.492386+00:00", "finished_at": "2026-10-27T14:31:29.840217+00:00", "model": "qwen38-exl3", "concurrency": 16, "expected_cases": 29, "completed_cases": 29, "failed_cases": 0, "diagnostic_budget_limited_cases": 0, "speculation_metrics_before": {"vllm:spec_decode_num_drafts_total": 16047.0, "vllm:spec_decode_num_draft_tokens_total": 47933.0, "vllm:spec_decode_num_accepted_tokens_total": 23392.0}, "speculation_metrics_after": {"vllm:spec_decode_num_drafts_total": 16964.0, "vllm:spec_decode_num_draft_tokens_total": 50616.0, "vllm:spec_decode_num_accepted_tokens_total": 25661.0}, "speculation_metrics_delta": {"vllm:spec_decode_num_drafts_total": 917.0, "vllm:spec_decode_num_draft_tokens_total": 2683.0, "vllm:spec_decode_num_accepted_tokens_total": 2269.0}, "speculation_active": true, "scope": "29 complete JSON/schema/stop checks plus 3 separate verbatim 500-token diagnostics; ignore-EOS complete cases use explicit stop; server log audit is separate", "status": "PASS"}
+{"fraction": 0.42, "depth_tokens": 219176, "concurrency": 4, "requests_ok": 4, "preemptions": 0.0, "peak_waiting": 2.0, "wall_seconds": 122.57}
+{
+  "schema": "qwen38-vllm-vision.v1",
+  "model": "qwen38-exl3",
+  "supported_image_counts": {
+    "16": {
+      "passed": true,
+      "status": 200,
+      "expected": [
+        1,
+        2,
+        3,
+        4,
+        5,
+        6,
+        7,
+        8,
+        9,
+        10,
+        11,
+        12,
+        13,
+        14,
+        15,
+        16
+      ],
+      "observed": [
+        1,
+        2,
+        3,
+        4,
+        5,
+        6,
+        7,
+        8,
+        9,
+        10,
+        11,
+        12,
+        13,
+        14,
+        15,
+        16
+      ],
+      "response": "1,2,3,4,5,6,7,8,9,10,11,12,13,14,15,16",
+      "usage": {
+        "prompt_tokens": 3209,
+        "total_tokens": 3248,
+        "completion_tokens": 39,
+        "prompt_tokens_details": null,
+        "completion_tokens_details": {
+          "reasoning_tokens": 0
+        }
+      }
+    }
+  },
+  "configured_image_limit": null,
+  "overflow_rejected": null,
+  "passed": true
+}
+exact-upstream-0: PASS
+exact-upstream-1: PASS
+exact-upstream-2: PASS
+upstream-2048-0: PASS
+upstream-2048-1: PASS
+upstream-2048-2: PASS
+concurrent-thinking-0: PASS
+concurrent-thinking-2: PASS
+concurrent-thinking-4: PASS
+concurrent-thinking-6: PASS
+concurrent-thinking-8: PASS
+concurrent-thinking-10: PASS
+concurrent-thinking-12: PASS
+concurrent-thinking-14: PASS
+concurrent-thinking-1: PASS
+concurrent-thinking-3: PASS
+concurrent-thinking-9: PASS
+concurrent-thinking-5: PASS
+concurrent-thinking-11: PASS
+concurrent-thinking-7: PASS
+concurrent-thinking-13: PASS
+concurrent-thinking-15: PASS
+strict-json-normal-eos-0: PASS
+strict-json-normal-eos-1: PASS
+strict-json-normal-eos-2: PASS
+strict-json-normal-eos-3: PASS
+strict-json-normal-eos-4: PASS
+ignore-eos-explicit-stop-0: PASS
+ignore-eos-explicit-stop-1: PASS
+ignore-eos-explicit-stop-2: PASS
+ignore-eos-explicit-stop-3: PASS
+ignore-eos-explicit-stop-4: PASS
+{"schema_version": 2, "started_at": "2026-10-27T14:33:50.028031+00:00", "finished_at": "2026-10-27T14:34:06.364131+00:00", "model": "qwen38-exl3", "concurrency": 16, "expected_cases": 29, "completed_cases": 29, "failed_cases": 0, "diagnostic_budget_limited_cases": 0, "speculation_metrics_before": {"vllm:spec_decode_num_drafts_total": 17493.0, "vllm:spec_decode_num_draft_tokens_total": 52203.0, "vllm:spec_decode_num_accepted_tokens_total": 27222.0}, "speculation_metrics_after": {"vllm:spec_decode_num_drafts_total": 18410.0, "vllm:spec_decode_num_draft_tokens_total": 54886.0, "vllm:spec_decode_num_accepted_tokens_total": 29491.0}, "speculation_metrics_delta": {"vllm:spec_decode_num_drafts_total": 917.0, "vllm:spec_decode_num_draft_tokens_total": 2683.0, "vllm:spec_decode_num_accepted_tokens_total": 2269.0}, "speculation_active": true, "scope": "29 complete JSON/schema/stop checks plus 3 separate verbatim 500-token diagnostics; ignore-EOS complete cases use explicit stop; server log audit is separate", "status": "PASS"}
+{"fraction": 0.42, "depth_tokens": 219176, "concurrency": 4, "requests_ok": 4, "preemptions": 0.0, "peak_waiting": 2.0, "wall_seconds": 122.55}
+{
+  "schema": "qwen38-vllm-vision.v1",
+  "model": "qwen38-exl3",
+  "supported_image_counts": {
+    "16": {
+      "passed": true,
+      "status": 200,
+      "expected": [
+        1,
+        2,
+        3,
+        4,
+        5,
+        6,
+        7,
+        8,
+        9,
+        10,
+        11,
+        12,
+        13,
+        14,
+        15,
+        16
+      ],
+      "observed": [
+        1,
+        2,
+        3,
+        4,
+        5,
+        6,
+        7,
+        8,
+        9,
+        10,
+        11,
+        12,
+        13,
+        14,
+        15,
+        16
+      ],
+      "response": "1,2,3,4,5,6,7,8,9,10,11,12,13,14,15,16",
+      "usage": {
+        "prompt_tokens": 3209,
+        "total_tokens": 3248,
+        "completion_tokens": 39,
+        "prompt_tokens_details": null,
+        "completion_tokens_details": {
+          "reasoning_tokens": 0
+        }
+      }
+    }
+  },
+  "configured_image_limit": null,
+  "overflow_rejected": null,
+  "passed": true
+}
+exact-upstream-0: PASS
+exact-upstream-1: PASS
+exact-upstream-2: PASS
+upstream-2048-0: PASS
+upstream-2048-1: PASS
+upstream-2048-2: PASS
+concurrent-thinking-0: PASS
+concurrent-thinking-2: PASS
+concurrent-thinking-4: PASS
+concurrent-thinking-6: PASS
+concurrent-thinking-8: PASS
+concurrent-thinking-10: PASS
+concurrent-thinking-14: PASS
+concurrent-thinking-12: PASS
+concurrent-thinking-1: PASS
+concurrent-thinking-3: PASS
+concurrent-thinking-5: PASS
+concurrent-thinking-7: PASS
+concurrent-thinking-9: PASS
+concurrent-thinking-11: PASS
+concurrent-thinking-13: PASS
+concurrent-thinking-15: PASS
+strict-json-normal-eos-0: PASS
+strict-json-normal-eos-1: PASS
+strict-json-normal-eos-2: PASS
+strict-json-normal-eos-3: PASS
+strict-json-normal-eos-4: PASS
+ignore-eos-explicit-stop-0: PASS
+ignore-eos-explicit-stop-1: PASS
+ignore-eos-explicit-stop-2: PASS
+ignore-eos-explicit-stop-3: PASS
+ignore-eos-explicit-stop-4: PASS
+{"schema_version": 2, "started_at": "2026-10-27T14:36:26.568830+00:00", "finished_at": "2026-10-27T14:36:42.898448+00:00", "model": "qwen38-exl3", "concurrency": 16, "expected_cases": 29, "completed_cases": 29, "failed_cases": 0, "diagnostic_budget_limited_cases": 0, "speculation_metrics_before": {"vllm:spec_decode_num_drafts_total": 18938.0, "vllm:spec_decode_num_draft_tokens_total": 56470.0, "vllm:spec_decode_num_accepted_tokens_total": 31052.0}, "speculation_metrics_after": {"vllm:spec_decode_num_drafts_total": 19855.0, "vllm:spec_decode_num_draft_tokens_total": 59153.0, "vllm:spec_decode_num_accepted_tokens_total": 33321.0}, "speculation_metrics_delta": {"vllm:spec_decode_num_drafts_total": 917.0, "vllm:spec_decode_num_draft_tokens_total": 2683.0, "vllm:spec_decode_num_accepted_tokens_total": 2269.0}, "speculation_active": true, "scope": "29 complete JSON/schema/stop checks plus 3 separate verbatim 500-token diagnostics; ignore-EOS complete cases use explicit stop; server log audit is separate", "status": "PASS"}
+{"fraction": 0.42, "depth_tokens": 219176, "concurrency": 4, "requests_ok": 4, "preemptions": 0.0, "peak_waiting": 2.0, "wall_seconds": 122.65}
+{
+  "schema": "qwen38-vllm-vision.v1",
+  "model": "qwen38-exl3",
+  "supported_image_counts": {
+    "16": {
+      "passed": true,
+      "status": 200,
+      "expected": [
+        1,
+        2,
+        3,
+        4,
+        5,
+        6,
+        7,
+        8,
+        9,
+        10,
+        11,
+        12,
+        13,
+        14,
+        15,
+        16
+      ],
+      "observed": [
+        1,
+        2,
+        3,
+        4,
+        5,
+        6,
+        7,
+        8,
+        9,
+        10,
+        11,
+        12,
+        13,
+        14,
+        15,
+        16
+      ],
+      "response": "1,2,3,4,5,6,7,8,9,10,11,12,13,14,15,16",
+      "usage": {
+        "prompt_tokens": 3209,
+        "total_tokens": 3248,
+        "completion_tokens": 39,
+        "prompt_tokens_details": null,
+        "completion_tokens_details": {
+          "reasoning_tokens": 0
+        }
+      }
+    }
+  },
+  "configured_image_limit": null,
+  "overflow_rejected": null,
+  "passed": true
+}
+exact-upstream-0: PASS
+exact-upstream-1: PASS
+exact-upstream-2: PASS
+upstream-2048-0: PASS
+upstream-2048-1: PASS
+upstream-2048-2: PASS
+concurrent-thinking-0: PASS
+concurrent-thinking-2: PASS
+concurrent-thinking-4: PASS
+concurrent-thinking-6: PASS
+concurrent-thinking-8: PASS
+concurrent-thinking-10: PASS
+concurrent-thinking-12: PASS
+concurrent-thinking-14: PASS
+concurrent-thinking-3: PASS
+concurrent-thinking-1: PASS
+concurrent-thinking-7: PASS
+concurrent-thinking-5: PASS
+concurrent-thinking-13: PASS
+concurrent-thinking-9: PASS
+concurrent-thinking-15: PASS
+concurrent-thinking-11: PASS
+strict-json-normal-eos-0: PASS
+strict-json-normal-eos-1: PASS
+strict-json-normal-eos-2: PASS
+strict-json-normal-eos-3: PASS
+strict-json-normal-eos-4: PASS
+ignore-eos-explicit-stop-0: PASS
+ignore-eos-explicit-stop-1: PASS
+ignore-eos-explicit-stop-2: PASS
+ignore-eos-explicit-stop-3: PASS
+ignore-eos-explicit-stop-4: PASS
+{"schema_version": 2, "started_at": "2026-10-27T14:39:03.203649+00:00", "finished_at": "2026-10-27T14:39:19.538674+00:00", "model": "qwen38-exl3", "concurrency": 16, "expected_cases": 29, "completed_cases": 29, "failed_cases": 0, "diagnostic_budget_limited_cases": 0, "speculation_metrics_before": {"vllm:spec_decode_num_drafts_total": 20382.0, "vllm:spec_decode_num_draft_tokens_total": 60734.0, "vllm:spec_decode_num_accepted_tokens_total": 34885.0}, "speculation_metrics_after": {"vllm:spec_decode_num_drafts_total": 21299.0, "vllm:spec_decode_num_draft_tokens_total": 63417.0, "vllm:spec_decode_num_accepted_tokens_total": 37154.0}, "speculation_metrics_delta": {"vllm:spec_decode_num_drafts_total": 917.0, "vllm:spec_decode_num_draft_tokens_total": 2683.0, "vllm:spec_decode_num_accepted_tokens_total": 2269.0}, "speculation_active": true, "scope": "29 complete JSON/schema/stop checks plus 3 separate verbatim 500-token diagnostics; ignore-EOS complete cases use explicit stop; server log audit is separate", "status": "PASS"}
+{"fraction": 0.42, "depth_tokens": 219176, "concurrency": 4, "requests_ok": 4, "preemptions": 0.0, "peak_waiting": 2.0, "wall_seconds": 122.76}
+{
+  "schema": "qwen38-vllm-vision.v1",
+  "model": "qwen38-exl3",
+  "supported_image_counts": {
+    "16": {
+      "passed": true,
+      "status": 200,
+      "expected": [
+        1,
+        2,
+        3,
+        4,
+        5,
+        6,
+        7,
+        8,
+        9,
+        10,
+        11,
+        12,
+        13,
+        14,
+        15,
+        16
+      ],
+      "observed": [
+        1,
+        2,
+        3,
+        4,
+        5,
+        6,
+        7,
+        8,
+        9,
+        10,
+        11,
+        12,
+        13,
+        14,
+        15,
+        16
+      ],
+      "response": "1,2,3,4,5,6,7,8,9,10,11,12,13,14,15,16",
+      "usage": {
+        "prompt_tokens": 3209,
+        "total_tokens": 3248,
+        "completion_tokens": 39,
+        "prompt_tokens_details": null,
+        "completion_tokens_details": {
+          "reasoning_tokens": 0
+        }
+      }
+    }
+  },
+  "configured_image_limit": null,
+  "overflow_rejected": null,
+  "passed": true
+}
+exact-upstream-0: PASS
+exact-upstream-1: PASS
+exact-upstream-2: PASS
+upstream-2048-0: PASS
+upstream-2048-1: PASS
+upstream-2048-2: PASS
+concurrent-thinking-0: PASS
+concurrent-thinking-2: PASS
+concurrent-thinking-4: PASS
+concurrent-thinking-6: PASS
+concurrent-thinking-8: PASS
+concurrent-thinking-10: PASS
+concurrent-thinking-12: PASS
+concurrent-thinking-14: PASS
+concurrent-thinking-3: PASS
+concurrent-thinking-5: PASS
+concurrent-thinking-7: PASS
+concurrent-thinking-9: PASS
+concurrent-thinking-11: PASS
+concurrent-thinking-15: PASS
+concurrent-thinking-13: PASS
+concurrent-thinking-1: PASS
+strict-json-normal-eos-0: PASS
+strict-json-normal-eos-1: PASS
+strict-json-normal-eos-2: PASS
+strict-json-normal-eos-3: PASS
+strict-json-normal-eos-4: PASS
+ignore-eos-explicit-stop-0: PASS
+ignore-eos-explicit-stop-1: PASS
+ignore-eos-explicit-stop-2: PASS
+ignore-eos-explicit-stop-3: PASS
+ignore-eos-explicit-stop-4: PASS
+{"schema_version": 2, "started_at": "2026-10-27T14:41:39.920654+00:00", "finished_at": "2026-10-27T14:41:56.533646+00:00", "model": "qwen38-exl3", "concurrency": 16, "expected_cases": 29, "completed_cases": 29, "failed_cases": 0, "diagnostic_budget_limited_cases": 0, "speculation_metrics_before": {"vllm:spec_decode_num_drafts_total": 21824.0, "vllm:spec_decode_num_draft_tokens_total": 64992.0, "vllm:spec_decode_num_accepted_tokens_total": 38719.0}, "speculation_metrics_after": {"vllm:spec_decode_num_drafts_total": 22727.0, "vllm:spec_decode_num_draft_tokens_total": 67626.0, "vllm:spec_decode_num_accepted_tokens_total": 40883.0}, "speculation_metrics_delta": {"vllm:spec_decode_num_drafts_total": 903.0, "vllm:spec_decode_num_draft_tokens_total": 2634.0, "vllm:spec_decode_num_accepted_tokens_total": 2164.0}, "speculation_active": true, "scope": "29 complete JSON/schema/stop checks plus 3 separate verbatim 500-token diagnostics; ignore-EOS complete cases use explicit stop; server log audit is separate", "status": "PASS"}
+{"fraction": 0.42, "depth_tokens": 219176, "concurrency": 4, "requests_ok": 4, "preemptions": 0.0, "peak_waiting": 2.0, "wall_seconds": 122.74}
+{
+  "schema": "qwen38-vllm-vision.v1",
+  "model": "qwen38-exl3",
+  "supported_image_counts": {
+    "16": {
+      "passed": true,
+      "status": 200,
+      "expected": [
+        1,
+        2,
+        3,
+        4,
+        5,
+        6,
+        7,
+        8,
+        9,
+        10,
+        11,
+        12,
+        13,
+        14,
+        15,
+        16
+      ],
+      "observed": [
+        1,
+        2,
+        3,
+        4,
+        5,
+        6,
+        7,
+        8,
+        9,
+        10,
+        11,
+        12,
+        13,
+        14,
+        15,
+        16
+      ],
+      "response": "1,2,3,4,5,6,7,8,9,10,11,12,13,14,15,16",
+      "usage": {
+        "prompt_tokens": 3209,
+        "total_tokens": 3248,
+        "completion_tokens": 39,
+        "prompt_tokens_details": null,
+        "completion_tokens_details": {
+          "reasoning_tokens": 0
+        }
+      }
+    }
+  },
+  "configured_image_limit": null,
+  "overflow_rejected": null,
+  "passed": true
+}
+exact-upstream-0: PASS
+exact-upstream-1: PASS
+exact-upstream-2: PASS
+upstream-2048-0: PASS
+upstream-2048-1: PASS
+upstream-2048-2: PASS
+concurrent-thinking-0: PASS
+concurrent-thinking-2: PASS
+concurrent-thinking-4: PASS
+concurrent-thinking-6: PASS
+concurrent-thinking-8: PASS
+concurrent-thinking-10: PASS
+concurrent-thinking-14: PASS
+concurrent-thinking-12: PASS
+concurrent-thinking-1: PASS
+concurrent-thinking-3: PASS
+concurrent-thinking-5: PASS
+concurrent-thinking-7: PASS
+concurrent-thinking-9: PASS
+concurrent-thinking-11: PASS
+concurrent-thinking-13: PASS
+concurrent-thinking-15: PASS
+strict-json-normal-eos-0: PASS
+strict-json-normal-eos-1: PASS
+strict-json-normal-eos-2: PASS
+strict-json-normal-eos-3: PASS
+strict-json-normal-eos-4: PASS
+ignore-eos-explicit-stop-0: PASS
+ignore-eos-explicit-stop-1: PASS
+ignore-eos-explicit-stop-2: PASS
+ignore-eos-explicit-stop-3: PASS
+ignore-eos-explicit-stop-4: PASS
+{"schema_version": 2, "started_at": "2026-10-27T14:44:17.143631+00:00", "finished_at": "2026-10-27T14:44:33.488895+00:00", "model": "qwen38-exl3", "concurrency": 16, "expected_cases": 29, "completed_cases": 29, "failed_cases": 0, "diagnostic_budget_limited_cases": 0, "speculation_metrics_before": {"vllm:spec_decode_num_drafts_total": 23259.0, "vllm:spec_decode_num_draft_tokens_total": 69222.0, "vllm:spec_decode_num_accepted_tokens_total": 42440.0}, "speculation_metrics_after": {"vllm:spec_decode_num_drafts_total": 24176.0, "vllm:spec_decode_num_draft_tokens_total": 71905.0, "vllm:spec_decode_num_accepted_tokens_total": 44709.0}, "speculation_metrics_delta": {"vllm:spec_decode_num_drafts_total": 917.0, "vllm:spec_decode_num_draft_tokens_total": 2683.0, "vllm:spec_decode_num_accepted_tokens_total": 2269.0}, "speculation_active": true, "scope": "29 complete JSON/schema/stop checks plus 3 separate verbatim 500-token diagnostics; ignore-EOS complete cases use explicit stop; server log audit is separate", "status": "PASS"}
+{"fraction": 0.42, "depth_tokens": 219176, "concurrency": 4, "requests_ok": 4, "preemptions": 0.0, "peak_waiting": 2.0, "wall_seconds": 122.7}
+{
+  "schema": "qwen38-vllm-vision.v1",
+  "model": "qwen38-exl3",
+  "supported_image_counts": {
+    "16": {
+      "passed": true,
+      "status": 200,
+      "expected": [
+        1,
+        2,
+        3,
+        4,
+        5,
+        6,
+        7,
+        8,
+        9,
+        10,
+        11,
+        12,
+        13,
+        14,
+        15,
+        16
+      ],
+      "observed": [
+        1,
+        2,
+        3,
+        4,
+        5,
+        6,
+        7,
+        8,
+        9,
+        10,
+        11,
+        12,
+        13,
+        14,
+        15,
+        16
+      ],
+      "response": "1,2,3,4,5,6,7,8,9,10,11,12,13,14,15,16",
+      "usage": {
+        "prompt_tokens": 3209,
+        "total_tokens": 3248,
+        "completion_tokens": 39,
+        "prompt_tokens_details": null,
+        "completion_tokens_details": {
+          "reasoning_tokens": 0
+        }
+      }
+    }
+  },
+  "configured_image_limit": null,
+  "overflow_rejected": null,
+  "passed": true
+}
+exact-upstream-0: PASS
+exact-upstream-1: PASS
+exact-upstream-2: PASS
+upstream-2048-0: PASS
+upstream-2048-1: PASS
+upstream-2048-2: PASS
+concurrent-thinking-0: PASS
+concurrent-thinking-2: PASS
+concurrent-thinking-4: PASS
+concurrent-thinking-6: PASS
+concurrent-thinking-8: PASS
+concurrent-thinking-10: PASS
+concurrent-thinking-14: PASS
+concurrent-thinking-12: PASS
+concurrent-thinking-1: PASS
+concurrent-thinking-5: PASS
+concurrent-thinking-3: PASS
+concurrent-thinking-7: PASS
+concurrent-thinking-9: PASS
+concurrent-thinking-11: PASS
+concurrent-thinking-15: PASS
+concurrent-thinking-13: PASS
+strict-json-normal-eos-0: PASS
+strict-json-normal-eos-1: PASS
+strict-json-normal-eos-2: PASS
+strict-json-normal-eos-3: PASS
+strict-json-normal-eos-4: PASS
+ignore-eos-explicit-stop-0: PASS
+ignore-eos-explicit-stop-1: PASS
+ignore-eos-explicit-stop-2: PASS
+ignore-eos-explicit-stop-3: PASS
+ignore-eos-explicit-stop-4: PASS
+{"schema_version": 2, "started_at": "2026-10-27T14:46:53.792735+00:00", "finished_at": "2026-10-27T14:47:10.156387+00:00", "model": "qwen38-exl3", "concurrency": 16, "expected_cases": 29, "completed_cases": 29, "failed_cases": 0, "diagnostic_budget_limited_cases": 0, "speculation_metrics_before": {"vllm:spec_decode_num_drafts_total": 24703.0, "vllm:spec_decode_num_draft_tokens_total": 73486.0, "vllm:spec_decode_num_accepted_tokens_total": 46272.0}, "speculation_metrics_after": {"vllm:spec_decode_num_drafts_total": 25620.0, "vllm:spec_decode_num_draft_tokens_total": 76169.0, "vllm:spec_decode_num_accepted_tokens_total": 48541.0}, "speculation_metrics_delta": {"vllm:spec_decode_num_drafts_total": 917.0, "vllm:spec_decode_num_draft_tokens_total": 2683.0, "vllm:spec_decode_num_accepted_tokens_total": 2269.0}, "speculation_active": true, "scope": "29 complete JSON/schema/stop checks plus 3 separate verbatim 500-token diagnostics; ignore-EOS complete cases use explicit stop; server log audit is separate", "status": "PASS"}
+{"fraction": 0.42, "depth_tokens": 219176, "concurrency": 4, "requests_ok": 4, "preemptions": 0.0, "peak_waiting": 2.0, "wall_seconds": 122.73}
+{
+  "schema": "qwen38-vllm-vision.v1",
+  "model": "qwen38-exl3",
+  "supported_image_counts": {
+    "16": {
+      "passed": true,
+      "status": 200,
+      "expected": [
+        1,
+        2,
+        3,
+        4,
+        5,
+        6,
+        7,
+        8,
+        9,
+        10,
+        11,
+        12,
+        13,
+        14,
+        15,
+        16
+      ],
+      "observed": [
+        1,
+        2,
+        3,
+        4,
+        5,
+        6,
+        7,
+        8,
+        9,
+        10,
+        11,
+        12,
+        13,
+        14,
+        15,
+        16
+      ],
+      "response": "1,2,3,4,5,6,7,8,9,10,11,12,13,14,15,16",
+      "usage": {
+        "prompt_tokens": 3209,
+        "total_tokens": 3248,
+        "completion_tokens": 39,
+        "prompt_tokens_details": null,
+        "completion_tokens_details": {
+          "reasoning_tokens": 0
+        }
+      }
+    }
+  },
+  "configured_image_limit": null,
+  "overflow_rejected": null,
+  "passed": true
+}
+exact-upstream-0: PASS
+exact-upstream-1: PASS
+exact-upstream-2: PASS
+upstream-2048-0: PASS
+upstream-2048-1: PASS
+upstream-2048-2: PASS
+concurrent-thinking-0: PASS
+concurrent-thinking-2: PASS
+concurrent-thinking-4: PASS
+concurrent-thinking-6: PASS
+concurrent-thinking-10: PASS
+concurrent-thinking-8: PASS
+concurrent-thinking-14: PASS
+concurrent-thinking-12: PASS
+concurrent-thinking-1: PASS
+concurrent-thinking-3: PASS
+concurrent-thinking-5: PASS
+concurrent-thinking-7: PASS
+concurrent-thinking-11: PASS
+concurrent-thinking-9: PASS
+concurrent-thinking-13: PASS
+concurrent-thinking-15: PASS
+strict-json-normal-eos-0: PASS
+strict-json-normal-eos-1: PASS
+strict-json-normal-eos-2: PASS
+strict-json-normal-eos-3: PASS
+strict-json-normal-eos-4: PASS
+ignore-eos-explicit-stop-0: PASS
+ignore-eos-explicit-stop-1: PASS
+ignore-eos-explicit-stop-2: PASS
+ignore-eos-explicit-stop-3: PASS
+ignore-eos-explicit-stop-4: PASS
+{"schema_version": 2, "started_at": "2026-10-27T14:49:30.674957+00:00", "finished_at": "2026-10-27T14:49:47.016221+00:00", "model": "qwen38-exl3", "concurrency": 16, "expected_cases": 29, "completed_cases": 29, "failed_cases": 0, "diagnostic_budget_limited_cases": 0, "speculation_metrics_before": {"vllm:spec_decode_num_drafts_total": 26150.0, "vllm:spec_decode_num_draft_tokens_total": 77759.0, "vllm:spec_decode_num_accepted_tokens_total": 50098.0}, "speculation_metrics_after": {"vllm:spec_decode_num_drafts_total": 27067.0, "vllm:spec_decode_num_draft_tokens_total": 80442.0, "vllm:spec_decode_num_accepted_tokens_total": 52367.0}, "speculation_metrics_delta": {"vllm:spec_decode_num_drafts_total": 917.0, "vllm:spec_decode_num_draft_tokens_total": 2683.0, "vllm:spec_decode_num_accepted_tokens_total": 2269.0}, "speculation_active": true, "scope": "29 complete JSON/schema/stop checks plus 3 separate verbatim 500-token diagnostics; ignore-EOS complete cases use explicit stop; server log audit is separate", "status": "PASS"}
+{"fraction": 0.42, "depth_tokens": 219176, "concurrency": 4, "requests_ok": 4, "preemptions": 0.0, "peak_waiting": 1.0, "wall_seconds": 122.57}
+{
+  "schema": "qwen38-vllm-vision.v1",
+  "model": "qwen38-exl3",
+  "supported_image_counts": {
+    "16": {
+      "passed": true,
+      "status": 200,
+      "expected": [
+        1,
+        2,
+        3,
+        4,
+        5,
+        6,
+        7,
+        8,
+        9,
+        10,
+        11,
+        12,
+        13,
+        14,
+        15,
+        16
+      ],
+      "observed": [
+        1,
+        2,
+        3,
+        4,
+        5,
+        6,
+        7,
+        8,
+        9,
+        10,
+        11,
+        12,
+        13,
+        14,
+        15,
+        16
+      ],
+      "response": "1,2,3,4,5,6,7,8,9,10,11,12,13,14,15,16",
+      "usage": {
+        "prompt_tokens": 3209,
+        "total_tokens": 3248,
+        "completion_tokens": 39,
+        "prompt_tokens_details": null,
+        "completion_tokens_details": {
+          "reasoning_tokens": 0
+        }
+      }
+    }
+  },
+  "configured_image_limit": null,
+  "overflow_rejected": null,
+  "passed": true
+}
+exact-upstream-0: PASS
+exact-upstream-1: PASS
+exact-upstream-2: PASS
+upstream-2048-0: PASS
+upstream-2048-1: PASS
+upstream-2048-2: PASS
+concurrent-thinking-0: PASS
+concurrent-thinking-2: PASS
+concurrent-thinking-4: PASS
+concurrent-thinking-6: PASS
+concurrent-thinking-8: PASS
+concurrent-thinking-10: PASS
+concurrent-thinking-12: PASS
+concurrent-thinking-14: PASS
+concurrent-thinking-1: PASS
+concurrent-thinking-3: PASS
+concurrent-thinking-5: PASS
+concurrent-thinking-7: PASS
+concurrent-thinking-9: PASS
+concurrent-thinking-11: PASS
+concurrent-thinking-13: PASS
+concurrent-thinking-15: PASS
+strict-json-normal-eos-0: PASS
+strict-json-normal-eos-1: PASS
+strict-json-normal-eos-2: PASS
+strict-json-normal-eos-3: PASS
+strict-json-normal-eos-4: PASS
+ignore-eos-explicit-stop-0: PASS
+ignore-eos-explicit-stop-1: PASS
+ignore-eos-explicit-stop-2: PASS
+ignore-eos-explicit-stop-3: PASS
+ignore-eos-explicit-stop-4: PASS
+{"schema_version": 2, "started_at": "2026-10-27T14:52:07.190295+00:00", "finished_at": "2026-10-27T14:52:23.526930+00:00", "model": "qwen38-exl3", "concurrency": 16, "expected_cases": 29, "completed_cases": 29, "failed_cases": 0, "diagnostic_budget_limited_cases": 0, "speculation_metrics_before": {"vllm:spec_decode_num_drafts_total": 27592.0, "vllm:spec_decode_num_draft_tokens_total": 82017.0, "vllm:spec_decode_num_accepted_tokens_total": 53925.0}, "speculation_metrics_after": {"vllm:spec_decode_num_drafts_total": 28509.0, "vllm:spec_decode_num_draft_tokens_total": 84700.0, "vllm:spec_decode_num_accepted_tokens_total": 56194.0}, "speculation_metrics_delta": {"vllm:spec_decode_num_drafts_total": 917.0, "vllm:spec_decode_num_draft_tokens_total": 2683.0, "vllm:spec_decode_num_accepted_tokens_total": 2269.0}, "speculation_active": true, "scope": "29 complete JSON/schema/stop checks plus 3 separate verbatim 500-token diagnostics; ignore-EOS complete cases use explicit stop; server log audit is separate", "status": "PASS"}
+{"fraction": 0.42, "depth_tokens": 219176, "concurrency": 4, "requests_ok": 4, "preemptions": 0.0, "peak_waiting": 2.0, "wall_seconds": 122.6}
+{
+  "schema": "qwen38-vllm-vision.v1",
+  "model": "qwen38-exl3",
+  "supported_image_counts": {
+    "16": {
+      "passed": true,
+      "status": 200,
+      "expected": [
+        1,
+        2,
+        3,
+        4,
+        5,
+        6,
+        7,
+        8,
+        9,
+        10,
+        11,
+        12,
+        13,
+        14,
+        15,
+        16
+      ],
+      "observed": [
+        1,
+        2,
+        3,
+        4,
+        5,
+        6,
+        7,
+        8,
+        9,
+        10,
+        11,
+        12,
+        13,
+        14,
+        15,
+        16
+      ],
+      "response": "1,2,3,4,5,6,7,8,9,10,11,12,13,14,15,16",
+      "usage": {
+        "prompt_tokens": 3209,
+        "total_tokens": 3248,
+        "completion_tokens": 39,
+        "prompt_tokens_details": null,
+        "completion_tokens_details": {
+          "reasoning_tokens": 0
+        }
+      }
+    }
+  },
+  "configured_image_limit": null,
+  "overflow_rejected": null,
+  "passed": true
+}
+exact-upstream-0: PASS
+exact-upstream-1: PASS
+exact-upstream-2: PASS
+upstream-2048-0: PASS
+upstream-2048-1: PASS
+upstream-2048-2: PASS
+concurrent-thinking-0: PASS
+concurrent-thinking-2: PASS
+concurrent-thinking-4: PASS
+concurrent-thinking-6: PASS
+concurrent-thinking-8: PASS
+concurrent-thinking-10: PASS
+concurrent-thinking-12: PASS
+concurrent-thinking-14: PASS
+concurrent-thinking-1: PASS
+concurrent-thinking-3: PASS
+concurrent-thinking-5: PASS
+concurrent-thinking-7: PASS
+concurrent-thinking-11: PASS
+concurrent-thinking-13: PASS
+concurrent-thinking-15: PASS
+concurrent-thinking-9: PASS
+strict-json-normal-eos-0: PASS
+strict-json-normal-eos-1: PASS
+strict-json-normal-eos-2: PASS
+strict-json-normal-eos-3: PASS
+strict-json-normal-eos-4: PASS
+ignore-eos-explicit-stop-0: PASS
+ignore-eos-explicit-stop-1: PASS
+ignore-eos-explicit-stop-2: PASS
+ignore-eos-explicit-stop-3: PASS
+ignore-eos-explicit-stop-4: PASS
+{"schema_version": 2, "started_at": "2026-10-27T14:54:43.836831+00:00", "finished_at": "2026-10-27T14:55:00.173049+00:00", "model": "qwen38-exl3", "concurrency": 16, "expected_cases": 29, "completed_cases": 29, "failed_cases": 0, "diagnostic_budget_limited_cases": 0, "speculation_metrics_before": {"vllm:spec_decode_num_drafts_total": 29037.0, "vllm:spec_decode_num_draft_tokens_total": 86284.0, "vllm:spec_decode_num_accepted_tokens_total": 57756.0}, "speculation_metrics_after": {"vllm:spec_decode_num_drafts_total": 29954.0, "vllm:spec_decode_num_draft_tokens_total": 88967.0, "vllm:spec_decode_num_accepted_tokens_total": 60025.0}, "speculation_metrics_delta": {"vllm:spec_decode_num_drafts_total": 917.0, "vllm:spec_decode_num_draft_tokens_total": 2683.0, "vllm:spec_decode_num_accepted_tokens_total": 2269.0}, "speculation_active": true, "scope": "29 complete JSON/schema/stop checks plus 3 separate verbatim 500-token diagnostics; ignore-EOS complete cases use explicit stop; server log audit is separate", "status": "PASS"}
+{"fraction": 0.42, "depth_tokens": 219176, "concurrency": 4, "requests_ok": 4, "preemptions": 0.0, "peak_waiting": 2.0, "wall_seconds": 122.55}
+{
+  "schema": "qwen38-vllm-vision.v1",
+  "model": "qwen38-exl3",
+  "supported_image_counts": {
+    "16": {
+      "passed": true,
+      "status": 200,
+      "expected": [
+        1,
+        2,
+        3,
+        4,
+        5,
+        6,
+        7,
+        8,
+        9,
+        10,
+        11,
+        12,
+        13,
+        14,
+        15,
+        16
+      ],
+      "observed": [
+        1,
+        2,
+        3,
+        4,
+        5,
+        6,
+        7,
+        8,
+        9,
+        10,
+        11,
+        12,
+        13,
+        14,
+        15,
+        16
+      ],
+      "response": "1,2,3,4,5,6,7,8,9,10,11,12,13,14,15,16",
+      "usage": {
+        "prompt_tokens": 3209,
+        "total_tokens": 3248,
+        "completion_tokens": 39,
+        "prompt_tokens_details": null,
+        "completion_tokens_details": {
+          "reasoning_tokens": 0
+        }
+      }
+    }
+  },
+  "configured_image_limit": null,
+  "overflow_rejected": null,
+  "passed": true
+}
+exact-upstream-0: PASS
+exact-upstream-1: PASS
+exact-upstream-2: PASS
+upstream-2048-0: PASS
+upstream-2048-1: PASS
+upstream-2048-2: PASS
+concurrent-thinking-0: PASS
+concurrent-thinking-2: PASS
+concurrent-thinking-4: PASS
+concurrent-thinking-6: PASS
+concurrent-thinking-8: PASS
+concurrent-thinking-10: PASS
+concurrent-thinking-12: PASS
+concurrent-thinking-14: PASS
+concurrent-thinking-1: PASS
+concurrent-thinking-3: PASS
+concurrent-thinking-5: PASS
+concurrent-thinking-7: PASS
+concurrent-thinking-9: PASS
+concurrent-thinking-11: PASS
+concurrent-thinking-13: PASS
+concurrent-thinking-15: PASS
+strict-json-normal-eos-0: PASS
+strict-json-normal-eos-1: PASS
+strict-json-normal-eos-2: PASS
+strict-json-normal-eos-3: PASS
+strict-json-normal-eos-4: PASS
+ignore-eos-explicit-stop-0: PASS
+ignore-eos-explicit-stop-1: PASS
+ignore-eos-explicit-stop-2: PASS
+ignore-eos-explicit-stop-3: PASS
+ignore-eos-explicit-stop-4: PASS
+{"schema_version": 2, "started_at": "2026-10-27T14:57:20.371627+00:00", "finished_at": "2026-10-27T14:57:36.935912+00:00", "model": "qwen38-exl3", "concurrency": 16, "expected_cases": 29, "completed_cases": 29, "failed_cases": 0, "diagnostic_budget_limited_cases": 0, "speculation_metrics_before": {"vllm:spec_decode_num_drafts_total": 30480.0, "vllm:spec_decode_num_draft_tokens_total": 90545.0, "vllm:spec_decode_num_accepted_tokens_total": 61588.0}, "speculation_metrics_after": {"vllm:spec_decode_num_drafts_total": 31397.0, "vllm:spec_decode_num_draft_tokens_total": 93228.0, "vllm:spec_decode_num_accepted_tokens_total": 63857.0}, "speculation_metrics_delta": {"vllm:spec_decode_num_drafts_total": 917.0, "vllm:spec_decode_num_draft_tokens_total": 2683.0, "vllm:spec_decode_num_accepted_tokens_total": 2269.0}, "speculation_active": true, "scope": "29 complete JSON/schema/stop checks plus 3 separate verbatim 500-token diagnostics; ignore-EOS complete cases use explicit stop; server log audit is separate", "status": "PASS"}
+{"fraction": 0.42, "depth_tokens": 219176, "concurrency": 4, "requests_ok": 4, "preemptions": 0.0, "peak_waiting": 2.0, "wall_seconds": 122.59}
+{
+  "schema": "qwen38-vllm-vision.v1",
+  "model": "qwen38-exl3",
+  "supported_image_counts": {
+    "16": {
+      "passed": true,
+      "status": 200,
+      "expected": [
+        1,
+        2,
+        3,
+        4,
+        5,
+        6,
+        7,
+        8,
+        9,
+        10,
+        11,
+        12,
+        13,
+        14,
+        15,
+        16
+      ],
+      "observed": [
+        1,
+        2,
+        3,
+        4,
+        5,
+        6,
+        7,
+        8,
+        9,
+        10,
+        11,
+        12,
+        13,
+        14,
+        15,
+        16
+      ],
+      "response": "1,2,3,4,5,6,7,8,9,10,11,12,13,14,15,16",
+      "usage": {
+        "prompt_tokens": 3209,
+        "total_tokens": 3248,
+        "completion_tokens": 39,
+        "prompt_tokens_details": null,
+        "completion_tokens_details": {
+          "reasoning_tokens": 0
+        }
+      }
+    }
+  },
+  "configured_image_limit": null,
+  "overflow_rejected": null,
+  "passed": true
+}
+exact-upstream-0: PASS
+exact-upstream-1: PASS
+exact-upstream-2: PASS
+upstream-2048-0: PASS
+upstream-2048-1: PASS
+upstream-2048-2: PASS
+concurrent-thinking-0: PASS
+concurrent-thinking-2: PASS
+concurrent-thinking-4: PASS
+concurrent-thinking-6: PASS
+concurrent-thinking-8: PASS
+concurrent-thinking-10: PASS
+concurrent-thinking-12: PASS
+concurrent-thinking-14: PASS
+concurrent-thinking-1: PASS
+concurrent-thinking-3: PASS
+concurrent-thinking-5: PASS
+concurrent-thinking-7: PASS
+concurrent-thinking-9: PASS
+concurrent-thinking-15: PASS
+concurrent-thinking-11: PASS
+concurrent-thinking-13: PASS
+strict-json-normal-eos-0: PASS
+strict-json-normal-eos-1: PASS
+strict-json-normal-eos-2: PASS
+strict-json-normal-eos-3: PASS
+strict-json-normal-eos-4: PASS
+ignore-eos-explicit-stop-0: PASS
+ignore-eos-explicit-stop-1: PASS
+ignore-eos-explicit-stop-2: PASS
+ignore-eos-explicit-stop-3: PASS
+ignore-eos-explicit-stop-4: PASS
+{"schema_version": 2, "started_at": "2026-10-27T14:59:57.305210+00:00", "finished_at": "2026-10-27T15:00:13.659075+00:00", "model": "qwen38-exl3", "concurrency": 16, "expected_cases": 29, "completed_cases": 29, "failed_cases": 0, "diagnostic_budget_limited_cases": 0, "speculation_metrics_before": {"vllm:spec_decode_num_drafts_total": 31926.0, "vllm:spec_decode_num_draft_tokens_total": 94815.0, "vllm:spec_decode_num_accepted_tokens_total": 65414.0}, "speculation_metrics_after": {"vllm:spec_decode_num_drafts_total": 32843.0, "vllm:spec_decode_num_draft_tokens_total": 97498.0, "vllm:spec_decode_num_accepted_tokens_total": 67683.0}, "speculation_metrics_delta": {"vllm:spec_decode_num_drafts_total": 917.0, "vllm:spec_decode_num_draft_tokens_total": 2683.0, "vllm:spec_decode_num_accepted_tokens_total": 2269.0}, "speculation_active": true, "scope": "29 complete JSON/schema/stop checks plus 3 separate verbatim 500-token diagnostics; ignore-EOS complete cases use explicit stop; server log audit is separate", "status": "PASS"}
+{"fraction": 0.42, "depth_tokens": 219176, "concurrency": 4, "requests_ok": 4, "preemptions": 0.0, "peak_waiting": 2.0, "wall_seconds": 122.7}
+{
+  "schema": "qwen38-vllm-vision.v1",
+  "model": "qwen38-exl3",
+  "supported_image_counts": {
+    "16": {
+      "passed": true,
+      "status": 200,
+      "expected": [
+        1,
+        2,
+        3,
+        4,
+        5,
+        6,
+        7,
+        8,
+        9,
+        10,
+        11,
+        12,
+        13,
+        14,
+        15,
+        16
+      ],
+      "observed": [
+        1,
+        2,
+        3,
+        4,
+        5,
+        6,
+        7,
+        8,
+        9,
+        10,
+        11,
+        12,
+        13,
+        14,
+        15,
+        16
+      ],
+      "response": "1,2,3,4,5,6,7,8,9,10,11,12,13,14,15,16",
+      "usage": {
+        "prompt_tokens": 3209,
+        "total_tokens": 3248,
+        "completion_tokens": 39,
+        "prompt_tokens_details": null,
+        "completion_tokens_details": {
+          "reasoning_tokens": 0
+        }
+      }
+    }
+  },
+  "configured_image_limit": null,
+  "overflow_rejected": null,
+  "passed": true
+}
+exact-upstream-0: PASS
+exact-upstream-1: PASS
+exact-upstream-2: PASS
+upstream-2048-0: PASS
+upstream-2048-1: PASS
+upstream-2048-2: PASS
+concurrent-thinking-0: PASS
+concurrent-thinking-2: PASS
+concurrent-thinking-4: PASS
+concurrent-thinking-6: PASS
+concurrent-thinking-8: PASS
+concurrent-thinking-10: PASS
+concurrent-thinking-12: PASS
+concurrent-thinking-14: PASS
+concurrent-thinking-1: PASS
+concurrent-thinking-3: PASS
+concurrent-thinking-5: PASS
+concurrent-thinking-9: PASS
+concurrent-thinking-7: PASS
+concurrent-thinking-13: PASS
+concurrent-thinking-15: PASS
+concurrent-thinking-11: PASS
+strict-json-normal-eos-0: PASS
+strict-json-normal-eos-1: PASS
+strict-json-normal-eos-2: PASS
+strict-json-normal-eos-3: PASS
+strict-json-normal-eos-4: PASS
+ignore-eos-explicit-stop-0: PASS
+ignore-eos-explicit-stop-1: PASS
+ignore-eos-explicit-stop-2: PASS
+ignore-eos-explicit-stop-3: PASS
+ignore-eos-explicit-stop-4: PASS
+{"schema_version": 2, "started_at": "2026-10-27T15:02:34.119002+00:00", "finished_at": "2026-10-27T15:02:50.486611+00:00", "model": "qwen38-exl3", "concurrency": 16, "expected_cases": 29, "completed_cases": 29, "failed_cases": 0, "diagnostic_budget_limited_cases": 0, "speculation_metrics_before": {"vllm:spec_decode_num_drafts_total": 33369.0, "vllm:spec_decode_num_draft_tokens_total": 99076.0, "vllm:spec_decode_num_accepted_tokens_total": 69250.0}, "speculation_metrics_after": {"vllm:spec_decode_num_drafts_total": 34286.0, "vllm:spec_decode_num_draft_tokens_total": 101759.0, "vllm:spec_decode_num_accepted_tokens_total": 71519.0}, "speculation_metrics_delta": {"vllm:spec_decode_num_drafts_total": 917.0, "vllm:spec_decode_num_draft_tokens_total": 2683.0, "vllm:spec_decode_num_accepted_tokens_total": 2269.0}, "speculation_active": true, "scope": "29 complete JSON/schema/stop checks plus 3 separate verbatim 500-token diagnostics; ignore-EOS complete cases use explicit stop; server log audit is separate", "status": "PASS"}
+{"fraction": 0.42, "depth_tokens": 219176, "concurrency": 4, "requests_ok": 4, "preemptions": 0.0, "peak_waiting": 2.0, "wall_seconds": 122.86}
+{
+  "schema": "qwen38-vllm-vision.v1",
+  "model": "qwen38-exl3",
+  "supported_image_counts": {
+    "16": {
+      "passed": true,
+      "status": 200,
+      "expected": [
+        1,
+        2,
+        3,
+        4,
+        5,
+        6,
+        7,
+        8,
+        9,
+        10,
+        11,
+        12,
+        13,
+        14,
+        15,
+        16
+      ],
+      "observed": [
+        1,
+        2,
+        3,
+        4,
+        5,
+        6,
+        7,
+        8,
+        9,
+        10,
+        11,
+        12,
+        13,
+        14,
+        15,
+        16
+      ],
+      "response": "1,2,3,4,5,6,7,8,9,10,11,12,13,14,15,16",
+      "usage": {
+        "prompt_tokens": 3209,
+        "total_tokens": 3248,
+        "completion_tokens": 39,
+        "prompt_tokens_details": null,
+        "completion_tokens_details": {
+          "reasoning_tokens": 0
+        }
+      }
+    }
+  },
+  "configured_image_limit": null,
+  "overflow_rejected": null,
+  "passed": true
+}
+exact-upstream-0: PASS
+exact-upstream-1: PASS
+exact-upstream-2: PASS
+upstream-2048-0: PASS
+upstream-2048-1: PASS
+upstream-2048-2: PASS
+concurrent-thinking-0: PASS
+concurrent-thinking-2: PASS
+concurrent-thinking-4: PASS
+concurrent-thinking-6: PASS
+concurrent-thinking-8: PASS
+concurrent-thinking-10: PASS
+concurrent-thinking-12: PASS
+concurrent-thinking-14: PASS
+concurrent-thinking-1: PASS
+concurrent-thinking-3: PASS
+concurrent-thinking-5: PASS
+concurrent-thinking-7: PASS
+concurrent-thinking-11: PASS
+concurrent-thinking-13: PASS
+concurrent-thinking-15: PASS
+concurrent-thinking-9: PASS
+strict-json-normal-eos-0: PASS
+strict-json-normal-eos-1: PASS
+strict-json-normal-eos-2: PASS
+strict-json-normal-eos-3: PASS
+strict-json-normal-eos-4: PASS
+ignore-eos-explicit-stop-0: PASS
+ignore-eos-explicit-stop-1: PASS
+ignore-eos-explicit-stop-2: PASS
+ignore-eos-explicit-stop-3: PASS
+ignore-eos-explicit-stop-4: PASS
+{"schema_version": 2, "started_at": "2026-10-27T15:05:11.048276+00:00", "finished_at": "2026-10-27T15:05:27.381780+00:00", "model": "qwen38-exl3", "concurrency": 16, "expected_cases": 29, "completed_cases": 29, "failed_cases": 0, "diagnostic_budget_limited_cases": 0, "speculation_metrics_before": {"vllm:spec_decode_num_drafts_total": 34813.0, "vllm:spec_decode_num_draft_tokens_total": 103340.0, "vllm:spec_decode_num_accepted_tokens_total": 73079.0}, "speculation_metrics_after": {"vllm:spec_decode_num_drafts_total": 35730.0, "vllm:spec_decode_num_draft_tokens_total": 106023.0, "vllm:spec_decode_num_accepted_tokens_total": 75348.0}, "speculation_metrics_delta": {"vllm:spec_decode_num_drafts_total": 917.0, "vllm:spec_decode_num_draft_tokens_total": 2683.0, "vllm:spec_decode_num_accepted_tokens_total": 2269.0}, "speculation_active": true, "scope": "29 complete JSON/schema/stop checks plus 3 separate verbatim 500-token diagnostics; ignore-EOS complete cases use explicit stop; server log audit is separate", "status": "PASS"}
+{"fraction": 0.42, "depth_tokens": 219176, "concurrency": 4, "requests_ok": 4, "preemptions": 0.0, "peak_waiting": 2.0, "wall_seconds": 122.64}
+{
+  "schema": "qwen38-vllm-vision.v1",
+  "model": "qwen38-exl3",
+  "supported_image_counts": {
+    "16": {
+      "passed": true,
+      "status": 200,
+      "expected": [
+        1,
+        2,
+        3,
+        4,
+        5,
+        6,
+        7,
+        8,
+        9,
+        10,
+        11,
+        12,
+        13,
+        14,
+        15,
+        16
+      ],
+      "observed": [
+        1,
+        2,
+        3,
+        4,
+        5,
+        6,
+        7,
+        8,
+        9,
+        10,
+        11,
+        12,
+        13,
+        14,
+        15,
+        16
+      ],
+      "response": "1,2,3,4,5,6,7,8,9,10,11,12,13,14,15,16",
+      "usage": {
+        "prompt_tokens": 3209,
+        "total_tokens": 3248,
+        "completion_tokens": 39,
+        "prompt_tokens_details": null,
+        "completion_tokens_details": {
+          "reasoning_tokens": 0
+        }
+      }
+    }
+  },
+  "configured_image_limit": null,
+  "overflow_rejected": null,
+  "passed": true
+}
+exact-upstream-0: PASS
+exact-upstream-1: PASS
+exact-upstream-2: PASS
+upstream-2048-0: PASS
+upstream-2048-1: PASS
+upstream-2048-2: PASS
+concurrent-thinking-0: PASS
+concurrent-thinking-2: PASS
+concurrent-thinking-4: PASS
+concurrent-thinking-6: PASS
+concurrent-thinking-8: PASS
+concurrent-thinking-10: PASS
+concurrent-thinking-12: PASS
+concurrent-thinking-14: PASS
+concurrent-thinking-1: PASS
+concurrent-thinking-3: PASS
+concurrent-thinking-5: PASS
+concurrent-thinking-11: PASS
+concurrent-thinking-9: PASS
+concurrent-thinking-13: PASS
+concurrent-thinking-7: PASS
+concurrent-thinking-15: PASS
+strict-json-normal-eos-0: PASS
+strict-json-normal-eos-1: PASS
+strict-json-normal-eos-2: PASS
+strict-json-normal-eos-3: PASS
+strict-json-normal-eos-4: PASS
+ignore-eos-explicit-stop-0: PASS
+ignore-eos-explicit-stop-1: PASS
+ignore-eos-explicit-stop-2: PASS
+ignore-eos-explicit-stop-3: PASS
+ignore-eos-explicit-stop-4: PASS
+{"schema_version": 2, "started_at": "2026-10-27T15:07:47.727158+00:00", "finished_at": "2026-10-27T15:08:04.061049+00:00", "model": "qwen38-exl3", "concurrency": 16, "expected_cases": 29, "completed_cases": 29, "failed_cases": 0, "diagnostic_budget_limited_cases": 0, "speculation_metrics_before": {"vllm:spec_decode_num_drafts_total": 36254.0, "vllm:spec_decode_num_draft_tokens_total": 107595.0, "vllm:spec_decode_num_accepted_tokens_total": 76912.0}, "speculation_metrics_after": {"vllm:spec_decode_num_drafts_total": 37171.0, "vllm:spec_decode_num_draft_tokens_total": 110278.0, "vllm:spec_decode_num_accepted_tokens_total": 79181.0}, "speculation_metrics_delta": {"vllm:spec_decode_num_drafts_total": 917.0, "vllm:spec_decode_num_draft_tokens_total": 2683.0, "vllm:spec_decode_num_accepted_tokens_total": 2269.0}, "speculation_active": true, "scope": "29 complete JSON/schema/stop checks plus 3 separate verbatim 500-token diagnostics; ignore-EOS complete cases use explicit stop; server log audit is separate", "status": "PASS"}
+{"fraction": 0.42, "depth_tokens": 219176, "concurrency": 4, "requests_ok": 4, "preemptions": 0.0, "peak_waiting": 2.0, "wall_seconds": 122.76}
+{
+  "schema": "qwen38-vllm-vision.v1",
+  "model": "qwen38-exl3",
+  "supported_image_counts": {
+    "16": {
+      "passed": true,
+      "status": 200,
+      "expected": [
+        1,
+        2,
+        3,
+        4,
+        5,
+        6,
+        7,
+        8,
+        9,
+        10,
+        11,
+        12,
+        13,
+        14,
+        15,
+        16
+      ],
+      "observed": [
+        1,
+        2,
+        3,
+        4,
+        5,
+        6,
+        7,
+        8,
+        9,
+        10,
+        11,
+        12,
+        13,
+        14,
+        15,
+        16
+      ],
+      "response": "1,2,3,4,5,6,7,8,9,10,11,12,13,14,15,16",
+      "usage": {
+        "prompt_tokens": 3209,
+        "total_tokens": 3248,
+        "completion_tokens": 39,
+        "prompt_tokens_details": null,
+        "completion_tokens_details": {
+          "reasoning_tokens": 0
+        }
+      }
+    }
+  },
+  "configured_image_limit": null,
+  "overflow_rejected": null,
+  "passed": true
+}
+exact-upstream-0: PASS
+exact-upstream-1: PASS
+exact-upstream-2: PASS
+upstream-2048-0: PASS
+upstream-2048-1: PASS
+upstream-2048-2: PASS
+concurrent-thinking-0: PASS
+concurrent-thinking-2: PASS
+concurrent-thinking-4: PASS
+concurrent-thinking-6: PASS
+concurrent-thinking-8: PASS
+concurrent-thinking-10: PASS
+concurrent-thinking-12: PASS
+concurrent-thinking-14: PASS
+concurrent-thinking-1: PASS
+concurrent-thinking-3: PASS
+concurrent-thinking-5: PASS
+concurrent-thinking-7: PASS
+concurrent-thinking-9: PASS
+concurrent-thinking-11: PASS
+concurrent-thinking-13: PASS
+concurrent-thinking-15: PASS
+strict-json-normal-eos-0: PASS
+strict-json-normal-eos-1: PASS
+strict-json-normal-eos-2: PASS
+strict-json-normal-eos-3: PASS
+strict-json-normal-eos-4: PASS
+ignore-eos-explicit-stop-0: PASS
+ignore-eos-explicit-stop-1: PASS
+ignore-eos-explicit-stop-2: PASS
+ignore-eos-explicit-stop-3: PASS
+ignore-eos-explicit-stop-4: PASS
+{"schema_version": 2, "started_at": "2026-10-27T15:10:24.534766+00:00", "finished_at": "2026-10-27T15:10:40.867366+00:00", "model": "qwen38-exl3", "concurrency": 16, "expected_cases": 29, "completed_cases": 29, "failed_cases": 0, "diagnostic_budget_limited_cases": 0, "speculation_metrics_before": {"vllm:spec_decode_num_drafts_total": 37702.0, "vllm:spec_decode_num_draft_tokens_total": 111871.0, "vllm:spec_decode_num_accepted_tokens_total": 80740.0}, "speculation_metrics_after": {"vllm:spec_decode_num_drafts_total": 38619.0, "vllm:spec_decode_num_draft_tokens_total": 114554.0, "vllm:spec_decode_num_accepted_tokens_total": 83009.0}, "speculation_metrics_delta": {"vllm:spec_decode_num_drafts_total": 917.0, "vllm:spec_decode_num_draft_tokens_total": 2683.0, "vllm:spec_decode_num_accepted_tokens_total": 2269.0}, "speculation_active": true, "scope": "29 complete JSON/schema/stop checks plus 3 separate verbatim 500-token diagnostics; ignore-EOS complete cases use explicit stop; server log audit is separate", "status": "PASS"}
+{"fraction": 0.42, "depth_tokens": 219176, "concurrency": 4, "requests_ok": 4, "preemptions": 0.0, "peak_waiting": 2.0, "wall_seconds": 122.64}
+{
+  "schema": "qwen38-vllm-vision.v1",
+  "model": "qwen38-exl3",
+  "supported_image_counts": {
+    "16": {
+      "passed": true,
+      "status": 200,
+      "expected": [
+        1,
+        2,
+        3,
+        4,
+        5,
+        6,
+        7,
+        8,
+        9,
+        10,
+        11,
+        12,
+        13,
+        14,
+        15,
+        16
+      ],
+      "observed": [
+        1,
+        2,
+        3,
+        4,
+        5,
+        6,
+        7,
+        8,
+        9,
+        10,
+        11,
+        12,
+        13,
+        14,
+        15,
+        16
+      ],
+      "response": "1,2,3,4,5,6,7,8,9,10,11,12,13,14,15,16",
+      "usage": {
+        "prompt_tokens": 3209,
+        "total_tokens": 3248,
+        "completion_tokens": 39,
+        "prompt_tokens_details": null,
+        "completion_tokens_details": {
+          "reasoning_tokens": 0
+        }
+      }
+    }
+  },
+  "configured_image_limit": null,
+  "overflow_rejected": null,
+  "passed": true
+}
+exact-upstream-0: PASS
+exact-upstream-1: PASS
+exact-upstream-2: PASS
+upstream-2048-0: PASS
+upstream-2048-1: PASS
+upstream-2048-2: PASS
+concurrent-thinking-0: PASS
+concurrent-thinking-2: PASS
+concurrent-thinking-4: PASS
+concurrent-thinking-6: PASS
+concurrent-thinking-8: PASS
+concurrent-thinking-10: PASS
+concurrent-thinking-12: PASS
+concurrent-thinking-14: PASS
+concurrent-thinking-1: PASS
+concurrent-thinking-3: PASS
+concurrent-thinking-5: PASS
+concurrent-thinking-7: PASS
+concurrent-thinking-11: PASS
+concurrent-thinking-9: PASS
+concurrent-thinking-15: PASS
+concurrent-thinking-13: PASS
+strict-json-normal-eos-0: PASS
+strict-json-normal-eos-1: PASS
+strict-json-normal-eos-2: PASS
+strict-json-normal-eos-3: PASS
+strict-json-normal-eos-4: PASS
+ignore-eos-explicit-stop-0: PASS
+ignore-eos-explicit-stop-1: PASS
+ignore-eos-explicit-stop-2: PASS
+ignore-eos-explicit-stop-3: PASS
+ignore-eos-explicit-stop-4: PASS
+{"schema_version": 2, "started_at": "2026-10-27T15:13:01.243313+00:00", "finished_at": "2026-10-27T15:13:17.563483+00:00", "model": "qwen38-exl3", "concurrency": 16, "expected_cases": 29, "completed_cases": 29, "failed_cases": 0, "diagnostic_budget_limited_cases": 0, "speculation_metrics_before": {"vllm:spec_decode_num_drafts_total": 39144.0, "vllm:spec_decode_num_draft_tokens_total": 116129.0, "vllm:spec_decode_num_accepted_tokens_total": 84575.0}, "speculation_metrics_after": {"vllm:spec_decode_num_drafts_total": 40061.0, "vllm:spec_decode_num_draft_tokens_total": 118812.0, "vllm:spec_decode_num_accepted_tokens_total": 86844.0}, "speculation_metrics_delta": {"vllm:spec_decode_num_drafts_total": 917.0, "vllm:spec_decode_num_draft_tokens_total": 2683.0, "vllm:spec_decode_num_accepted_tokens_total": 2269.0}, "speculation_active": true, "scope": "29 complete JSON/schema/stop checks plus 3 separate verbatim 500-token diagnostics; ignore-EOS complete cases use explicit stop; server log audit is separate", "status": "PASS"}
+{"fraction": 0.42, "depth_tokens": 219176, "concurrency": 4, "requests_ok": 4, "preemptions": 0.0, "peak_waiting": 2.0, "wall_seconds": 122.62}
+{
+  "schema": "qwen38-vllm-vision.v1",
+  "model": "qwen38-exl3",
+  "supported_image_counts": {
+    "16": {
+      "passed": true,
+      "status": 200,
+      "expected": [
+        1,
+        2,
+        3,
+        4,
+        5,
+        6,
+        7,
+        8,
+        9,
+        10,
+        11,
+        12,
+        13,
+        14,
+        15,
+        16
+      ],
+      "observed": [
+        1,
+        2,
+        3,
+        4,
+        5,
+        6,
+        7,
+        8,
+        9,
+        10,
+        11,
+        12,
+        13,
+        14,
+        15,
+        16
+      ],
+      "response": "1,2,3,4,5,6,7,8,9,10,11,12,13,14,15,16",
+      "usage": {
+        "prompt_tokens": 3209,
+        "total_tokens": 3248,
+        "completion_tokens": 39,
+        "prompt_tokens_details": null,
+        "completion_tokens_details": {
+          "reasoning_tokens": 0
+        }
+      }
+    }
+  },
+  "configured_image_limit": null,
+  "overflow_rejected": null,
+  "passed": true
+}
+exact-upstream-0: PASS
+exact-upstream-1: PASS
+exact-upstream-2: PASS
+upstream-2048-0: PASS
+upstream-2048-1: PASS
+upstream-2048-2: PASS
+concurrent-thinking-0: PASS
+concurrent-thinking-2: PASS
+concurrent-thinking-4: PASS
+concurrent-thinking-6: PASS
+concurrent-thinking-8: PASS
+concurrent-thinking-10: PASS
+concurrent-thinking-12: PASS
+concurrent-thinking-14: PASS
+concurrent-thinking-1: PASS
+concurrent-thinking-3: PASS
+concurrent-thinking-5: PASS
+concurrent-thinking-7: PASS
+concurrent-thinking-9: PASS
+concurrent-thinking-13: PASS
+concurrent-thinking-11: PASS
+concurrent-thinking-15: PASS
+strict-json-normal-eos-0: PASS
+strict-json-normal-eos-1: PASS
+strict-json-normal-eos-2: PASS
+strict-json-normal-eos-3: PASS
+strict-json-normal-eos-4: PASS
+ignore-eos-explicit-stop-0: PASS
+ignore-eos-explicit-stop-1: PASS
+ignore-eos-explicit-stop-2: PASS
+ignore-eos-explicit-stop-3: PASS
+ignore-eos-explicit-stop-4: PASS
+{"schema_version": 2, "started_at": "2026-10-27T15:15:37.858835+00:00", "finished_at": "2026-10-27T15:15:54.208365+00:00", "model": "qwen38-exl3", "concurrency": 16, "expected_cases": 29, "completed_cases": 29, "failed_cases": 0, "diagnostic_budget_limited_cases": 0, "speculation_metrics_before": {"vllm:spec_decode_num_drafts_total": 40590.0, "vllm:spec_decode_num_draft_tokens_total": 120399.0, "vllm:spec_decode_num_accepted_tokens_total": 88402.0}, "speculation_metrics_after": {"vllm:spec_decode_num_drafts_total": 41507.0, "vllm:spec_decode_num_draft_tokens_total": 123082.0, "vllm:spec_decode_num_accepted_tokens_total": 90671.0}, "speculation_metrics_delta": {"vllm:spec_decode_num_drafts_total": 917.0, "vllm:spec_decode_num_draft_tokens_total": 2683.0, "vllm:spec_decode_num_accepted_tokens_total": 2269.0}, "speculation_active": true, "scope": "29 complete JSON/schema/stop checks plus 3 separate verbatim 500-token diagnostics; ignore-EOS complete cases use explicit stop; server log audit is separate", "status": "PASS"}
+{"fraction": 0.42, "depth_tokens": 219176, "concurrency": 4, "requests_ok": 4, "preemptions": 0.0, "peak_waiting": 2.0, "wall_seconds": 122.58}
+{
+  "schema": "qwen38-vllm-vision.v1",
+  "model": "qwen38-exl3",
+  "supported_image_counts": {
+    "16": {
+      "passed": true,
+      "status": 200,
+      "expected": [
+        1,
+        2,
+        3,
+        4,
+        5,
+        6,
+        7,
+        8,
+        9,
+        10,
+        11,
+        12,
+        13,
+        14,
+        15,
+        16
+      ],
+      "observed": [
+        1,
+        2,
+        3,
+        4,
+        5,
+        6,
+        7,
+        8,
+        9,
+        10,
+        11,
+        12,
+        13,
+        14,
+        15,
+        16
+      ],
+      "response": "1,2,3,4,5,6,7,8,9,10,11,12,13,14,15,16",
+      "usage": {
+        "prompt_tokens": 3209,
+        "total_tokens": 3248,
+        "completion_tokens": 39,
+        "prompt_tokens_details": null,
+        "completion_tokens_details": {
+          "reasoning_tokens": 0
+        }
+      }
+    }
+  },
+  "configured_image_limit": null,
+  "overflow_rejected": null,
+  "passed": true
+}
+exact-upstream-0: PASS
+exact-upstream-1: PASS
+exact-upstream-2: PASS
+upstream-2048-0: PASS
+upstream-2048-1: PASS
+upstream-2048-2: PASS
+concurrent-thinking-0: PASS
+concurrent-thinking-2: PASS
+concurrent-thinking-4: PASS
+concurrent-thinking-6: PASS
+concurrent-thinking-8: PASS
+concurrent-thinking-10: PASS
+concurrent-thinking-12: PASS
+concurrent-thinking-14: PASS
+concurrent-thinking-1: PASS
+concurrent-thinking-3: PASS
+concurrent-thinking-5: PASS
+concurrent-thinking-7: PASS
+concurrent-thinking-9: PASS
+concurrent-thinking-11: PASS
+concurrent-thinking-13: PASS
+concurrent-thinking-15: PASS
+strict-json-normal-eos-0: PASS
+strict-json-normal-eos-1: PASS
+strict-json-normal-eos-2: PASS
+strict-json-normal-eos-3: PASS
+strict-json-normal-eos-4: PASS
+ignore-eos-explicit-stop-0: PASS
+ignore-eos-explicit-stop-1: PASS
+ignore-eos-explicit-stop-2: PASS
+ignore-eos-explicit-stop-3: PASS
+ignore-eos-explicit-stop-4: PASS
+{"schema_version": 2, "started_at": "2026-10-27T15:18:14.530188+00:00", "finished_at": "2026-10-27T15:18:31.225958+00:00", "model": "qwen38-exl3", "concurrency": 16, "expected_cases": 29, "completed_cases": 29, "failed_cases": 0, "diagnostic_budget_limited_cases": 0, "speculation_metrics_before": {"vllm:spec_decode_num_drafts_total": 42038.0, "vllm:spec_decode_num_draft_tokens_total": 124675.0, "vllm:spec_decode_num_accepted_tokens_total": 92227.0}, "speculation_metrics_after": {"vllm:spec_decode_num_drafts_total": 42955.0, "vllm:spec_decode_num_draft_tokens_total": 127358.0, "vllm:spec_decode_num_accepted_tokens_total": 94496.0}, "speculation_metrics_delta": {"vllm:spec_decode_num_drafts_total": 917.0, "vllm:spec_decode_num_draft_tokens_total": 2683.0, "vllm:spec_decode_num_accepted_tokens_total": 2269.0}, "speculation_active": true, "scope": "29 complete JSON/schema/stop checks plus 3 separate verbatim 500-token diagnostics; ignore-EOS complete cases use explicit stop; server log audit is separate", "status": "PASS"}
+{"fraction": 0.42, "depth_tokens": 219176, "concurrency": 4, "requests_ok": 4, "preemptions": 0.0, "peak_waiting": 2.0, "wall_seconds": 122.42}
+{
+  "schema": "qwen38-vllm-vision.v1",
+  "model": "qwen38-exl3",
+  "supported_image_counts": {
+    "16": {
+      "passed": true,
+      "status": 200,
+      "expected": [
+        1,
+        2,
+        3,
+        4,
+        5,
+        6,
+        7,
+        8,
+        9,
+        10,
+        11,
+        12,
+        13,
+        14,
+        15,
+        16
+      ],
+      "observed": [
+        1,
+        2,
+        3,
+        4,
+        5,
+        6,
+        7,
+        8,
+        9,
+        10,
+        11,
+        12,
+        13,
+        14,
+        15,
+        16
+      ],
+      "response": "1,2,3,4,5,6,7,8,9,10,11,12,13,14,15,16",
+      "usage": {
+        "prompt_tokens": 3209,
+        "total_tokens": 3248,
+        "completion_tokens": 39,
+        "prompt_tokens_details": null,
+        "completion_tokens_details": {
+          "reasoning_tokens": 0
+        }
+      }
+    }
+  },
+  "configured_image_limit": null,
+  "overflow_rejected": null,
+  "passed": true
+}
+exact-upstream-0: PASS
+exact-upstream-1: PASS
+exact-upstream-2: PASS
+upstream-2048-0: PASS
+upstream-2048-1: PASS
+upstream-2048-2: PASS
+concurrent-thinking-0: PASS
+concurrent-thinking-2: PASS
+concurrent-thinking-4: PASS
+concurrent-thinking-6: PASS
+concurrent-thinking-8: PASS
+concurrent-thinking-10: PASS
+concurrent-thinking-12: PASS
+concurrent-thinking-14: PASS
+concurrent-thinking-1: PASS
+concurrent-thinking-3: PASS
+concurrent-thinking-5: PASS
+concurrent-thinking-7: PASS
+concurrent-thinking-9: PASS
+concurrent-thinking-11: PASS
+concurrent-thinking-13: PASS
+concurrent-thinking-15: PASS
+strict-json-normal-eos-0: PASS
+strict-json-normal-eos-1: PASS
+strict-json-normal-eos-2: PASS
+strict-json-normal-eos-3: PASS
+strict-json-normal-eos-4: PASS
+ignore-eos-explicit-stop-0: PASS
+ignore-eos-explicit-stop-1: PASS
+ignore-eos-explicit-stop-2: PASS
+ignore-eos-explicit-stop-3: PASS
+ignore-eos-explicit-stop-4: PASS
+{"schema_version": 2, "started_at": "2026-10-27T15:20:51.360885+00:00", "finished_at": "2026-10-27T15:21:08.006407+00:00", "model": "qwen38-exl3", "concurrency": 16, "expected_cases": 29, "completed_cases": 29, "failed_cases": 0, "diagnostic_budget_limited_cases": 0, "speculation_metrics_before": {"vllm:spec_decode_num_drafts_total": 43480.0, "vllm:spec_decode_num_draft_tokens_total": 128933.0, "vllm:spec_decode_num_accepted_tokens_total": 96056.0}, "speculation_metrics_after": {"vllm:spec_decode_num_drafts_total": 44397.0, "vllm:spec_decode_num_draft_tokens_total": 131616.0, "vllm:spec_decode_num_accepted_tokens_total": 98325.0}, "speculation_metrics_delta": {"vllm:spec_decode_num_drafts_total": 917.0, "vllm:spec_decode_num_draft_tokens_total": 2683.0, "vllm:spec_decode_num_accepted_tokens_total": 2269.0}, "speculation_active": true, "scope": "29 complete JSON/schema/stop checks plus 3 separate verbatim 500-token diagnostics; ignore-EOS complete cases use explicit stop; server log audit is separate", "status": "PASS"}
+{"fraction": 0.42, "depth_tokens": 219176, "concurrency": 4, "requests_ok": 4, "preemptions": 0.0, "peak_waiting": 2.0, "wall_seconds": 122.34}
+{
+  "schema": "qwen38-vllm-vision.v1",
+  "model": "qwen38-exl3",
+  "supported_image_counts": {
+    "16": {
+      "passed": true,
+      "status": 200,
+      "expected": [
+        1,
+        2,
+        3,
+        4,
+        5,
+        6,
+        7,
+        8,
+        9,
+        10,
+        11,
+        12,
+        13,
+        14,
+        15,
+        16
+      ],
+      "observed": [
+        1,
+        2,
+        3,
+        4,
+        5,
+        6,
+        7,
+        8,
+        9,
+        10,
+        11,
+        12,
+        13,
+        14,
+        15,
+        16
+      ],
+      "response": "1,2,3,4,5,6,7,8,9,10,11,12,13,14,15,16",
+      "usage": {
+        "prompt_tokens": 3209,
+        "total_tokens": 3248,
+        "completion_tokens": 39,
+        "prompt_tokens_details": null,
+        "completion_tokens_details": {
+          "reasoning_tokens": 0
+        }
+      }
+    }
+  },
+  "configured_image_limit": null,
+  "overflow_rejected": null,
+  "passed": true
+}
+exact-upstream-0: PASS
+exact-upstream-1: PASS
+exact-upstream-2: PASS
+upstream-2048-0: PASS
+upstream-2048-1: PASS
+upstream-2048-2: PASS
+concurrent-thinking-0: PASS
+concurrent-thinking-2: PASS
+concurrent-thinking-4: PASS
+concurrent-thinking-6: PASS
+concurrent-thinking-8: PASS
+concurrent-thinking-10: PASS
+concurrent-thinking-12: PASS
+concurrent-thinking-14: PASS
+concurrent-thinking-1: PASS
+concurrent-thinking-3: PASS
+concurrent-thinking-5: PASS
+concurrent-thinking-7: PASS
+concurrent-thinking-9: PASS
+concurrent-thinking-11: PASS
+concurrent-thinking-13: PASS
+concurrent-thinking-15: PASS
+strict-json-normal-eos-0: PASS
+strict-json-normal-eos-1: PASS
+strict-json-normal-eos-2: PASS
+strict-json-normal-eos-3: PASS
+strict-json-normal-eos-4: PASS
+ignore-eos-explicit-stop-0: PASS
+ignore-eos-explicit-stop-1: PASS
+ignore-eos-explicit-stop-2: PASS
+ignore-eos-explicit-stop-3: PASS
+ignore-eos-explicit-stop-4: PASS
+{"schema_version": 2, "started_at": "2026-10-27T15:23:28.207938+00:00", "finished_at": "2026-10-27T15:23:44.796108+00:00", "model": "qwen38-exl3", "concurrency": 16, "expected_cases": 29, "completed_cases": 29, "failed_cases": 0, "diagnostic_budget_limited_cases": 0, "speculation_metrics_before": {"vllm:spec_decode_num_drafts_total": 44927.0, "vllm:spec_decode_num_draft_tokens_total": 133206.0, "vllm:spec_decode_num_accepted_tokens_total": 99885.0}, "speculation_metrics_after": {"vllm:spec_decode_num_drafts_total": 45844.0, "vllm:spec_decode_num_draft_tokens_total": 135889.0, "vllm:spec_decode_num_accepted_tokens_total": 102154.0}, "speculation_metrics_delta": {"vllm:spec_decode_num_drafts_total": 917.0, "vllm:spec_decode_num_draft_tokens_total": 2683.0, "vllm:spec_decode_num_accepted_tokens_total": 2269.0}, "speculation_active": true, "scope": "29 complete JSON/schema/stop checks plus 3 separate verbatim 500-token diagnostics; ignore-EOS complete cases use explicit stop; server log audit is separate", "status": "PASS"}
+{"fraction": 0.42, "depth_tokens": 219176, "concurrency": 4, "requests_ok": 4, "preemptions": 0.0, "peak_waiting": 2.0, "wall_seconds": 122.53}
+{
+  "schema": "qwen38-vllm-vision.v1",
+  "model": "qwen38-exl3",
+  "supported_image_counts": {
+    "16": {
+      "passed": true,
+      "status": 200,
+      "expected": [
+        1,
+        2,
+        3,
+        4,
+        5,
+        6,
+        7,
+        8,
+        9,
+        10,
+        11,
+        12,
+        13,
+        14,
+        15,
+        16
+      ],
+      "observed": [
+        1,
+        2,
+        3,
+        4,
+        5,
+        6,
+        7,
+        8,
+        9,
+        10,
+        11,
+        12,
+        13,
+        14,
+        15,
+        16
+      ],
+      "response": "1,2,3,4,5,6,7,8,9,10,11,12,13,14,15,16",
+      "usage": {
+        "prompt_tokens": 3209,
+        "total_tokens": 3248,
+        "completion_tokens": 39,
+        "prompt_tokens_details": null,
+        "completion_tokens_details": {
+          "reasoning_tokens": 0
+        }
+      }
+    }
+  },
+  "configured_image_limit": null,
+  "overflow_rejected": null,
+  "passed": true
+}
+exact-upstream-0: PASS
+exact-upstream-1: PASS
+exact-upstream-2: PASS
+upstream-2048-0: PASS
+upstream-2048-1: PASS
+upstream-2048-2: PASS
+concurrent-thinking-0: PASS
+concurrent-thinking-4: PASS
+concurrent-thinking-2: PASS
+concurrent-thinking-6: PASS
+concurrent-thinking-8: PASS
+concurrent-thinking-10: PASS
+concurrent-thinking-12: PASS
+concurrent-thinking-14: PASS
+concurrent-thinking-1: PASS
+concurrent-thinking-3: PASS
+concurrent-thinking-5: PASS
+concurrent-thinking-7: PASS
+concurrent-thinking-9: PASS
+concurrent-thinking-11: PASS
+concurrent-thinking-13: PASS
+concurrent-thinking-15: PASS
+strict-json-normal-eos-0: PASS
+strict-json-normal-eos-1: PASS
+strict-json-normal-eos-2: PASS
+strict-json-normal-eos-3: PASS
+strict-json-normal-eos-4: PASS
+ignore-eos-explicit-stop-0: PASS
+ignore-eos-explicit-stop-1: PASS
+ignore-eos-explicit-stop-2: PASS
+ignore-eos-explicit-stop-3: PASS
+ignore-eos-explicit-stop-4: PASS
+{"schema_version": 2, "started_at": "2026-10-27T15:26:05.285340+00:00", "finished_at": "2026-10-27T15:26:21.899668+00:00", "model": "qwen38-exl3", "concurrency": 16, "expected_cases": 29, "completed_cases": 29, "failed_cases": 0, "diagnostic_budget_limited_cases": 0, "speculation_metrics_before": {"vllm:spec_decode_num_drafts_total": 46380.0, "vllm:spec_decode_num_draft_tokens_total": 137497.0, "vllm:spec_decode_num_accepted_tokens_total": 103706.0}, "speculation_metrics_after": {"vllm:spec_decode_num_drafts_total": 47297.0, "vllm:spec_decode_num_draft_tokens_total": 140180.0, "vllm:spec_decode_num_accepted_tokens_total": 105975.0}, "speculation_metrics_delta": {"vllm:spec_decode_num_drafts_total": 917.0, "vllm:spec_decode_num_draft_tokens_total": 2683.0, "vllm:spec_decode_num_accepted_tokens_total": 2269.0}, "speculation_active": true, "scope": "29 complete JSON/schema/stop checks plus 3 separate verbatim 500-token diagnostics; ignore-EOS complete cases use explicit stop; server log audit is separate", "status": "PASS"}
+{"fraction": 0.42, "depth_tokens": 219176, "concurrency": 4, "requests_ok": 4, "preemptions": 0.0, "peak_waiting": 2.0, "wall_seconds": 122.65}
+{
+  "schema": "qwen38-vllm-vision.v1",
+  "model": "qwen38-exl3",
+  "supported_image_counts": {
+    "16": {
+      "passed": true,
+      "status": 200,
+      "expected": [
+        1,
+        2,
+        3,
+        4,
+        5,
+        6,
+        7,
+        8,
+        9,
+        10,
+        11,
+        12,
+        13,
+        14,
+        15,
+        16
+      ],
+      "observed": [
+        1,
+        2,
+        3,
+        4,
+        5,
+        6,
+        7,
+        8,
+        9,
+        10,
+        11,
+        12,
+        13,
+        14,
+        15,
+        16
+      ],
+      "response": "1,2,3,4,5,6,7,8,9,10,11,12,13,14,15,16",
+      "usage": {
+        "prompt_tokens": 3209,
+        "total_tokens": 3248,
+        "completion_tokens": 39,
+        "prompt_tokens_details": null,
+        "completion_tokens_details": {
+          "reasoning_tokens": 0
+        }
+      }
+    }
+  },
+  "configured_image_limit": null,
+  "overflow_rejected": null,
+  "passed": true
+}
+exact-upstream-0: PASS
+exact-upstream-1: PASS
+exact-upstream-2: PASS
+upstream-2048-0: PASS
+upstream-2048-1: PASS
+upstream-2048-2: PASS
+concurrent-thinking-0: PASS
+concurrent-thinking-2: PASS
+concurrent-thinking-4: PASS
+concurrent-thinking-6: PASS
+concurrent-thinking-8: PASS
+concurrent-thinking-12: PASS
+concurrent-thinking-14: PASS
+concurrent-thinking-10: PASS
+concurrent-thinking-1: PASS
+concurrent-thinking-3: PASS
+concurrent-thinking-7: PASS
+concurrent-thinking-5: PASS
+concurrent-thinking-11: PASS
+concurrent-thinking-15: PASS
+concurrent-thinking-9: PASS
+concurrent-thinking-13: PASS
+strict-json-normal-eos-0: PASS
+strict-json-normal-eos-1: PASS
+strict-json-normal-eos-2: PASS
+strict-json-normal-eos-3: PASS
+strict-json-normal-eos-4: PASS
+ignore-eos-explicit-stop-0: PASS
+ignore-eos-explicit-stop-1: PASS
+ignore-eos-explicit-stop-2: PASS
+ignore-eos-explicit-stop-3: PASS
+ignore-eos-explicit-stop-4: PASS
+{"schema_version": 2, "started_at": "2026-10-27T15:28:42.448412+00:00", "finished_at": "2026-10-27T15:28:59.034637+00:00", "model": "qwen38-exl3", "concurrency": 16, "expected_cases": 29, "completed_cases": 29, "failed_cases": 0, "diagnostic_budget_limited_cases": 0, "speculation_metrics_before": {"vllm:spec_decode_num_drafts_total": 47825.0, "vllm:spec_decode_num_draft_tokens_total": 141764.0, "vllm:spec_decode_num_accepted_tokens_total": 107534.0}, "speculation_metrics_after": {"vllm:spec_decode_num_drafts_total": 48742.0, "vllm:spec_decode_num_draft_tokens_total": 144447.0, "vllm:spec_decode_num_accepted_tokens_total": 109803.0}, "speculation_metrics_delta": {"vllm:spec_decode_num_drafts_total": 917.0, "vllm:spec_decode_num_draft_tokens_total": 2683.0, "vllm:spec_decode_num_accepted_tokens_total": 2269.0}, "speculation_active": true, "scope": "29 complete JSON/schema/stop checks plus 3 separate verbatim 500-token diagnostics; ignore-EOS complete cases use explicit stop; server log audit is separate", "status": "PASS"}
+{"fraction": 0.42, "depth_tokens": 219176, "concurrency": 4, "requests_ok": 4, "preemptions": 0.0, "peak_waiting": 2.0, "wall_seconds": 122.75}
+{
+  "schema": "qwen38-vllm-vision.v1",
+  "model": "qwen38-exl3",
+  "supported_image_counts": {
+    "16": {
+      "passed": true,
+      "status": 200,
+      "expected": [
+        1,
+        2,
+        3,
+        4,
+        5,
+        6,
+        7,
+        8,
+        9,
+        10,
+        11,
+        12,
+        13,
+        14,
+        15,
+        16
+      ],
+      "observed": [
+        1,
+        2,
+        3,
+        4,
+        5,
+        6,
+        7,
+        8,
+        9,
+        10,
+        11,
+        12,
+        13,
+        14,
+        15,
+        16
+      ],
+      "response": "1,2,3,4,5,6,7,8,9,10,11,12,13,14,15,16",
+      "usage": {
+        "prompt_tokens": 3209,
+        "total_tokens": 3248,
+        "completion_tokens": 39,
+        "prompt_tokens_details": null,
+        "completion_tokens_details": {
+          "reasoning_tokens": 0
+        }
+      }
+    }
+  },
+  "configured_image_limit": null,
+  "overflow_rejected": null,
+  "passed": true
+}
+exact-upstream-0: PASS
+exact-upstream-1: PASS
+exact-upstream-2: PASS
+upstream-2048-0: PASS
+upstream-2048-1: PASS
+upstream-2048-2: PASS
+concurrent-thinking-0: PASS
+concurrent-thinking-2: PASS
+concurrent-thinking-4: PASS
+concurrent-thinking-6: PASS
+concurrent-thinking-8: PASS
+concurrent-thinking-10: PASS
+concurrent-thinking-12: PASS
+concurrent-thinking-14: PASS
+concurrent-thinking-1: PASS
+concurrent-thinking-3: PASS
+concurrent-thinking-5: PASS
+concurrent-thinking-9: PASS
+concurrent-thinking-11: PASS
+concurrent-thinking-7: PASS
+concurrent-thinking-13: PASS
+concurrent-thinking-15: PASS
+strict-json-normal-eos-0: PASS
+strict-json-normal-eos-1: PASS
+strict-json-normal-eos-2: PASS
+strict-json-normal-eos-3: PASS
+strict-json-normal-eos-4: PASS
+ignore-eos-explicit-stop-0: PASS
+ignore-eos-explicit-stop-1: PASS
+ignore-eos-explicit-stop-2: PASS
+ignore-eos-explicit-stop-3: PASS
+ignore-eos-explicit-stop-4: PASS
+{"schema_version": 2, "started_at": "2026-10-27T15:31:19.727758+00:00", "finished_at": "2026-10-27T15:31:36.079296+00:00", "model": "qwen38-exl3", "concurrency": 16, "expected_cases": 29, "completed_cases": 29, "failed_cases": 0, "diagnostic_budget_limited_cases": 0, "speculation_metrics_before": {"vllm:spec_decode_num_drafts_total": 49272.0, "vllm:spec_decode_num_draft_tokens_total": 146037.0, "vllm:spec_decode_num_accepted_tokens_total": 111363.0}, "speculation_metrics_after": {"vllm:spec_decode_num_drafts_total": 50173.0, "vllm:spec_decode_num_draft_tokens_total": 148672.0, "vllm:spec_decode_num_accepted_tokens_total": 113648.0}, "speculation_metrics_delta": {"vllm:spec_decode_num_drafts_total": 901.0, "vllm:spec_decode_num_draft_tokens_total": 2635.0, "vllm:spec_decode_num_accepted_tokens_total": 2285.0}, "speculation_active": true, "scope": "29 complete JSON/schema/stop checks plus 3 separate verbatim 500-token diagnostics; ignore-EOS complete cases use explicit stop; server log audit is separate", "status": "PASS"}
+{"fraction": 0.42, "depth_tokens": 219176, "concurrency": 4, "requests_ok": 4, "preemptions": 0.0, "peak_waiting": 2.0, "wall_seconds": 122.66}
+{
+  "schema": "qwen38-vllm-vision.v1",
+  "model": "qwen38-exl3",
+  "supported_image_counts": {
+    "16": {
+      "passed": true,
+      "status": 200,
+      "expected": [
+        1,
+        2,
+        3,
+        4,
+        5,
+        6,
+        7,
+        8,
+        9,
+        10,
+        11,
+        12,
+        13,
+        14,
+        15,
+        16
+      ],
+      "observed": [
+        1,
+        2,
+        3,
+        4,
+        5,
+        6,
+        7,
+        8,
+        9,
+        10,
+        11,
+        12,
+        13,
+        14,
+        15,
+        16
+      ],
+      "response": "1,2,3,4,5,6,7,8,9,10,11,12,13,14,15,16",
+      "usage": {
+        "prompt_tokens": 3209,
+        "total_tokens": 3248,
+        "completion_tokens": 39,
+        "prompt_tokens_details": null,
+        "completion_tokens_details": {
+          "reasoning_tokens": 0
+        }
+      }
+    }
+  },
+  "configured_image_limit": null,
+  "overflow_rejected": null,
+  "passed": true
+}
+exact-upstream-0: PASS
+exact-upstream-1: PASS
+exact-upstream-2: PASS
+upstream-2048-0: PASS
+upstream-2048-1: PASS
+upstream-2048-2: PASS
+concurrent-thinking-0: PASS
+concurrent-thinking-4: PASS
+concurrent-thinking-2: PASS
+concurrent-thinking-6: PASS
+concurrent-thinking-10: PASS
+concurrent-thinking-14: PASS
+concurrent-thinking-8: PASS
+concurrent-thinking-12: PASS
+concurrent-thinking-1: PASS
+concurrent-thinking-3: PASS
+concurrent-thinking-5: PASS
+concurrent-thinking-7: PASS
+concurrent-thinking-9: PASS
+concurrent-thinking-11: PASS
+concurrent-thinking-13: PASS
+concurrent-thinking-15: PASS
+strict-json-normal-eos-0: PASS
+strict-json-normal-eos-1: PASS
+strict-json-normal-eos-2: PASS
+strict-json-normal-eos-3: PASS
+strict-json-normal-eos-4: PASS
+ignore-eos-explicit-stop-0: PASS
+ignore-eos-explicit-stop-1: PASS
+ignore-eos-explicit-stop-2: PASS
+ignore-eos-explicit-stop-3: PASS
+ignore-eos-explicit-stop-4: PASS
+{"schema_version": 2, "started_at": "2026-10-27T15:33:56.595713+00:00", "finished_at": "2026-10-27T15:34:12.958757+00:00", "model": "qwen38-exl3", "concurrency": 16, "expected_cases": 29, "completed_cases": 29, "failed_cases": 0, "diagnostic_budget_limited_cases": 0, "speculation_metrics_before": {"vllm:spec_decode_num_drafts_total": 50703.0, "vllm:spec_decode_num_draft_tokens_total": 150262.0, "vllm:spec_decode_num_accepted_tokens_total": 115207.0}, "speculation_metrics_after": {"vllm:spec_decode_num_drafts_total": 51620.0, "vllm:spec_decode_num_draft_tokens_total": 152945.0, "vllm:spec_decode_num_accepted_tokens_total": 117476.0}, "speculation_metrics_delta": {"vllm:spec_decode_num_drafts_total": 917.0, "vllm:spec_decode_num_draft_tokens_total": 2683.0, "vllm:spec_decode_num_accepted_tokens_total": 2269.0}, "speculation_active": true, "scope": "29 complete JSON/schema/stop checks plus 3 separate verbatim 500-token diagnostics; ignore-EOS complete cases use explicit stop; server log audit is separate", "status": "PASS"}
+{"fraction": 0.42, "depth_tokens": 219176, "concurrency": 4, "requests_ok": 4, "preemptions": 0.0, "peak_waiting": 2.0, "wall_seconds": 122.6}
+{
+  "schema": "qwen38-vllm-vision.v1",
+  "model": "qwen38-exl3",
+  "supported_image_counts": {
+    "16": {
+      "passed": true,
+      "status": 200,
+      "expected": [
+        1,
+        2,
+        3,
+        4,
+        5,
+        6,
+        7,
+        8,
+        9,
+        10,
+        11,
+        12,
+        13,
+        14,
+        15,
+        16
+      ],
+      "observed": [
+        1,
+        2,
+        3,
+        4,
+        5,
+        6,
+        7,
+        8,
+        9,
+        10,
+        11,
+        12,
+        13,
+        14,
+        15,
+        16
+      ],
+      "response": "1,2,3,4,5,6,7,8,9,10,11,12,13,14,15,16",
+      "usage": {
+        "prompt_tokens": 3209,
+        "total_tokens": 3248,
+        "completion_tokens": 39,
+        "prompt_tokens_details": null,
+        "completion_tokens_details": {
+          "reasoning_tokens": 0
+        }
+      }
+    }
+  },
+  "configured_image_limit": null,
+  "overflow_rejected": null,
+  "passed": true
+}
+exact-upstream-0: PASS
+exact-upstream-1: PASS
+exact-upstream-2: PASS
+upstream-2048-0: PASS
+upstream-2048-1: PASS
+upstream-2048-2: PASS
+concurrent-thinking-0: PASS
+concurrent-thinking-2: PASS
+concurrent-thinking-4: PASS
+concurrent-thinking-6: PASS
+concurrent-thinking-8: PASS
+concurrent-thinking-10: PASS
+concurrent-thinking-12: PASS
+concurrent-thinking-14: PASS
+concurrent-thinking-1: PASS
+concurrent-thinking-3: PASS
+concurrent-thinking-5: PASS
+concurrent-thinking-7: PASS
+concurrent-thinking-9: PASS
+concurrent-thinking-15: PASS
+concurrent-thinking-13: PASS
+concurrent-thinking-11: PASS
+strict-json-normal-eos-0: PASS
+strict-json-normal-eos-1: PASS
+strict-json-normal-eos-2: PASS
+strict-json-normal-eos-3: PASS
+strict-json-normal-eos-4: PASS
+ignore-eos-explicit-stop-0: PASS
+ignore-eos-explicit-stop-1: PASS
+ignore-eos-explicit-stop-2: PASS
+ignore-eos-explicit-stop-3: PASS
+ignore-eos-explicit-stop-4: PASS
+{"schema_version": 2, "started_at": "2026-10-27T15:36:33.439741+00:00", "finished_at": "2026-10-27T15:36:49.981295+00:00", "model": "qwen38-exl3", "concurrency": 16, "expected_cases": 29, "completed_cases": 29, "failed_cases": 0, "diagnostic_budget_limited_cases": 0, "speculation_metrics_before": {"vllm:spec_decode_num_drafts_total": 52148.0, "vllm:spec_decode_num_draft_tokens_total": 154529.0, "vllm:spec_decode_num_accepted_tokens_total": 119034.0}, "speculation_metrics_after": {"vllm:spec_decode_num_drafts_total": 53039.0, "vllm:spec_decode_num_draft_tokens_total": 157135.0, "vllm:spec_decode_num_accepted_tokens_total": 121158.0}, "speculation_metrics_delta": {"vllm:spec_decode_num_drafts_total": 891.0, "vllm:spec_decode_num_draft_tokens_total": 2606.0, "vllm:spec_decode_num_accepted_tokens_total": 2124.0}, "speculation_active": true, "scope": "29 complete JSON/schema/stop checks plus 3 separate verbatim 500-token diagnostics; ignore-EOS complete cases use explicit stop; server log audit is separate", "status": "PASS"}
+{"fraction": 0.42, "depth_tokens": 219176, "concurrency": 4, "requests_ok": 4, "preemptions": 0.0, "peak_waiting": 2.0, "wall_seconds": 122.58}
+{
+  "schema": "qwen38-vllm-vision.v1",
+  "model": "qwen38-exl3",
+  "supported_image_counts": {
+    "16": {
+      "passed": true,
+      "status": 200,
+      "expected": [
+        1,
+        2,
+        3,
+        4,
+        5,
+        6,
+        7,
+        8,
+        9,
+        10,
+        11,
+        12,
+        13,
+        14,
+        15,
+        16
+      ],
+      "observed": [
+        1,
+        2,
+        3,
+        4,
+        5,
+        6,
+        7,
+        8,
+        9,
+        10,
+        11,
+        12,
+        13,
+        14,
+        15,
+        16
+      ],
+      "response": "1,2,3,4,5,6,7,8,9,10,11,12,13,14,15,16",
+      "usage": {
+        "prompt_tokens": 3209,
+        "total_tokens": 3248,
+        "completion_tokens": 39,
+        "prompt_tokens_details": null,
+        "completion_tokens_details": {
+          "reasoning_tokens": 0
+        }
+      }
+    }
+  },
+  "configured_image_limit": null,
+  "overflow_rejected": null,
+  "passed": true
+}
+exact-upstream-0: PASS
+exact-upstream-1: PASS
+exact-upstream-2: PASS
+upstream-2048-0: PASS
+upstream-2048-1: PASS
+upstream-2048-2: PASS
+concurrent-thinking-0: PASS
+concurrent-thinking-2: PASS
+concurrent-thinking-4: PASS
+concurrent-thinking-8: PASS
+concurrent-thinking-6: PASS
+concurrent-thinking-10: PASS
+concurrent-thinking-14: PASS
+concurrent-thinking-12: PASS
+concurrent-thinking-3: PASS
+concurrent-thinking-1: PASS
+concurrent-thinking-5: PASS
+concurrent-thinking-7: PASS
+concurrent-thinking-9: PASS
+concurrent-thinking-11: PASS
+concurrent-thinking-13: PASS
+concurrent-thinking-15: PASS
+strict-json-normal-eos-0: PASS
+strict-json-normal-eos-1: PASS
+strict-json-normal-eos-2: PASS
+strict-json-normal-eos-3: PASS
+strict-json-normal-eos-4: PASS
+ignore-eos-explicit-stop-0: PASS
+ignore-eos-explicit-stop-1: PASS
+ignore-eos-explicit-stop-2: PASS
+ignore-eos-explicit-stop-3: PASS
+ignore-eos-explicit-stop-4: PASS
+{"schema_version": 2, "started_at": "2026-10-27T15:39:10.405336+00:00", "finished_at": "2026-10-27T15:39:26.752539+00:00", "model": "qwen38-exl3", "concurrency": 16, "expected_cases": 29, "completed_cases": 29, "failed_cases": 0, "diagnostic_budget_limited_cases": 0, "speculation_metrics_before": {"vllm:spec_decode_num_drafts_total": 53566.0, "vllm:spec_decode_num_draft_tokens_total": 158716.0, "vllm:spec_decode_num_accepted_tokens_total": 122723.0}, "speculation_metrics_after": {"vllm:spec_decode_num_drafts_total": 54483.0, "vllm:spec_decode_num_draft_tokens_total": 161399.0, "vllm:spec_decode_num_accepted_tokens_total": 124992.0}, "speculation_metrics_delta": {"vllm:spec_decode_num_drafts_total": 917.0, "vllm:spec_decode_num_draft_tokens_total": 2683.0, "vllm:spec_decode_num_accepted_tokens_total": 2269.0}, "speculation_active": true, "scope": "29 complete JSON/schema/stop checks plus 3 separate verbatim 500-token diagnostics; ignore-EOS complete cases use explicit stop; server log audit is separate", "status": "PASS"}
+{"fraction": 0.42, "depth_tokens": 219176, "concurrency": 4, "requests_ok": 4, "preemptions": 0.0, "peak_waiting": 2.0, "wall_seconds": 122.55}
+{
+  "schema": "qwen38-vllm-vision.v1",
+  "model": "qwen38-exl3",
+  "supported_image_counts": {
+    "16": {
+      "passed": true,
+      "status": 200,
+      "expected": [
+        1,
+        2,
+        3,
+        4,
+        5,
+        6,
+        7,
+        8,
+        9,
+        10,
+        11,
+        12,
+        13,
+        14,
+        15,
+        16
+      ],
+      "observed": [
+        1,
+        2,
+        3,
+        4,
+        5,
+        6,
+        7,
+        8,
+        9,
+        10,
+        11,
+        12,
+        13,
+        14,
+        15,
+        16
+      ],
+      "response": "1, 2, 3, 4, 5, 6, 7, 8, 9, 10, 11, 12, 13, 14, 15, 16",
+      "usage": {
+        "prompt_tokens": 3209,
+        "total_tokens": 3263,
+        "completion_tokens": 54,
+        "prompt_tokens_details": null,
+        "completion_tokens_details": {
+          "reasoning_tokens": 0
+        }
+      }
+    }
+  },
+  "configured_image_limit": null,
+  "overflow_rejected": null,
+  "passed": true
+}
+exact-upstream-0: PASS
+exact-upstream-1: PASS
+exact-upstream-2: PASS
+upstream-2048-0: PASS
+upstream-2048-1: PASS
+upstream-2048-2: PASS
+concurrent-thinking-0: PASS
+concurrent-thinking-2: PASS
+concurrent-thinking-4: PASS
+concurrent-thinking-6: PASS
+concurrent-thinking-8: PASS
+concurrent-thinking-10: PASS
+concurrent-thinking-14: PASS
+concurrent-thinking-12: PASS
+concurrent-thinking-1: PASS
+concurrent-thinking-3: PASS
+concurrent-thinking-5: PASS
+concurrent-thinking-7: PASS
+concurrent-thinking-9: PASS
+concurrent-thinking-11: PASS
+concurrent-thinking-15: PASS
+concurrent-thinking-13: PASS
+strict-json-normal-eos-0: PASS
+strict-json-normal-eos-1: PASS
+strict-json-normal-eos-2: PASS
+strict-json-normal-eos-3: PASS
+strict-json-normal-eos-4: PASS
+ignore-eos-explicit-stop-0: PASS
+ignore-eos-explicit-stop-1: PASS
+ignore-eos-explicit-stop-2: PASS
+ignore-eos-explicit-stop-3: PASS
+ignore-eos-explicit-stop-4: PASS
+{"schema_version": 2, "started_at": "2026-10-27T15:41:47.174358+00:00", "finished_at": "2026-10-27T15:42:03.846653+00:00", "model": "qwen38-exl3", "concurrency": 16, "expected_cases": 29, "completed_cases": 29, "failed_cases": 0, "diagnostic_budget_limited_cases": 0, "speculation_metrics_before": {"vllm:spec_decode_num_drafts_total": 55017.0, "vllm:spec_decode_num_draft_tokens_total": 163001.0, "vllm:spec_decode_num_accepted_tokens_total": 126566.0}, "speculation_metrics_after": {"vllm:spec_decode_num_drafts_total": 55934.0, "vllm:spec_decode_num_draft_tokens_total": 165684.0, "vllm:spec_decode_num_accepted_tokens_total": 128835.0}, "speculation_metrics_delta": {"vllm:spec_decode_num_drafts_total": 917.0, "vllm:spec_decode_num_draft_tokens_total": 2683.0, "vllm:spec_decode_num_accepted_tokens_total": 2269.0}, "speculation_active": true, "scope": "29 complete JSON/schema/stop checks plus 3 separate verbatim 500-token diagnostics; ignore-EOS complete cases use explicit stop; server log audit is separate", "status": "PASS"}
+{"fraction": 0.42, "depth_tokens": 219176, "concurrency": 4, "requests_ok": 4, "preemptions": 0.0, "peak_waiting": 2.0, "wall_seconds": 122.53}
+{
+  "schema": "qwen38-vllm-vision.v1",
+  "model": "qwen38-exl3",
+  "supported_image_counts": {
+    "16": {
+      "passed": true,
+      "status": 200,
+      "expected": [
+        1,
+        2,
+        3,
+        4,
+        5,
+        6,
+        7,
+        8,
+        9,
+        10,
+        11,
+        12,
+        13,
+        14,
+        15,
+        16
+      ],
+      "observed": [
+        1,
+        2,
+        3,
+        4,
+        5,
+        6,
+        7,
+        8,
+        9,
+        10,
+        11,
+        12,
+        13,
+        14,
+        15,
+        16
+      ],
+      "response": "1,2,3,4,5,6,7,8,9,10,11,12,13,14,15,16",
+      "usage": {
+        "prompt_tokens": 3209,
+        "total_tokens": 3248,
+        "completion_tokens": 39,
+        "prompt_tokens_details": null,
+        "completion_tokens_details": {
+          "reasoning_tokens": 0
+        }
+      }
+    }
+  },
+  "configured_image_limit": null,
+  "overflow_rejected": null,
+  "passed": true
+}
+soak: 29 rounds in 75 min
+control: 5272 MiB free on card 1 -> calibrating with 1536 MiB
+Emulate Docker CLI using podman. Create /etc/containers/nodocker to quiet msg.
+control: device usage rose 2091 MiB while 1536 MiB was held (need >= 1024)

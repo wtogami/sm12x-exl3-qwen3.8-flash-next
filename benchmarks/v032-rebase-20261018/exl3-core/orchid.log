@@ -1,0 +1,5 @@
+{"run": 0, "case": "orchid", "contract": {"pass": true, "occurrences": 100}, "decode_tps": 256.4980803671493}
+{"run": 1, "case": "orchid", "contract": {"pass": true, "occurrences": 100}, "decode_tps": 256.2385427534653}
+{"run": 2, "case": "orchid", "contract": {"pass": true, "occurrences": 100}, "decode_tps": 256.10882814467305}
+{"run": 3, "case": "orchid", "contract": {"pass": true, "occurrences": 100}, "decode_tps": 256.71693803305897}
+{"run": 4, "case": "orchid", "contract": {"pass": false, "occurrences": 101}, "decode_tps": 259.07471620773043}
