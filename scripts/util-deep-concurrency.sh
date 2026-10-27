@@ -15,6 +15,10 @@ set -uo pipefail
 # driver now runs on gg and on burst, and a /home/rtx literal made it
 # unusable anywhere else.
 cd "$(cd -- "$(dirname -- "${BASH_SOURCE[0]}")/.." && pwd)"
+# Fail fast if that cd did not land in a checkout. A copy of a sibling driver ran
+# from outside the repo, found no start.sh, polled a dead port for 33 minutes, and its
+# stop fallback SIGKILLed an engine that was loading weights on the same card.
+[[ -f start.sh && -f stop.sh ]] || { echo "no start.sh/stop.sh above $(dirname -- "${BASH_SOURCE[0]}") -- run this file from <repo>/scripts/" >&2; exit 2; }
 QUANT="${QUANT:-exl3}"
 MODEL="${MODEL:-qwen38-$QUANT}"
 NAME="${CONTAINER_NAME:-qwen38-$QUANT}"
@@ -44,7 +48,22 @@ probe="scripts/benchmark-deep-concurrency.py"
 [[ -f "$probe" ]] || { echo "missing $probe (it must live in the repo tree beside its imports)" >&2; exit 1; }
 python3 -c "import ast,sys;ast.parse(open(sys.argv[1]).read())" "$probe" || { echo "$probe does not parse" >&2; exit 1; }
 
-stop_engine() { QUANT=$QUANT IMAGE=$IMG PORT=$PORT bash stop.sh >>"$OUT/ops.log" 2>&1 || docker rm -f "$NAME" >/dev/null 2>&1; sleep 5; }
+# Never `docker rm -f` a *running* container: SIGTERM, 10s, SIGKILL. Fine when a driver
+# owns the machine; a misplaced copy of this family of drivers force-removed a user's
+# engine at 86% through loading weights (exit 137, no kernel OOM, no Xid). Only stopped
+# containers are removed, and a live one under our name that stop.sh could not stop is
+# another tenant's work -- refuse the cell instead of ending it.
+stop_engine() {
+  QUANT=$QUANT IMAGE=$IMG PORT=$PORT bash stop.sh >>"$OUT/ops.log" 2>&1 || true
+  local state
+  state=$(docker inspect -f '{{.State.Status}}' "$NAME" 2>/dev/null) || return 0
+  if [[ "$state" == running || "$state" == created || "$state" == restarting ]]; then
+    echo "STOP-REFUSED: container $NAME is still $state; refusing to force-remove it" >>"$OUT/ops.log"
+    return 1
+  fi
+  docker rm "$NAME" >/dev/null 2>&1 || true
+  sleep 5
+}
 
 for u in $UTILS; do
   grep -q "^$u\b" "$row" && continue
@@ -54,7 +73,7 @@ for u in $UTILS; do
     continue
   fi
   stop_engine
-  QUANT=$QUANT IMAGE=$IMG GPU=0 PORT=$PORT GPU_MEMORY_UTILIZATION=$u bash start.sh >>"$OUT/ops.log" 2>&1 &
+  QUANT=$QUANT IMAGE=$IMG GPU=${GPU:-0} PORT=$PORT GPU_MEMORY_UTILIZATION=$u bash start.sh >>"$OUT/ops.log" 2>&1 &
   ready=0
   for i in $(seq 1 100); do curl -sf $B/v1/models >/dev/null 2>&1 && { ready=1; break; }; sleep 10; done
   if [[ $ready != 1 ]]; then
