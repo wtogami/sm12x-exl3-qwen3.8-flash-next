@@ -1,0 +1,86 @@
+{
+  "schema": "qwen38-residency-geometry-v1",
+  "purpose": [
+    "Pool page counts recorded from engines that were then measured under deep",
+    "concurrent load. scripts/check-residency-geometry.py compares a live boot against",
+    "these numbers: the attention block size is a mechanism assertion (a change voids",
+    "every page-arithmetic conclusion), the page count is a drift warning (a change moves",
+    "the eviction band, which is measured, not derived)."
+  ],
+  "entries": [
+    {
+      "util": "0.94",
+      "pool_pages": 303,
+      "host": "burst",
+      "image_id": "abbde425a717",
+      "vllm": "0.32.0",
+      "quant": "exl3",
+      "note": "burst v0.32; 969,224 tokens; measured clean at 245Kx2, 1 eviction at 245Kx4",
+      "receipts": "benchmarks/burst-deep-concurrency-20261026/"
+    },
+    {
+      "util": "0.96",
+      "pool_pages": 344,
+      "host": "burst",
+      "image_id": "abbde425a717",
+      "vllm": "0.32.0",
+      "quant": "exl3",
+      "note": "burst v0.32; 1,099,587 tokens; MEASURED TRAP -- 245Kx4 is 441s/4 evictions vs 357s/1 at 0.94"
+    },
+    {
+      "util": "0.97",
+      "pool_pages": 363,
+      "host": "burst",
+      "image_id": "abbde425a717",
+      "vllm": "0.32.0",
+      "quant": "exl3",
+      "note": "burst v0.32; 1,161,935 tokens; 245Kx4 clean at 276s/0 evictions"
+    },
+    {
+      "util": "0.98",
+      "pool_pages": 384,
+      "host": "burst",
+      "image_id": "abbde425a717",
+      "vllm": "0.32.0",
+      "quant": "exl3",
+      "note": "burst v0.32; 1,227,117 tokens; 245Kx4 clean at 277s/0; ceiling is 0.99 (1.00 refuses to boot)"
+    },
+    {
+      "util": "0.94",
+      "pool_pages": 296,
+      "host": "gg",
+      "image_id": "73d126ef5a75",
+      "vllm": "0.31.0",
+      "quant": "exl3",
+      "note": "gg v0.31; 949,386 tokens; the same shape ~7 pages lower than v0.32",
+      "receipts": "benchmarks/gg-deep-concurrency-20261024/"
+    },
+    {
+      "util": "0.96",
+      "pool_pages": 336,
+      "host": "gg",
+      "image_id": "73d126ef5a75",
+      "vllm": "0.31.0",
+      "quant": "exl3",
+      "note": "gg v0.31; MEASURED TRAP, 4 reproductions: 7 evictions, 615-621s vs 366s at 0.94"
+    },
+    {
+      "util": "0.97",
+      "pool_pages": 356,
+      "host": "gg",
+      "image_id": "73d126ef5a75",
+      "vllm": "0.31.0",
+      "quant": "exl3",
+      "note": "gg v0.31; 245Kx4 clean at 282s/0 -- but with ZERO margin at the modelled k=7 state pages"
+    },
+    {
+      "util": "0.98",
+      "pool_pages": 376,
+      "host": "gg",
+      "image_id": "73d126ef5a75",
+      "vllm": "0.31.0",
+      "quant": "exl3",
+      "note": "gg v0.31; 1,204,445 tokens; 245Kx4 clean at 285s/0"
+    }
+  ]
+}

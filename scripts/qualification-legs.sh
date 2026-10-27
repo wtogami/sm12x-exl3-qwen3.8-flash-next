@@ -21,6 +21,12 @@
 #                      PR 62409 cache floor; set EMPTY on native-window
 #                      (LONGCTX=0 / Spark) hosts where >262144 is invalid
 #                      (default "280000 480000")
+#   RESIDENCY_BASELINE qualified KV geometry to compare against (default
+#                      benchmarks/RESIDENCY-GEOMETRY.json). Gating on the mechanism
+#                      (attention block size) and a loud warning on pool drift: the
+#                      eviction band is measured per image, so a rebase that moves the
+#                      pool must not inherit old utilization conclusions. Set EMPTY to
+#                      skip the comparison on a host with no recorded baseline.
 #   TOOL_EVAL_DIR      tool-eval-bench checkout for tool-quality.sh
 #   DRY_RUN=1          print the plan and exit 0 without booting anything
 #
@@ -36,6 +42,7 @@ GPU="${GPU:-1}"
 PORT="${PORT:-$([[ "$TP_SIZE" == 1 ]] && echo 8002 || echo 8125)}"
 B="http://127.0.0.1:${PORT}"
 RESULT_DIR="${RESULT_DIR:?Set a result directory for this run}"
+RESIDENCY_BASELINE="${RESIDENCY_BASELINE-$SCRIPT_DIR/benchmarks/RESIDENCY-GEOMETRY.json}"
 RETRIEVAL_TOKENS="${RETRIEVAL_TOKENS:-8192 240000}"
 BOUNDARY_TOKENS="${BOUNDARY_TOKENS-280000 480000}"
 LOG="$RESULT_DIR/driver.log"
@@ -75,6 +82,14 @@ leg() {  # $1 = QUANT
   if [[ -e "$dir/api-tools.json" ]]; then echo "===== $q complete already, skip" | tee -a "$LOG"; return 0; fi
   echo "===== $q boot $(date -u +%FT%TZ)" | tee -a "$LOG"
   boot_engine "$q" || { FAILURES=$((FAILURES+1)); return 1; }
+  # Residency geometry before anything expensive: the GPU_MEMORY_UTILIZATION guidance
+  # in README/qualification rests on residency being counted in 3200-token pages, and
+  # the measured breakpoints moved ~7 pages between v0.31 and v0.32. A block-size change
+  # voids that arithmetic outright, so it gates; pool drift only warns, because pool size
+  # legitimately differs by host and card.
+  step "$q residency" python3 "$SCRIPT_DIR/scripts/check-residency-geometry.py" \
+    --base-url "$B/v1" --output "$dir/residency.json" --util "${GPU_MEMORY_UTILIZATION:-0.94}" \
+    ${RESIDENCY_BASELINE:+--baseline "$RESIDENCY_BASELINE"} ${RESIDENCY_HOST:+--host "$RESIDENCY_HOST"}
   local common=(--base-url "$B" --model "$alias")
   step "$q api"        python3 "$SCRIPT_DIR/scripts/test-api-tool-constraints.py" "${common[@]}" --output "$dir/api-tools.json"
   step "$q vision"     python3 "$SCRIPT_DIR/scripts/test-vision-vllm.py" "${common[@]}" --output "$dir/vision.json"
