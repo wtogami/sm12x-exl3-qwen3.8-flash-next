@@ -1,0 +1,68 @@
+Sustained-load peak probe: 0.98 and 0.94 side by side, 75 minutes each, same host, same shapes.
+
+WHY THIS EXISTS
+The runtime-growth bound that the 0.98 default was qualified on had been measured only at 0.94,
+where the remainder above the reservation is ~5.2 GiB. Quoting that number against the 1,395 MiB
+the 0.98 default leaves was my error: it presented a growth rate measured with 4x the slack as a
+headroom statement about the configuration we ship. This campaign measures it at the shipped
+utilization, and under load that is sustained rather than a single excursion, because fragmentation
+and leaks are trajectories and a one-shot phase cannot see them.
+
+WHAT IT SAYS
+  098/  card 0, GPU_MEMORY_UTILIZATION=0.98, 25 soak rounds, 2,520 samples, control PASS
+  094/  card 1, GPU_MEMORY_UTILIZATION=0.94, 29 soak rounds, 2,514 samples, control PASS
+
+  baseline (boot+warmup)        95,496 MiB   91,568 MiB
+  structured (FSM decode)       95,986 (+490) 92,058 (+490)
+  prefill-240k                  95,986 (+0)   92,058 (+0)
+  deep-4x-concurrent            95,986 (+0)   92,058 (+0)
+  all-hands                     95,988 (+2)   92,060 (+2)
+  decode-16 (graph bucket max)  95,990 (+2)   92,062 (+2)
+  every soak round thereafter   95,990 (+0)   92,062 (+0)
+
+  net growth over baseline: 494 MiB at BOTH utilizations, to the MiB, and flat from the first
+  round to the last. Zero preemptions in either arm.
+
+THE THREE THINGS THIS ESTABLISHES
+
+1. The growth is a single deterministic step, not a creep. 494 MiB appeared once, on the
+   constrained-decode (FSM) path, and 25 further rounds of structured + 4x deep-prefill + vision
+   moved it by 0 MiB. That also withdraws the "1 boot in 4" impression from the earlier probe set:
+   those runs all plateaued at 92,058-92,082 MiB whether the step appeared at `structured` or was
+   already inside `baseline`, so the step was always the same and only its position in the timeline
+   varied. Attribution varied; the event did not.
+
+2. The step does not come out of the remainder, which is the correction that matters for the
+   default. The plateau sits 61 MiB above the 0.98 budget (95,929 MiB) and 48 MiB above the 0.94
+   budget (92,014 MiB). So weights + KV pool + live activations + the 494 MiB step all fit inside
+   what the engine reserved for itself, at both utilizations, because the profiled activation
+   reserve (1,290 MiB, from engine-accounting.txt) lives inside the budget. Raising the utilization
+   did not shrink the space growth needs. The 1,395 MiB remainder is what the engine did NOT use.
+
+3. The sampler can see growth at this scale, on this boot. Each arm ends with a deliberate
+   allocation sized from the memory actually free at that moment: 608 MiB held on the 0.98 card
+   (1,352 MiB free) registered a 1,163 MiB rise; 1,536 MiB held on the 0.94 card (5,272 MiB free)
+   registered 2,091 MiB. The rise exceeds the holding because the caching allocator takes whole
+   segments. Either way the flat line above is a measurement, not a blind instrument.
+
+LIMITATIONS, STATED
+  * The sampler resolves at 2 s. A growth event shorter than the interval would be missed; the
+    control demonstrates sensitivity to sustained allocations, not to transient ones.
+  * Two engines on one host were soaking simultaneously. That shares CPU and the NVMe path, which
+    is why nothing in this directory should be read as a latency result. It is irrelevant to peak
+    device memory, which is the quantity under test.
+  * 75 minutes is a soak, not a deployment. A leak with a period longer than ~50 rounds is outside
+    this window, though the zero slope over 25 rounds at constant KV occupancy (0.667) bounds it
+    at well under the ~1,334 MiB of remainder the step left untouched (1,395 MiB measured by start.sh, of
+    which the plateau consumed 61 MiB).
+
+FILES
+  peak.tsv               one row per phase/round: peak MiB, delta over previous peak, sample count,
+                         preemptions, peak KV occupancy, pool pages.
+  samples.txt            the raw 2 s series (epoch, MiB used) the peaks are computed from.
+  engine.log             the engine's own startup accounting, including the pool geometry.
+  cache-config.txt       vllm:cache_config_info as served: num_gpu_blocks, block_size, util.
+  engine-accounting.txt  the "Desired GPU memory utilization / peak activation / Available KV cache"
+                         lines, which is where the 1,290 MiB profiled activation reserve comes from.
+  soak-deep4-N.jsonl     per-round workload row (wall seconds, preemptions, KV occupancy) -- the
+                         trajectory the wall-clock claim rests on.

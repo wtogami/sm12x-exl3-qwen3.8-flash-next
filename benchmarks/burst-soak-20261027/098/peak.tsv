@@ -1,0 +1,35 @@
+phase	peak_used_MiB	delta_over_prev_peak_MiB	samples	preemptions	peak_kv_usage	pool_pages	note
+baseline	95496	95496	99	0	0.000	433	boot+warmup, no legs
+vision	95496	0	99	0	0.000	433	16 images, alone
+structured	95986	490	108	0	0.333	433	FSM constrained decode, alone
+prefill-240k	95986	0	168	0	0.333	433	single deep prefill, alone
+deep-4x-concurrent	95986	0	243	0	0.576	433	4 concurrent deep prefills, short outputs
+all-hands	95988	2	289	0	0.576	433	vision + structured + 2 deep prefills overlapping
+decode-16-at-cudagraph-bucket	95990	2	308	0	0.667	433	16-way decode, max bucket
+soak-round-1	95990	0	397	0	0.667	433	after 1 rounds, 3 min elapsed
+soak-round-2	95990	0	485	0	0.667	433	after 2 rounds, 6 min elapsed
+soak-round-3	95990	0	573	0	0.667	433	after 3 rounds, 9 min elapsed
+soak-round-4	95990	0	662	0	0.667	433	after 4 rounds, 12 min elapsed
+soak-round-5	95990	0	750	0	0.667	433	after 5 rounds, 15 min elapsed
+soak-round-6	95990	0	838	0	0.667	433	after 6 rounds, 18 min elapsed
+soak-round-7	95990	0	927	0	0.667	433	after 7 rounds, 21 min elapsed
+soak-round-8	95990	0	1015	0	0.667	433	after 8 rounds, 24 min elapsed
+soak-round-9	95990	0	1103	0	0.667	433	after 9 rounds, 27 min elapsed
+soak-round-10	95990	0	1191	0	0.667	433	after 10 rounds, 30 min elapsed
+soak-round-11	95990	0	1280	0	0.667	433	after 11 rounds, 33 min elapsed
+soak-round-12	95990	0	1368	0	0.667	433	after 12 rounds, 36 min elapsed
+soak-round-13	95990	0	1456	0	0.667	433	after 13 rounds, 39 min elapsed
+soak-round-14	95990	0	1544	0	0.667	433	after 14 rounds, 42 min elapsed
+soak-round-15	95990	0	1631	0	0.667	433	after 15 rounds, 45 min elapsed
+soak-round-16	95990	0	1719	0	0.667	433	after 16 rounds, 48 min elapsed
+soak-round-17	95990	0	1807	0	0.667	433	after 17 rounds, 51 min elapsed
+soak-round-18	95990	0	1895	0	0.667	433	after 18 rounds, 54 min elapsed
+soak-round-19	95990	0	1983	0	0.667	433	after 19 rounds, 57 min elapsed
+soak-round-20	95990	0	2071	0	0.667	433	after 20 rounds, 60 min elapsed
+soak-round-21	95990	0	2159	0	0.667	433	after 21 rounds, 63 min elapsed
+soak-round-22	95990	0	2246	0	0.667	433	after 22 rounds, 66 min elapsed
+soak-round-23	95990	0	2334	0	0.667	433	after 23 rounds, 69 min elapsed
+soak-round-24	95990	0	2421	0	0.667	433	after 24 rounds, 72 min elapsed
+soak-round-25	95990	0	2509	0	0.667	433	after 25 rounds, 75 min elapsed
+control-608MiB	97153	PASS	2520				sampler sensitivity check, run after the phases
+PEAK PROBE DONE 2026-10-27T15:44:57Z
