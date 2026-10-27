@@ -1,0 +1,10 @@
+legs: 3  eviction-free: ['0.98a', '0.98b']  evicting: ['0.96']
+  0.98a: preemptions=0.0 wall=257.95s prompts_sha=03b042f1562721bc
+  0.98b: preemptions=0.0 wall=256.51s prompts_sha=03b042f1562721bc
+  0.96: preemptions=11.0 wall=668.2s prompts_sha=03b042f1562721bc
+null control 0.98a vs 0.98b: 0/4 sequences diverged, earliest agreement break at token 0
+subject 0.98a vs 0.96: 0/4 sequences diverged, earliest agreement break at token 0
+subject 0.98b vs 0.96: 0/4 sequences diverged, earliest agreement break at token 0
+
+subject leg 0.96 evicted 11 times (668.2s wall), cold prefill at 1566 tok/s, prefix hit ratio 0.0.
+RESULT: PASS -- all 4 sequences agreed token-for-token across 11 evictions, and the null-control boots agreed with each other too (0/4 diverged). Eviction did not change answers beyond this engine's ordinary run-to-run variance.

@@ -1,0 +1,4 @@
+legs: 2  eviction-free: ['0.98', '0.96']  evicting: none
+  0.98: preemptions=0.0 wall=4.39s prompts_sha=e4681dc6f9fb4684
+  0.96: preemptions=0.0 wall=4.43s prompts_sha=e4681dc6f9fb4684
+INCONCLUSIVE: no leg evicted, so the eviction path was never exercised. Pick a utilization from the band map (docs/qualification.md) that is measured to preempt at this depth.

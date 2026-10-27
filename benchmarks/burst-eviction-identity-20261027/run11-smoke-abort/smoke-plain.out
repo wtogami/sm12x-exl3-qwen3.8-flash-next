@@ -1,0 +1,8 @@
+[smoke-plain] prompts sha=de312ec334de506b depth=8192 n=2
+  solo[0] ok=True sha=3657fcec4dda9dda 0.46s
+  solo[1] ok=True sha=2bea258c8a4f898e 0.26s
+[smoke-plain] COLD concurrent burst of 2, ~16,512 resident tokens
+  burst wall=0.73s (22619 tok/s effective) evictions=0.0 prefix_hit_ratio=0.0
+  burst[0] ok=True sha=3657fcec4dda9dda tokens=64 0.69s
+  burst[1] ok=True sha=3657fcec4dda9dda tokens=64 0.73s
+[smoke-plain] ABORTED: output entropy 22 distinct tokens across 128 emitted (< 48). The continuation is a repetition cycle, so cross-leg agreement would be guaranteed by construction. Put the question at the END of the prompt (--question-end).

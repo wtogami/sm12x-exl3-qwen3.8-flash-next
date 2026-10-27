@@ -1,0 +1,41 @@
+Run 11 -- aborted at its own smoke gate, and that is the whole record.
+
+driver.log holds the gate output; smoke-plain.out and smoke-question.out are the raw responses
+from the two prompt modes at 8,192 tokens; ops.log is boot and teardown; verdict.tsv is a header
+with no rows, because no leg ran. Nothing was hidden: the campaign ended here by design.
+
+What the gate caught: the plain-completion mode returned no token stream. The served model is
+chat-tuned, so a bare text-completion request is answered with a reasoning block or with
+immediate end-of-turn, neither of which yields a comparable continuation. The driver refuses to
+score an absent measurement as agreement -- the rule run 4 taught it -- so it stopped before
+booting three engines.
+
+That is the fourth distinct axis on which this test invalidated itself (batch-shape variance,
+prefix caching, empty comparisons, repetition cycles, and now endpoint/chat format), and the
+reason the ledger recommends stopping rather than a seventh campaign: fixing this one means
+driving the chat endpoint with a single system turn and no history, and the two prior objections
+still stand. Given measured cross-run variance, INCONCLUSIVE is the likely result; and since
+raising utilization only reduces eviction frequency, no outcome here can argue against the 0.98
+default. A real mismatch would be a defect in the preempt-and-restore path at every utilization,
+reportable upstream, remedied by admission control.
+
+Note also what these receipts do show, at no cost: the 0.96 subject legs took 637-668 s for the
+workload the 0.98 legs finished in 255-258 s.
+
+Gate transcript, verbatim from driver.log (the .log itself stays out of git by repo convention;
+this is the 384-byte thing that decided the campaign):
+
+    === smoke: both prompt modes at small depth on card 2 ===
+      card 2 clear (18 MiB used)
+    SMOKE-FAILED(plain): phase exited nonzero
+    smoke[question]: kind=token_ids lens=[1, 64] distinct=57 evictions=0.0 tok/s=20640 prefix_hit=0.0
+    smoke[question]: sequences [0] have no token stream -- refusing to score an absent measurement as agreement
+    SMOKE-FAILED: aborting before any real leg boots
+
+Read it carefully, because the two modes fail differently and only one of them is obvious. The
+plain mode exited nonzero and said so. The question mode looked ALIVE -- 57 distinct tokens, a
+token_ids stream, 20,640 tok/s -- and would have been waved through by any gate that checks
+entropy alone. What killed it is that one of its two sequences carried no stream at all: lens
+[1, 64] means one sequence produced a single token and the other 64, and the driver refuses to
+call an absent measurement agreement. A cheap warm engine at 20,640 tok/s also means nothing was
+ever evicted, so even a well-formed answer here would have scored nothing.

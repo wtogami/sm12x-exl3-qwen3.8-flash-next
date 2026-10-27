@@ -1,0 +1,9 @@
+legs: 3  eviction-free: ['0.98a', '0.98b']  evicting: ['0.96']
+  0.98a: preemptions=0.0 wall=258.36s prompts_sha=c4fb7bc5bee8d881
+  0.98b: preemptions=0.0 wall=255.24s prompts_sha=c4fb7bc5bee8d881
+  0.96: preemptions=10.0 wall=637.59s prompts_sha=c4fb7bc5bee8d881
+null control 0.98a vs 0.98b: 0/4 sequences diverged, earliest agreement break at token 16384
+subject 0.98a vs 0.96: 0/4 sequences diverged, earliest agreement break at token 16384
+subject 0.98b vs 0.96: 0/4 sequences diverged, earliest agreement break at token 16384
+output entropy per leg: 0.98a=65,536tok/22distinct, 0.98b=65,536tok/22distinct, 0.96=65,536tok/22distinct
+INCONCLUSIVE: leg(s) ['0.98a', '0.98b', '0.96'] emitted fewer than 64 distinct tokens -- the continuation is a repetition cycle, so agreement between legs is close to guaranteed by construction and does not demonstrate that eviction preserved anything. Re-run with --question.

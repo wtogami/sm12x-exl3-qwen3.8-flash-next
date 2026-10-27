@@ -1,0 +1,18 @@
+Run 4 reported PASS. It was vacuous, and this file says how to see that from the receipts.
+
+0.96.json: evictions=11.0 burst=668.2s prefix_hit=0.0 -- REAL cold work, but the compared 'tokens' arrays were [0, 0, 0, 0] (all empty).
+0.98a.json: evictions=0.0 burst=257.95s prefix_hit=0.0 -- REAL cold work, but the compared 'tokens' arrays were [0, 0, 0, 0] (all empty).
+0.98b.json: evictions=0.0 burst=256.51s prefix_hit=0.0 -- REAL cold work, but the compared 'tokens' arrays were [0, 0, 0, 0] (all empty).
+
+The comparison hashed empty lists against empty lists, so every pair 'agreed'. Two bugs
+compounded: this build's /v1/completions logprobs object has no `token_texts` key (it
+carries `tokens` and `token_logprobs`), so the lookup returned None and defaulted to []; and
+pair_report() treated a 0-length sequence as agreement rather than as missing evidence.
+
+Note the contrast that makes this worth keeping: the WORKLOAD was finally right -- 11
+evictions, 1566 tok/s effective, prefix hit ratio 0.00, 16,384 output tokens per sequence --
+and the measurement of eviction was sound while the measurement of the OUTPUT was nothing.
+A verdict line can be simultaneously well-instrumented on one axis and meaningless on another.
+
+Fixes: request return_token_ids, compare the strongest representation present (ids > decoded
+words > text), and return INCONCLUSIVE whenever any leg lacks a >= 8-unit token stream.

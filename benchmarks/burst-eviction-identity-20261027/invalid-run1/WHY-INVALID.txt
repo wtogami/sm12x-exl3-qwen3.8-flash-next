@@ -1,0 +1,15 @@
+These two legs proved nothing and the receipts show exactly how to tell.
+
+0.96.json: burst of 4 x 245248 tokens in 4.43s = ? tok/s, preemptions=0.0
+0.98.json: burst of 4 x 245248 tokens in 4.39s = ? tok/s, preemptions=0.0
+
+Serialized deep prefill on this engine runs at ~5-6k tok/s, so a 980,992-token burst
+cannot finish in 4.4s. The solo phase of each leg had already prefilled the SAME prompts,
+so the 'concurrent burst' was a prefix-cache hit on all four sequences: no prefill work,
+no pool pressure, no eviction possible. The test's own zero-preemption result was the
+artifact, not the finding -- and it would have been reported as 'eviction is safe'.
+
+Fixes: separate reference and burst prompt sets (identical token counts, different
+nonces), per-request timing and effective tok/s recorded, prefix-cache hit ratio sampled
+across the burst window, and compare now returns INCONCLUSIVE (2) when a leg is
+cache-defeated rather than letting it count as evidence.

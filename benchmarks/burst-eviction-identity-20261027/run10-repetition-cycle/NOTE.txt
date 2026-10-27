@@ -1,0 +1,16 @@
+Run 10: the leg that evicted 10 times and was still refused a verdict.
+
+All three legs agree token-for-token over 16,384 tokens -- and the entropy gate rejects the
+comparison, correctly. 65,536 emitted tokens per leg, 22 distinct, and four DIFFERENT prompts
+produced byte-identical sequences (seq_sha 79033f5b). The model is reciting the filler
+sentence in a period-23 cycle.
+
+Cause: --question placed the ask after the unique nonce header, i.e. at the TOP of a
+245,248-token filler block. By generation time it is 245K tokens in the past and the model is
+mid-sentence in the filler. Agreement between an evicting boot and two clean boots of a
+deterministic loop is worth nothing, which is precisely what the gate is for.
+
+The driver also died here, before writing this verdict itself: I edited scripts/eviction-identity.sh
+while bash was still executing it, and the tail of the script parsed as garbage
+(`line 167: syntax error near unexpected token 'leg'`). All three legs' receipts were intact
+and compare() was run against them afterwards -- the finding survives, the automation did not.

@@ -1,0 +1,8 @@
+[smoke-question] prompts sha=23c25e2a30e69c48 depth=8192 n=2
+  solo[0] ok=True sha=e3b0c44298fc1c14 0.17s
+  solo[1] ok=True sha=e3b0c44298fc1c14 0.19s
+[smoke-question] COLD concurrent burst of 2, ~16,512 resident tokens
+  burst wall=0.8s (20640 tok/s effective) evictions=0.0 prefix_hit_ratio=0.0
+  burst[0] ok=True sha=e3b0c44298fc1c14 tokens=1 0.25s
+  burst[1] ok=True sha=b50fa05a7e70aa70 tokens=64 0.8s
+[smoke-question] wrote /home/opencode/burst-evict-identity-q11/smoke-question/smoke-question.json: evictions=0.0 wall=0.8s
