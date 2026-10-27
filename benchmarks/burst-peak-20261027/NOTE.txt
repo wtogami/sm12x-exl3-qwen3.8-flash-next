@@ -1,0 +1,59 @@
+Runtime peak probe, six boots (burst, exl3, v0.32) -- how the growth instrument got its shape
+
+Preserved 2026-10-27 during cleanup; the ledger and several commit messages quote these rows and none
+of this was in git. Read them in order, because the interesting output is the instrument's history
+more than the answer:
+
+  run-a       baseline 95,986 MiB, every phase delta 0.
+              INVALID, kept deliberately: the sampler ran nvidia-smi without --id, so it read a
+              neighbouring card. 95,986 was the grid engine's card 0 while this probe's own engine sat
+              on card 2 at 92,076. Every phase "confirmed" no growth against somebody else's
+              footprint. See ../burst-peak-ghosts-20261027/ for the write-up; this run is why every
+              VRAM sampler in this repo now takes an explicit card id.
+
+  run-b       baseline 92,082, correct card, phases all delta 0. First clean reading: at 0.94 the
+              device never moved above the boot figure through vision, structured decode, 240K
+              prefill and 4 concurrent deep prefills.
+
+  run-c       baseline 91,570 -> structured 92,060 (+490) -> flat. The first sighting of the
+              constrained-decode step, and the origin of the "0-490 MiB" range that the ledger carried
+              for days. Note the plateau: 92,060 here against 92,082 in run-b and run-fixed. The step
+              is deterministic; only its position in the timeline moves (in b and fixed it was already
+              inside the baseline), which is what made it look intermittent.
+
+  run-fixed   baseline 92,082 with all six phases at delta 0, including the full-hands and max-CUDA-
+              graph-bucket decode legs. Same plateau as run-c, so the same event attributed elsewhere.
+
+  run-ctl     peak.tsv with a header and no rows. The control was written and the run aborted; kept
+              because a file that is empty in a specific way is evidence about the instrument.
+
+  run-ctl-b   the ordering bug, caught in the act. Control ran BEFORE the phases:
+                  baseline 92,082 -> control-1.5GiB 93,635 PASS -> vision 93,635 (delta 1553)
+                  -> structured 0 -> prefill 0 -> deep-4x 0 -> all-hands 0 -> decode-16 0
+              Device usage is a high-water mark, so a control that deliberately adds 1.5 GiB raises
+              every later baseline permanently and all six following phases report a clean zero
+              regardless of what they do. The validation step was destroying the measurement in a form
+              that looks like a good result. Fixed by running the control last.
+
+  run-nocache NOCACHE=1, i.e. PYTORCH_NO_CUDA_MEMORY_CACHING=1: peak.tsv again header-only. The
+              loader reports "Model loading took 0.0 GiB" and CUDA graph capture dies, so the bypass-
+              the-allocator idea is not usable on this stack. Documented so nobody tries it twice.
+
+WHAT THESE RUNS DO AND DO NOT ESTABLISH
+They were all booted at 0.94 -- visible in every "Free memory on device (94.51/95.06 GiB) on startup"
+line and in the ~92,0xx MiB baselines, which is the 0.94 reservation, not the 0.98 one. So they bound
+the growth *rate*, and it was an error on my part to quote that bound as headroom for a 0.98 default
+that had ~1.4 GiB of remainder instead of ~5.9 GiB. That measurement belongs to
+../burst-soak-20261027/, which ran both utilizations for 75 minutes and found the 494 MiB step lands
+inside the engine's own reservation.
+
+FILES, per run directory
+  peak.tsv                phase, peak MiB used, delta over previous peak, sample count, preemptions,
+                          peak KV occupancy, pool pages, note
+  samples.txt             the raw 2 s device-memory series the peaks are computed from
+  metrics.txt             the raw per-sample vllm:* counter series (4.1M across the six runs)
+  engine-0.94.log         the engine's own startup and accounting lines
+  cache-config.txt        vllm:cache_config_info label set as served
+  engine-accounting.txt   "Desired GPU memory utilization / peak activation / Available KV cache"
+  legs.log, ops.log       workload output and container start/stop accounting
+  shape-*.json(l)         individual workload payloads where the run got that far

@@ -1,0 +1,4 @@
+pool_pages=342 block_size="3200" block_size="3200" gpu_memory_utilization="0.94" block_size="16" 
+pid=158) INFO 10-27 05:32:27 [interface.py:1096] Setting attention block size to 3200 tokens to ensure that attention page size is >= mamba page size.
+pid=158) INFO 10-27 05:32:56 [gpu_worker.py:759] Available KV cache memory: 14.46 GiB
+pid=158) INFO 10-27 05:33:09 [gpu_worker.py:1034] Free memory on device (94.5/95.06 GiB) on startup. Desired GPU memory utilization is (0.94, 89.36 GiB). Actual usage is 73.64 GiB for consumed memory (weights + non-torch), 1.26 GiB for peak activation, and 0.28 GiB for CUDAGraph memory. Replace gpu_memory_utilization config with `--kv-cache-memory=15070533264` (14.04 GiB) to fit into requested memory, or `--kv-cache-memory=20591498240` (19.18 GiB) to fully utilize gpu memory. Current kv cache memory in use is 14.46 GiB.

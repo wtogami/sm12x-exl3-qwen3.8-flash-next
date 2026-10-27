@@ -1,0 +1,9 @@
+phase	peak_used_MiB	delta_over_prev_peak_MiB	samples	preemptions	peak_kv_usage	pool_pages	note
+baseline	92082	92082	99	0	0.000	342	boot+warmup, no legs
+vision	92082	0	99	0	0.000	342	16 images, alone
+structured	92082	0	108	0	0.422	342	FSM constrained decode, alone
+prefill-240k	92082	0	168	0	0.422	342	single deep prefill, alone
+deep-4x-concurrent	92082	0	242	0	0.716	342	4 concurrent deep prefills, short outputs
+all-hands	92082	0	288	0	0.716	342	vision + structured + 2 deep prefills overlapping
+decode-16-at-cudagraph-bucket	92082	0	288	0	0.716	342	16-way decode, max bucket
+PEAK PROBE DONE 2026-10-27T06:06:08Z

@@ -1,0 +1,203 @@
+{
+  "schema": "qwen38-vllm-vision.v1",
+  "model": "qwen38-exl3",
+  "supported_image_counts": {
+    "16": {
+      "passed": true,
+      "status": 200,
+      "expected": [
+        1,
+        2,
+        3,
+        4,
+        5,
+        6,
+        7,
+        8,
+        9,
+        10,
+        11,
+        12,
+        13,
+        14,
+        15,
+        16
+      ],
+      "observed": [
+        1,
+        2,
+        3,
+        4,
+        5,
+        6,
+        7,
+        8,
+        9,
+        10,
+        11,
+        12,
+        13,
+        14,
+        15,
+        16
+      ],
+      "response": "1,2,3,4,5,6,7,8,9,10,11,12,13,14,15,16",
+      "usage": {
+        "prompt_tokens": 3209,
+        "total_tokens": 3248,
+        "completion_tokens": 39,
+        "prompt_tokens_details": null,
+        "completion_tokens_details": {
+          "reasoning_tokens": 0
+        }
+      }
+    }
+  },
+  "configured_image_limit": null,
+  "overflow_rejected": null,
+  "passed": true
+}
+exact-upstream-0: PASS
+exact-upstream-1: PASS
+exact-upstream-2: PASS
+upstream-2048-0: PASS
+upstream-2048-1: PASS
+upstream-2048-2: PASS
+concurrent-thinking-0: PASS
+concurrent-thinking-2: PASS
+concurrent-thinking-4: PASS
+concurrent-thinking-6: PASS
+concurrent-thinking-8: PASS
+concurrent-thinking-10: PASS
+concurrent-thinking-12: PASS
+concurrent-thinking-14: PASS
+concurrent-thinking-1: PASS
+concurrent-thinking-3: PASS
+concurrent-thinking-5: PASS
+concurrent-thinking-7: PASS
+concurrent-thinking-11: PASS
+concurrent-thinking-9: PASS
+concurrent-thinking-13: PASS
+concurrent-thinking-15: PASS
+strict-json-normal-eos-0: PASS
+strict-json-normal-eos-1: PASS
+strict-json-normal-eos-2: PASS
+strict-json-normal-eos-3: PASS
+strict-json-normal-eos-4: PASS
+ignore-eos-explicit-stop-0: PASS
+ignore-eos-explicit-stop-1: PASS
+ignore-eos-explicit-stop-2: PASS
+ignore-eos-explicit-stop-3: PASS
+ignore-eos-explicit-stop-4: PASS
+{"schema_version": 2, "started_at": "2026-10-27T05:59:42.782903+00:00", "finished_at": "2026-10-27T05:59:59.916783+00:00", "model": "qwen38-exl3", "concurrency": 16, "expected_cases": 29, "completed_cases": 29, "failed_cases": 0, "diagnostic_budget_limited_cases": 0, "speculation_metrics_before": {"vllm:spec_decode_num_drafts_total": 10.0, "vllm:spec_decode_num_draft_tokens_total": 30.0, "vllm:spec_decode_num_accepted_tokens_total": 28.0}, "speculation_metrics_after": {"vllm:spec_decode_num_drafts_total": 901.0, "vllm:spec_decode_num_draft_tokens_total": 2636.0, "vllm:spec_decode_num_accepted_tokens_total": 2152.0}, "speculation_metrics_delta": {"vllm:spec_decode_num_drafts_total": 891.0, "vllm:spec_decode_num_draft_tokens_total": 2606.0, "vllm:spec_decode_num_accepted_tokens_total": 2124.0}, "speculation_active": true, "scope": "29 complete JSON/schema/stop checks plus 3 separate verbatim 500-token diagnostics; ignore-EOS complete cases use explicit stop; server log audit is separate", "status": "PASS"}
+{"filler_tokens": 240000, "position": 0.05, "prompt_tokens": 240073, "passed": true, "response": "5f4e8d43fa8bdc26a912"}
+{"filler_tokens": 240000, "position": 0.5, "prompt_tokens": 240072, "passed": true, "response": "aa82e911598f0b119f92"}
+{"filler_tokens": 240000, "position": 0.95, "prompt_tokens": 240072, "passed": true, "response": "574f8fae2625a5f178dd"}
+{"fraction": 0.42, "depth_tokens": 219176, "concurrency": 4, "requests_ok": 4, "preemptions": 0.0, "peak_waiting": 2.0, "wall_seconds": 144.6}
+{
+  "schema": "qwen38-vllm-vision.v1",
+  "model": "qwen38-exl3",
+  "supported_image_counts": {
+    "16": {
+      "passed": true,
+      "status": 200,
+      "expected": [
+        1,
+        2,
+        3,
+        4,
+        5,
+        6,
+        7,
+        8,
+        9,
+        10,
+        11,
+        12,
+        13,
+        14,
+        15,
+        16
+      ],
+      "observed": [
+        1,
+        2,
+        3,
+        4,
+        5,
+        6,
+        7,
+        8,
+        9,
+        10,
+        11,
+        12,
+        13,
+        14,
+        15,
+        16
+      ],
+      "response": "1,2,3,4,5,6,7,8,9,10,11,12,13,14,15,16",
+      "usage": {
+        "prompt_tokens": 3209,
+        "total_tokens": 3248,
+        "completion_tokens": 39,
+        "prompt_tokens_details": null,
+        "completion_tokens_details": {
+          "reasoning_tokens": 0
+        }
+      }
+    }
+  },
+  "configured_image_limit": null,
+  "overflow_rejected": null,
+  "passed": true
+}
+exact-upstream-0: PASS
+exact-upstream-1: PASS
+exact-upstream-2: PASS
+upstream-2048-0: PASS
+upstream-2048-1: PASS
+upstream-2048-2: PASS
+concurrent-thinking-0: PASS
+concurrent-thinking-2: PASS
+concurrent-thinking-4: PASS
+concurrent-thinking-6: PASS
+concurrent-thinking-12: PASS
+concurrent-thinking-8: PASS
+concurrent-thinking-10: PASS
+concurrent-thinking-14: PASS
+{"fraction": 0.42, "depth_tokens": 219176, "concurrency": 2, "requests_ok": 2, "preemptions": 0.0, "peak_waiting": 1.0, "wall_seconds": 76.02}
+concurrent-thinking-1: PASS
+concurrent-thinking-3: PASS
+concurrent-thinking-5: PASS
+concurrent-thinking-7: PASS
+concurrent-thinking-13: PASS
+concurrent-thinking-9: PASS
+concurrent-thinking-11: PASS
+concurrent-thinking-15: PASS
+strict-json-normal-eos-0: PASS
+strict-json-normal-eos-1: PASS
+strict-json-normal-eos-2: PASS
+strict-json-normal-eos-3: PASS
+strict-json-normal-eos-4: PASS
+ignore-eos-explicit-stop-0: PASS
+ignore-eos-explicit-stop-1: PASS
+ignore-eos-explicit-stop-2: PASS
+ignore-eos-explicit-stop-3: PASS
+ignore-eos-explicit-stop-4: PASS
+{"schema_version": 2, "started_at": "2026-10-27T06:04:34.016444+00:00", "finished_at": "2026-10-27T06:06:03.207436+00:00", "model": "qwen38-exl3", "concurrency": 16, "expected_cases": 29, "completed_cases": 29, "failed_cases": 0, "diagnostic_budget_limited_cases": 0, "speculation_metrics_before": {"vllm:spec_decode_num_drafts_total": 1431.0, "vllm:spec_decode_num_draft_tokens_total": 4226.0, "vllm:spec_decode_num_accepted_tokens_total": 3731.0}, "speculation_metrics_after": {"vllm:spec_decode_num_drafts_total": 2672.0, "vllm:spec_decode_num_draft_tokens_total": 7878.0, "vllm:spec_decode_num_accepted_tokens_total": 6741.0}, "speculation_metrics_delta": {"vllm:spec_decode_num_drafts_total": 1241.0, "vllm:spec_decode_num_draft_tokens_total": 3652.0, "vllm:spec_decode_num_accepted_tokens_total": 3010.0}, "speculation_active": true, "scope": "29 complete JSON/schema/stop checks plus 3 separate verbatim 500-token diagnostics; ignore-EOS complete cases use explicit stop; server log audit is separate", "status": "PASS"}
+usage: benchmark-decode.py [-h] [--base-url BASE_URL] --model MODEL
+                           --profile {nvfp4,exl3,exl3-ple8}
+                           --mtp-tokens MTP_TOKENS
+                           [--mtp-policy {off,static,adaptive}]
+                           [--concurrency CONCURRENCY [CONCURRENCY ...]]
+                           [--request-mode {continuations,clients}]
+                           [--output-tokens OUTPUT_TOKENS]
+                           [--warmup-tokens WARMUP_TOKENS]
+                           [--warmup-runs WARMUP_RUNS] [--runs RUNS]
+                           [--seed SEED] --output OUTPUT
+                           [--server-container SERVER_CONTAINER]
+                           [--no-server-state]
+benchmark-decode.py: error: the following arguments are required: --mtp-tokens
+decode16 leg failed

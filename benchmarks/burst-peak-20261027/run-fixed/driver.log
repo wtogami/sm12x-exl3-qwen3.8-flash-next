@@ -1,0 +1,2 @@
+baseline 92082 MiB | worst phase 92082 MiB | growth over baseline 0 MiB | engine profiled activation 1290 MiB
+VERDICT: headroom above the engine's own profile: none required (growth <= profiled activation)

@@ -1,0 +1,378 @@
+{
+  "schema": "qwen38-vllm-vision.v1",
+  "model": "qwen38-exl3",
+  "supported_image_counts": {
+    "16": {
+      "passed": true,
+      "status": 200,
+      "expected": [
+        1,
+        2,
+        3,
+        4,
+        5,
+        6,
+        7,
+        8,
+        9,
+        10,
+        11,
+        12,
+        13,
+        14,
+        15,
+        16
+      ],
+      "observed": [
+        1,
+        2,
+        3,
+        4,
+        5,
+        6,
+        7,
+        8,
+        9,
+        10,
+        11,
+        12,
+        13,
+        14,
+        15,
+        16
+      ],
+      "response": "1,2,3,4,5,6,7,8,9,10,11,12,13,14,15,16",
+      "usage": {
+        "prompt_tokens": 3209,
+        "total_tokens": 3248,
+        "completion_tokens": 39,
+        "prompt_tokens_details": null,
+        "completion_tokens_details": {
+          "reasoning_tokens": 0
+        }
+      }
+    }
+  },
+  "configured_image_limit": null,
+  "overflow_rejected": null,
+  "passed": true
+}
+exact-upstream-0: PASS
+exact-upstream-1: PASS
+exact-upstream-2: PASS
+upstream-2048-0: PASS
+upstream-2048-1: PASS
+upstream-2048-2: PASS
+concurrent-thinking-0: PASS
+concurrent-thinking-2: PASS
+concurrent-thinking-4: PASS
+concurrent-thinking-6: PASS
+concurrent-thinking-8: PASS
+concurrent-thinking-10: PASS
+concurrent-thinking-12: PASS
+concurrent-thinking-14: PASS
+concurrent-thinking-1: PASS
+concurrent-thinking-3: PASS
+concurrent-thinking-5: PASS
+concurrent-thinking-7: PASS
+concurrent-thinking-9: PASS
+concurrent-thinking-11: PASS
+concurrent-thinking-13: PASS
+concurrent-thinking-15: PASS
+strict-json-normal-eos-0: PASS
+strict-json-normal-eos-1: PASS
+strict-json-normal-eos-2: PASS
+strict-json-normal-eos-3: PASS
+strict-json-normal-eos-4: PASS
+ignore-eos-explicit-stop-0: PASS
+ignore-eos-explicit-stop-1: PASS
+ignore-eos-explicit-stop-2: PASS
+ignore-eos-explicit-stop-3: PASS
+ignore-eos-explicit-stop-4: PASS
+{"schema_version": 2, "started_at": "2026-10-27T05:40:24.676272+00:00", "finished_at": "2026-10-27T05:40:41.489326+00:00", "model": "qwen38-exl3", "concurrency": 16, "expected_cases": 29, "completed_cases": 29, "failed_cases": 0, "diagnostic_budget_limited_cases": 0, "speculation_metrics_before": {"vllm:spec_decode_num_drafts_total": 10.0, "vllm:spec_decode_num_draft_tokens_total": 30.0, "vllm:spec_decode_num_accepted_tokens_total": 28.0}, "speculation_metrics_after": {"vllm:spec_decode_num_drafts_total": 927.0, "vllm:spec_decode_num_draft_tokens_total": 2713.0, "vllm:spec_decode_num_accepted_tokens_total": 2297.0}, "speculation_metrics_delta": {"vllm:spec_decode_num_drafts_total": 917.0, "vllm:spec_decode_num_draft_tokens_total": 2683.0, "vllm:spec_decode_num_accepted_tokens_total": 2269.0}, "speculation_active": true, "scope": "29 complete JSON/schema/stop checks plus 3 separate verbatim 500-token diagnostics; ignore-EOS complete cases use explicit stop; server log audit is separate", "status": "PASS"}
+scripts/util-peak.sh: line 146: -url: command not found
+vision leg failed
+exact-upstream-0: PASS
+exact-upstream-1: PASS
+exact-upstream-2: PASS
+upstream-2048-0: PASS
+upstream-2048-1: PASS
+upstream-2048-2: PASS
+concurrent-thinking-0: PASS
+concurrent-thinking-2: PASS
+concurrent-thinking-4: PASS
+concurrent-thinking-6: PASS
+concurrent-thinking-8: PASS
+concurrent-thinking-10: PASS
+concurrent-thinking-12: PASS
+concurrent-thinking-14: PASS
+concurrent-thinking-1: PASS
+concurrent-thinking-3: PASS
+concurrent-thinking-5: PASS
+concurrent-thinking-11: PASS
+concurrent-thinking-13: PASS
+concurrent-thinking-15: PASS
+concurrent-thinking-7: PASS
+concurrent-thinking-9: PASS
+strict-json-normal-eos-0: PASS
+strict-json-normal-eos-1: PASS
+strict-json-normal-eos-2: PASS
+strict-json-normal-eos-3: PASS
+strict-json-normal-eos-4: PASS
+ignore-eos-explicit-stop-0: PASS
+ignore-eos-explicit-stop-1: PASS
+ignore-eos-explicit-stop-2: PASS
+ignore-eos-explicit-stop-3: PASS
+ignore-eos-explicit-stop-4: PASS
+{"schema_version": 2, "started_at": "2026-10-27T05:40:41.569432+00:00", "finished_at": "2026-10-27T05:40:57.824725+00:00", "model": "qwen38-exl3", "concurrency": 16, "expected_cases": 29, "completed_cases": 29, "failed_cases": 0, "diagnostic_budget_limited_cases": 0, "speculation_metrics_before": {"vllm:spec_decode_num_drafts_total": 927.0, "vllm:spec_decode_num_draft_tokens_total": 2713.0, "vllm:spec_decode_num_accepted_tokens_total": 2297.0}, "speculation_metrics_after": {"vllm:spec_decode_num_drafts_total": 1844.0, "vllm:spec_decode_num_draft_tokens_total": 5396.0, "vllm:spec_decode_num_accepted_tokens_total": 4566.0}, "speculation_metrics_delta": {"vllm:spec_decode_num_drafts_total": 917.0, "vllm:spec_decode_num_draft_tokens_total": 2683.0, "vllm:spec_decode_num_accepted_tokens_total": 2269.0}, "speculation_active": true, "scope": "29 complete JSON/schema/stop checks plus 3 separate verbatim 500-token diagnostics; ignore-EOS complete cases use explicit stop; server log audit is separate", "status": "PASS"}
+{"filler_tokens": 240000, "position": 0.05, "prompt_tokens": 240071, "passed": true, "response": "5f4e8d43fa8bdc26a912"}
+Traceback (most recent call last):
+  File "/home/opencode/sm12x-exl3-qwen3.8-flash-next/scripts/test-context-retrieval.py", line 70, in <module>
+    main()
+    ~~~~^^
+  File "/home/opencode/sm12x-exl3-qwen3.8-flash-next/scripts/test-context-retrieval.py", line 52, in main
+    result = workloads.request(args.base_url, args.model, prompt, 128)
+  File "/home/opencode/sm12x-exl3-qwen3.8-flash-next/scripts/benchmark-workloads.py", line 85, in request
+    raise RuntimeError(f"Incomplete token timing evidence: stream={count}, usage={usage}")
+RuntimeError: Incomplete token timing evidence: stream=0, usage=None
+prefill leg failed
+tput: unknown terminfo capability '/home/opencode/burst-peak-20261027b/shape-prefill240k.json'
+prefill leg failed
+Traceback (most recent call last):
+  File "/usr/lib64/python3.14/urllib/request.py", line 1333, in do_open
+    h.request(req.get_method(), req.selector, req.data, headers,
+    ~~~~~~~~~^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+              encode_chunked=req.has_header('Transfer-encoding'))
+              ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+  File "/usr/lib64/python3.14/http/client.py", line 1386, in request
+    self._send_request(method, url, body, headers, encode_chunked)
+    ~~~~~~~~~~~~~~~~~~^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+  File "/usr/lib64/python3.14/http/client.py", line 1432, in _send_request
+    self.endheaders(body, encode_chunked=encode_chunked)
+    ~~~~~~~~~~~~~~~^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+  File "/usr/lib64/python3.14/http/client.py", line 1381, in endheaders
+    self._send_output(message_body, encode_chunked=encode_chunked)
+    ~~~~~~~~~~~~~~~~~^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+  File "/usr/lib64/python3.14/http/client.py", line 1141, in _send_output
+    self.send(msg)
+    ~~~~~~~~~^^^^^
+  File "/usr/lib64/python3.14/http/client.py", line 1085, in send
+    self.connect()
+    ~~~~~~~~~~~~^^
+  File "/usr/lib64/python3.14/http/client.py", line 1051, in connect
+    self.sock = self._create_connection(
+                ~~~~~~~~~~~~~~~~~~~~~~~^
+        (self.host,self.port), self.timeout, self.source_address)
+        ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+  File "/usr/lib64/python3.14/socket.py", line 874, in create_connection
+    raise exceptions[0]
+  File "/usr/lib64/python3.14/socket.py", line 859, in create_connection
+    sock.connect(sa)
+    ~~~~~~~~~~~~^^^^
+ConnectionRefusedError: [Errno 111] Connection refused
+
+During handling of the above exception, another exception occurred:
+
+Traceback (most recent call last):
+  File "/home/opencode/sm12x-exl3-qwen3.8-flash-next/scripts/benchmark-deep-concurrency.py", line 181, in <module>
+    main()
+    ~~~~^^
+  File "/home/opencode/sm12x-exl3-qwen3.8-flash-next/scripts/benchmark-deep-concurrency.py", line 112, in main
+    with urllib.request.urlopen(base + "/v1/models", timeout=60) as response:
+         ~~~~~~~~~~~~~~~~~~~~~~^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+  File "/usr/lib64/python3.14/urllib/request.py", line 187, in urlopen
+    return opener.open(url, data, timeout)
+           ~~~~~~~~~~~^^^^^^^^^^^^^^^^^^^^
+  File "/usr/lib64/python3.14/urllib/request.py", line 487, in open
+    response = self._open(req, data)
+  File "/usr/lib64/python3.14/urllib/request.py", line 504, in _open
+    result = self._call_chain(self.handle_open, protocol, protocol +
+                              '_open', req)
+  File "/usr/lib64/python3.14/urllib/request.py", line 464, in _call_chain
+    result = func(*args)
+  File "/usr/lib64/python3.14/urllib/request.py", line 1362, in http_open
+    return self.do_open(http.client.HTTPConnection, req)
+           ~~~~~~~~~~~~^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+  File "/usr/lib64/python3.14/urllib/request.py", line 1336, in do_open
+    raise URLError(err)
+urllib.error.URLError: <urlopen error [Errno 111] Connection refused>
+deep4 leg failed
+Traceback (most recent call last):
+  File "/usr/lib64/python3.14/urllib/request.py", line 1333, in do_open
+    h.request(req.get_method(), req.selector, req.data, headers,
+    ~~~~~~~~~^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+              encode_chunked=req.has_header('Transfer-encoding'))
+              ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+Traceback (most recent call last):
+  File "/usr/lib64/python3.14/http/client.py", line 1386, in request
+    self._send_request(method, url, body, headers, encode_chunked)
+    ~~~~~~~~~~~~~~~~~~^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+  File "/usr/lib64/python3.14/http/client.py", line 1432, in _send_request
+    self.endheaders(body, encode_chunked=encode_chunked)
+    ~~~~~~~~~~~~~~~^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+  File "/usr/lib64/python3.14/http/client.py", line 1381, in endheaders
+    self._send_output(message_body, encode_chunked=encode_chunked)
+    ~~~~~~~~~~~~~~~~~^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+  File "/usr/lib64/python3.14/http/client.py", line 1141, in _send_output
+    self.send(msg)
+    ~~~~~~~~~^^^^^
+  File "/usr/lib64/python3.14/http/client.py", line 1085, in send
+    self.connect()
+    ~~~~~~~~~~~~^^
+  File "/usr/lib64/python3.14/http/client.py", line 1051, in connect
+    self.sock = self._create_connection(
+                ~~~~~~~~~~~~~~~~~~~~~~~^
+        (self.host,self.port), self.timeout, self.source_address)
+        ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+  File "/usr/lib64/python3.14/socket.py", line 874, in create_connection
+    raise exceptions[0]
+  File "/usr/lib64/python3.14/socket.py", line 859, in create_connection
+    sock.connect(sa)
+    ~~~~~~~~~~~~^^^^
+ConnectionRefusedError: [Errno 111] Connection refused
+
+During handling of the above exception, another exception occurred:
+
+Traceback (most recent call last):
+  File "/home/opencode/sm12x-exl3-qwen3.8-flash-next/scripts/verify-structured-output-live.py", line 155, in <module>
+    raise SystemExit(main())
+                     ~~~~^^
+  File "/home/opencode/sm12x-exl3-qwen3.8-flash-next/scripts/verify-structured-output-live.py", line 114, in main
+    metrics_before = speculation_metrics(args.base_url)
+  File "/home/opencode/sm12x-exl3-qwen3.8-flash-next/scripts/verify-structured-output-live.py", line 27, in speculation_metrics
+    with urllib.request.urlopen(origin + '/metrics', timeout=30) as response:
+         ~~~~~~~~~~~~~~~~~~~~~~^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+  File "/usr/lib64/python3.14/urllib/request.py", line 187, in urlopen
+    return opener.open(url, data, timeout)
+           ~~~~~~~~~~~^^^^^^^^^^^^^^^^^^^^
+  File "/usr/lib64/python3.14/urllib/request.py", line 487, in open
+    response = self._open(req, data)
+  File "/usr/lib64/python3.14/urllib/request.py", line 504, in _open
+    result = self._call_chain(self.handle_open, protocol, protocol +
+                              '_open', req)
+  File "/usr/lib64/python3.14/urllib/request.py", line 464, in _call_chain
+    result = func(*args)
+  File "/usr/lib64/python3.14/urllib/request.py", line 1362, in http_open
+    return self.do_open(http.client.HTTPConnection, req)
+           ~~~~~~~~~~~~^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+  File "/usr/lib64/python3.14/urllib/request.py", line 1336, in do_open
+    raise URLError(err)
+urllib.error.URLError: <urlopen error [Errno 111] Connection refused>
+  File "/usr/lib64/python3.14/urllib/request.py", line 1333, in do_open
+    h.request(req.get_method(), req.selector, req.data, headers,
+    ~~~~~~~~~^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+              encode_chunked=req.has_header('Transfer-encoding'))
+              ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+  File "/usr/lib64/python3.14/http/client.py", line 1386, in request
+    self._send_request(method, url, body, headers, encode_chunked)
+    ~~~~~~~~~~~~~~~~~~^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+  File "/usr/lib64/python3.14/http/client.py", line 1432, in _send_request
+    self.endheaders(body, encode_chunked=encode_chunked)
+    ~~~~~~~~~~~~~~~^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+  File "/usr/lib64/python3.14/http/client.py", line 1381, in endheaders
+    self._send_output(message_body, encode_chunked=encode_chunked)
+    ~~~~~~~~~~~~~~~~~^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+  File "/usr/lib64/python3.14/http/client.py", line 1141, in _send_output
+    self.send(msg)
+    ~~~~~~~~~^^^^^
+  File "/usr/lib64/python3.14/http/client.py", line 1085, in send
+    self.connect()
+    ~~~~~~~~~~~~^^
+  File "/usr/lib64/python3.14/http/client.py", line 1051, in connect
+    self.sock = self._create_connection(
+                ~~~~~~~~~~~~~~~~~~~~~~~^
+        (self.host,self.port), self.timeout, self.source_address)
+        ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+  File "/usr/lib64/python3.14/socket.py", line 874, in create_connection
+    raise exceptions[0]
+  File "/usr/lib64/python3.14/socket.py", line 859, in create_connection
+    sock.connect(sa)
+    ~~~~~~~~~~~~^^^^
+ConnectionRefusedError: [Errno 111] Connection refused
+
+During handling of the above exception, another exception occurred:
+
+Traceback (most recent call last):
+  File "/home/opencode/sm12x-exl3-qwen3.8-flash-next/scripts/benchmark-deep-concurrency.py", line 181, in <module>
+    main()
+    ~~~~^^
+  File "/home/opencode/sm12x-exl3-qwen3.8-flash-next/scripts/benchmark-deep-concurrency.py", line 112, in main
+    with urllib.request.urlopen(base + "/v1/models", timeout=60) as response:
+         ~~~~~~~~~~~~~~~~~~~~~~^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+  File "/usr/lib64/python3.14/urllib/request.py", line 187, in urlopen
+    return opener.open(url, data, timeout)
+           ~~~~~~~~~~~^^^^^^^^^^^^^^^^^^^^
+  File "/usr/lib64/python3.14/urllib/request.py", line 487, in open
+    response = self._open(req, data)
+  File "/usr/lib64/python3.14/urllib/request.py", line 504, in _open
+    result = self._call_chain(self.handle_open, protocol, protocol +
+                              '_open', req)
+  File "/usr/lib64/python3.14/urllib/request.py", line 464, in _call_chain
+    result = func(*args)
+  File "/usr/lib64/python3.14/urllib/request.py", line 1362, in http_open
+    return self.do_open(http.client.HTTPConnection, req)
+           ~~~~~~~~~~~~^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+  File "/usr/lib64/python3.14/urllib/request.py", line 1336, in do_open
+    raise URLError(err)
+urllib.error.URLError: <urlopen error [Errno 111] Connection refused>
+Traceback (most recent call last):
+  File "/usr/lib64/python3.14/urllib/request.py", line 1333, in do_open
+    h.request(req.get_method(), req.selector, req.data, headers,
+    ~~~~~~~~~^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+              encode_chunked=req.has_header('Transfer-encoding'))
+              ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+  File "/usr/lib64/python3.14/http/client.py", line 1386, in request
+    self._send_request(method, url, body, headers, encode_chunked)
+    ~~~~~~~~~~~~~~~~~~^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+  File "/usr/lib64/python3.14/http/client.py", line 1432, in _send_request
+    self.endheaders(body, encode_chunked=encode_chunked)
+    ~~~~~~~~~~~~~~~^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+  File "/usr/lib64/python3.14/http/client.py", line 1381, in endheaders
+    self._send_output(message_body, encode_chunked=encode_chunked)
+    ~~~~~~~~~~~~~~~~~^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+  File "/usr/lib64/python3.14/http/client.py", line 1141, in _send_output
+    self.send(msg)
+    ~~~~~~~~~^^^^^
+  File "/usr/lib64/python3.14/http/client.py", line 1085, in send
+    self.connect()
+    ~~~~~~~~~~~~^^
+  File "/usr/lib64/python3.14/http/client.py", line 1051, in connect
+    self.sock = self._create_connection(
+                ~~~~~~~~~~~~~~~~~~~~~~~^
+        (self.host,self.port), self.timeout, self.source_address)
+        ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+  File "/usr/lib64/python3.14/socket.py", line 874, in create_connection
+    raise exceptions[0]
+  File "/usr/lib64/python3.14/socket.py", line 859, in create_connection
+    sock.connect(sa)
+    ~~~~~~~~~~~~^^^^
+ConnectionRefusedError: [Errno 111] Connection refused
+
+During handling of the above exception, another exception occurred:
+
+Traceback (most recent call last):
+  File "/home/opencode/sm12x-exl3-qwen3.8-flash-next/scripts/test-vision-vllm.py", line 170, in <module>
+    main()
+    ~~~~^^
+  File "/home/opencode/sm12x-exl3-qwen3.8-flash-next/scripts/test-vision-vllm.py", line 128, in main
+    status, body = request(image_count)
+                   ~~~~~~~^^^^^^^^^^^^^
+  File "/home/opencode/sm12x-exl3-qwen3.8-flash-next/scripts/test-vision-vllm.py", line 121, in request
+    with urllib.request.urlopen(req, timeout=args.timeout) as response:
+         ~~~~~~~~~~~~~~~~~~~~~~^^^^^^^^^^^^^^^^^^^^^^^^^^^
+  File "/usr/lib64/python3.14/urllib/request.py", line 187, in urlopen
+    return opener.open(url, data, timeout)
+           ~~~~~~~~~~~^^^^^^^^^^^^^^^^^^^^
+  File "/usr/lib64/python3.14/urllib/request.py", line 487, in open
+    response = self._open(req, data)
+  File "/usr/lib64/python3.14/urllib/request.py", line 504, in _open
+    result = self._call_chain(self.handle_open, protocol, protocol +
+                              '_open', req)
+  File "/usr/lib64/python3.14/urllib/request.py", line 464, in _call_chain
+    result = func(*args)
+  File "/usr/lib64/python3.14/urllib/request.py", line 1362, in http_open
+    return self.do_open(http.client.HTTPConnection, req)
+           ~~~~~~~~~~~~^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+  File "/usr/lib64/python3.14/urllib/request.py", line 1336, in do_open
+    raise URLError(err)
+urllib.error.URLError: <urlopen error [Errno 111] Connection refused>

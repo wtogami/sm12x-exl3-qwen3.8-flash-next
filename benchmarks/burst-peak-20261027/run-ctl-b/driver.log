@@ -1,0 +1,2 @@
+baseline 92082 MiB | worst phase 93635 MiB | growth over baseline 1553 MiB | engine profiled activation 1290 MiB
+VERDICT: headroom above the engine's own profile: 263 MiB REQUIRED -- reduce the pool by at least that
