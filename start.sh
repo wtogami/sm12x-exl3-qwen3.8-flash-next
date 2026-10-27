@@ -484,8 +484,10 @@ if [[ -n "${CONTAINER_ENV:-}" ]]; then
   unset _ce _ce_parts
 fi
 
-# Co-tenancy is unsupported, so say so before loading 96 GiB of weights rather than
-# after seven minutes, as a CUDA allocation failure inside a worker. The engine refuses to
+# Co-tenancy is unsupported, so say so before spending anything on this launch rather than roughly two
+# minutes into a three-minute boot, by which point the engine has already read the checkpoint and fails
+# engine-core initialization with a message that blames the device rather than the neighbour. The
+# engine refuses to
 # start whenever free-at-startup is below util x total, and at the RTX default of 0.98 that
 # tolerance is only ~1.4 GiB -- so a second holder, a monitoring agent, or a container left
 # up by an earlier crash converts this launch into a slow failure whose message points at

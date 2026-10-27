@@ -1710,18 +1710,18 @@ at 0.98 is that same 1,395 MiB: a neighbour holding ~1.5 GiB prevents the engine
 at all, where 0.94 would have tolerated ~5.7 GiB.
 
 Since co-tenancy is unsupported, `start.sh` now enforces the second one at launch rather than
-discovering it seven minutes deep as a CUDA error pointing at the GPU: it prints the budget
-arithmetic per device and refuses in under a second, naming the holder. `ALLOW_CO_TENANT=1`
+discovering it two minutes into a three-minute boot, as a CUDA error pointing at the GPU: it prints
+the budget arithmetic per device and refuses in under a second, naming the holder.
+`ALLOW_CO_TENANT=1`
 opts out. That converts "raise the default and pray nobody else touches the card" into "raise
 the default and get told immediately if the card is not yours", which is why the 0.97-vs-0.98
 margin question is now settled in favour of the concurrency win.
 
 Measured since this section was first written: allocator fragmentation under sustained concurrent
-load. 75 minutes at 0.98 with a 0.94 reference alongside: the peak stepped 494 MiB once and moved
-0 MiB across the remaining 25 rounds, so there is no creep and no segment-accumulation effect at
-this window. Still unmeasured: cold-page-cache restart latency -- reclassified below, because it
-cannot move the reservation but it does move restart time, and every boot duration quoted in this
-ledger has quietly been a warm-cache one.
+load (75 minutes at 0.98 with a 0.94 reference alongside: the peak stepped 494 MiB once and moved
+0 MiB across the remaining 25 rounds, so no creep and no segment accumulation at this window), and
+cold-page-cache restart latency (+82 s on a 189 s warm boot, entirely in the weight read; the
+reservation itself untouched -- 94.5 GiB free at startup in both arms). Both under Open items below.
 
 Two claims this section originally carried were wrong, and are retracted here rather than edited
 away. First, "needs root to drop caches; no passwordless sudo": `burst` grants
@@ -1809,18 +1809,14 @@ Ordered by what they could still change.
    reportable upstream; the remedy would be admission control, not a different number.
    What remains worth doing is the opposite axis: item 3, the boot-margin measurement, is the
    only open item that could argue for *lowering* the default.
-3. **Cold-page-cache restart latency at 0.98.** Every boot in this campaign saw an exclusively
-   held, warm device (`94.51/95.06 GiB` free). The co-tenant half of this item is closed: since
-   sharing is unsupported, `start.sh` now measures the margin and refuses at launch rather than
-   absorbing a neighbour, and the number it prints on these cards is **1,395 MiB** at 0.98. The
-   cold-cache half is reclassified here, because it had been mis-scoped as a headroom question:
-   free-at-startup is a *device* quantity, and 22 burst boots read 94.50/95.06 GiB while host-side
-   available memory ranged 662 to 893 GiB -- a 231 GiB swing with a 10 MiB device response. Page
-   cache cannot move the reservation. What it does move is how long a restart takes, and that has
-   never been measured: the recipe's checkpoint (`Qwen3.8-Flash-Next-EXL3-K4.25-v1`, 168 GiB over
-   37 files) is **100 % resident** on this host, so every boot duration quoted in this ledger is a
-   warm-cache boot, unlabelled as such. `scripts/boot-latency.sh` measures the cold/warm pair and
-   asserts the cache state before trusting either arm.
+3. ~~**Cold-page-cache restart latency at 0.98**~~ — **measured.** Warm restart 189 s to serving;
+   cold, with the checkpoint's residency verified at 43,827,417 -> 0 pages before boot, 271 s. The
+   +82 s is not spread across startup: "Loading weights" goes 26.85 s -> 104.10 s and the model-load
+   total 100.87 s -> 178.31 s, while multi-modal warmup (14.24 s vs 14.07 s) and the KV pool
+   (18.26 GiB in both) do not move. Decisively for this ledger, device free at startup was **94.5 GiB
+   in both arms** -- the controlled version of the 22-boot natural experiment, which had host cache
+   at 612.8 vs 0.7 GiB. Page cache cannot touch the reservation; it changes how long a restart takes,
+   which is 43 % longer. Receipts: `benchmarks/burst-bootlat-20261027/`.
 4. **MTP draft length re-sweep under concurrent deep load.** The 3/2 defaults were chosen
    as the best *C1* blend, and C1 is no longer the overriding priority; draft tokens also
    consume per-sequence residency, so util and MTP were never swept together. Marked
