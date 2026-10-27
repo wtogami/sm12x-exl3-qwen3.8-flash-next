@@ -263,6 +263,10 @@ kill $SAMPLER 2>/dev/null
 python3 - "$ROW" "$OUT/engine-accounting.txt" <<'PY'
 import re, sys
 rows = [l.rstrip("\n").split("\t") for l in open(sys.argv[1])][1:]
+rows = [r for r in rows if len(r) > 2 and not r[0].startswith("control-")]
+# The control is excluded on purpose. It holds a deliberate allocation to prove the sampler can see
+# growth, so including it makes this line report the calibration as a finding: at 0.94 it printed
+# "growth over baseline 2585 MiB" for a real growth of 494. The control's own row carries its number.
 base = int(rows[0][1]); top = max(int(r[1]) for r in rows)
 act = 0.0
 try:
