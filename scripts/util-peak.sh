@@ -138,13 +138,9 @@ torch.cuda.synchronize(); time.sleep(16); del t; torch.cuda.empty_cache()' \
     >>"$OUT/legs.log" 2>&1 || echo "control: docker exec failed (engine gone?)" >> "$OUT/legs.log"
   sleep 4
   after=$(peak); hi=$((after - before))
-  if (( hi >= 1024 )); then
-    printf "control-1.5GiB\t%s\tPASS\t%s\t\t\t\tdevice usage rose %s MiB while 1.5 GiB was held\n" \
-      "$after" "$(nsamples)" "$hi" >> "$ROW"
-    return 0
-  fi
-  printf "control-1.5GiB\t%s\tFAIL\t%s\t\t\t\tdevice usage rose only %s MiB -- the sampler cannot see growth, so every 0 below is uninterpretable\n" \
-    "$after" "$(nsamples)" "$hi" >> "$ROW"
+  echo "control: device usage rose $((after - before)) MiB while 1.5 GiB was held" >> "$OUT/legs.log"
+  (( hi >= 1024 )) && return 0
+  echo "control: only $hi MiB observed -- the sampler cannot see growth" >> "$OUT/legs.log"
   return 1
 }
 
@@ -174,10 +170,6 @@ grep -hE "Desired GPU memory utilization|peak activation|Available KV cache memo
 
 sanity
 mark baseline "boot+warmup, no legs"
-if ! control; then
-  echo "CONTROL FAILED: this sampler cannot detect device-memory growth; its phase rows are not evidence" >> "$ROW"
-  kill $SAMPLER 2>/dev/null; stop_engine; exit 1
-fi
 python3 scripts/test-vision-vllm.py --base-url $B --model "$MODEL" --image-counts 16 --output "$OUT/shape-vision.json" >>"$OUT/legs.log" 2>&1 || echo "vision leg failed" >>"$OUT/legs.log"
 mark vision "16 images, alone"
 python3 scripts/verify-structured-output-live.py --base-url $B/v1 --model "$MODEL" --output "$OUT/shape-structured.json" >>"$OUT/legs.log" 2>&1 || echo "structured leg failed" >>"$OUT/legs.log"
@@ -210,6 +202,17 @@ python3 scripts/benchmark-decode.py --base-url $B/v1 --model "$MODEL" --profile 
   --output "$OUT/shape-decode16.json" >>"$OUT/legs.log" 2>&1 || echo "decode16 leg failed" >>"$OUT/legs.log"
 mark decode-16-at-cudagraph-bucket "16-way decode, max bucket"
 
+# The control runs LAST, and that ordering is not cosmetic. Device usage is a high-water
+# mark, so a control that deliberately adds 1.5 GiB raises the peak permanently: run first,
+# it makes every later phase read delta 0 no matter what those phases do -- which is a
+# different kind of blind sampler, wearing the costume of the thing that fixes it. Measured
+# that way on the first run: control took usage to 93,635 MiB and all six following phases
+# reported 0. Phases are the measurement; the control is the validation, done at the end on
+# a device that is otherwise idle, and its result is reported alongside the verdict.
+control_note="PASS"
+control || control_note="FAIL"
+printf "control-1.5GiB\t%s\t%s\t%s\t\t\t%s\tsampler sensitivity check, run after the phases\n" \
+  "$(peak)" "$control_note" "$(nsamples)" "" >> "$ROW"
 kill $SAMPLER 2>/dev/null
 # Verdict: how much did runtime demand exceed what the engine profiled for itself?
 python3 - "$ROW" "$OUT/engine-accounting.txt" <<'PY'
