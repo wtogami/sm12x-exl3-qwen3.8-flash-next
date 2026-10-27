@@ -467,6 +467,23 @@ for _ple_var in PLE_STREAM_V2_MODE PLE_STREAM_V2_LOG_EVERY PLE_STREAM_ARENAS PLE
 done
 unset _ple_var
 
+# Same discipline, generalized: raw variables reach the container only when an operator
+# or a qualification driver names them, comma-separated, and they are echoed so the run
+# is auditable from the log rather than reconstructed from the shell history. Exists
+# because the runtime-VRAM peak probe has to boot with PYTORCH_NO_CUDA_MEMORY_CACHING=1
+# -- with the caching allocator on, peak *demand* is indistinguishable from peak
+# *steady state*, which is exactly the question that probe asks.
+container_env=()
+if [[ -n "${CONTAINER_ENV:-}" ]]; then
+  IFS=',' read -ra _ce_parts <<< "$CONTAINER_ENV"
+  for _ce in "${_ce_parts[@]}"; do
+    [[ "$_ce" == *=* ]] || { echo "CONTAINER_ENV entry '$_ce' is not NAME=value" >&2; exit 2; }
+    container_env+=(-e "${_ce%%=*}=${_ce#*=}")
+    echo "  container env: ${_ce%%=*}=${_ce#*=}"
+  done
+  unset _ce _ce_parts
+fi
+
 docker run -d --name "$container_name" \
   "${GPU_ARGS[@]}" \
   "${memory_args[@]}" \
@@ -478,6 +495,7 @@ docker run -d --name "$container_name" \
   -e PLE_STREAM_V2="${PLE_STREAM_V2}" \
   -e PLE_ROWCOPY_SO="${PLE_ROWCOPY_SO:-/opt/qwen38/ple_rowcopy.so}" \
   "${ple_tuning_env[@]}" \
+  "${container_env[@]}" \
   -e CUDA_CACHE_PATH=/root/.cache/cuda \
   -e TRITON_CACHE_DIR=/root/.cache/triton \
   -e QWEN38_B12X_VOCAB="${B12X_VOCAB:-$DEFAULT_B12X_VOCAB}" \
