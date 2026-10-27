@@ -1505,11 +1505,194 @@ What the concurrency grid says overall, `short-output/`, `residency/`,
 - **Nothing anywhere in this campaign failed, refused an request, or produced an
   OOM line.** Every consequence of pressure was latency and eviction.
 
-Decision unchanged: `GPU_MEMORY_UTILIZATION` stays 0.94. The gain at 0.98 is +27%
-KV pages and clean four-way mid-depth load, none of which touches C1 — the
-default's stated priority, where 0.94 and 0.98 measured identical (177 vs 178 s).
-The cost is boot margin, 5,362 → 1,476 MiB, which is what currently absorbs an
-unmeasured device-memory shape. If deep concurrent serving is wanted, go to 0.97
-or 0.98 and never stop at 0.96 or 0.965, which are measured worse than the
-default; if a future workload needs capacity planning, count pages
-(`ceil(length / 3200)` plus a state allowance) and not tokens.
+Decision as recorded on 2026-10-25, on this evidence alone: `GPU_MEMORY_UTILIZATION`
+stays 0.94, because the whole 0.98 gain was deep concurrent load and the C1 cost looked
+nil — a reading that rested on a 177 s vs 178 s figure which was actually the 245K × 2
+control cell (two concurrent sequences), not a single-stream measurement. Superseded by
+the corrected C1 A/B, the ceiling ladder, and the v0.32 re-validation below.
+
+### Re-validation on the v0.32 image (burst, 2026-10-27)
+
+The gg result above is one image. Because the band is page quantization, and page
+sizing is a property of the engine build, the same 16-cell grid was re-run on burst's
+`:local` (`abbde425a717`, v0.32 line) on the same card type — TP=1, YaRN 524288, MTP3,
+FP8 KV, 16,384-token outputs. Receipts:
+[burst-deep-concurrency-20261026](../benchmarks/burst-deep-concurrency-20261026/).
+
+| wall s / evictions | 0.94 | 0.96 | 0.97 | 0.98 |
+|---|---|---|---|---|
+| 245K × 2 | 171.1 / 0 | 171.6 / 0 | 171.4 / 0 | 171.5 / 0 |
+| **245K × 4** | 356.7 / 1 | **441.1 / 4** | **276.0 / 0** | 277.1 / 0 |
+| 512K × 2 | 408.7 / 1 | 270.9 / 0 | 270.8 / 0 | 270.2 / 0 |
+| 512K × 4 | 905.3 / 6 | 550.6 / 2 | 553.2 / 2 | 567.1 / 2 |
+
+Three separate answers, and they disagree in a way that matters:
+
+- **The trap survives.** 0.96 is still worse than the 0.94 default on the mid-depth
+  four-way cell (441 s vs 357 s), and still much worse than 0.97 (276 s).
+- **The mechanism survives.** Every boot prints `Setting attention block size to 3200
+  tokens` and `kv lcm block sizes 3200`, identical to v0.31.
+- **The numbers do not survive.** Pools are 303 / 344 / 363 / 384 pages against gg's
+  296 / 336 / 356 / 376 — ~7–8 pages gained from a non-KV footprint that is 0.22 GiB
+  *smaller*. Extra pages bought nothing at 0.96; the clean edge arrived at the same
+  utilization.
+
+So any rule written as a page count expires with the image, and the portable statement
+is the structural one: never choose a pool that admits N sequences for prefill but
+cannot hold N at full length plus state. To keep that honest in code rather than prose,
+`scripts/check-residency-geometry.py` reads the live engine's `vllm:cache_config_info`
+labels and is a gating leg of `scripts/qualification-legs.sh`: attention block size ≠
+3200 fails outright (the arithmetic is void), pool drift beyond a tolerance fails with
+instructions to re-run the band probe, and an unreachable engine fails rather than
+passing. Qualified geometry for both images is recorded in
+[benchmarks/RESIDENCY-GEOMETRY.json](../benchmarks/RESIDENCY-GEOMETRY.json). Pool size
+is `kv_cache_size_tokens ÷ effective_attention_block_size`; the `num_gpu_blocks` label
+counts a different pool on this hybrid model (a 303-page boot reports 342) and comparing
+pools across topologies is meaningless — TP2 at 0.98 holds 2,143 pages by construction.
+
+### Where the ceiling actually is
+
+`GPU_MEMORY_UTILIZATION` is a commanded fraction, not a measured limit: the pool is
+whatever the fraction allows, so pool numbers say nothing about what the engine could
+have claimed. The engine prints its own ceiling at every boot — `to fully utilize gpu
+memory: 19.19 GiB` — and a ladder run up to refusal brackets it: **0.98 boots (18.26
+GiB / 1,227,117 tokens), 0.99 boots (19.21 GiB / 1,289,465), 1.00 refuses** with
+`Free memory on device cuda:0 (94.5/95.06 GiB) on startup is less than desired GPU
+memory utilization (1.0, 95.06 GiB)`. Claimable device memory is therefore **94.50 of
+95.06 GiB**; the missing 0.56 GiB is driver and firmware. Receipts:
+[burst-ceiling-20261027](../benchmarks/burst-ceiling-20261027/).
+
+Two consequences. 0.98 is *not* maximal — it takes ~95% of the claimable pool — and it
+is not at a cliff edge either, since 0.99 boots. And because the refusal is arithmetic
+on free-at-startup, a co-tenant holding more than `total − util × total` prevents the
+engine from starting at all: at 0.98 that tolerance is ~1.4 GiB, at 0.94 it is ~5.7 GiB.
+Every boot in this campaign saw the identical `94.51/95.06 GiB`, i.e. an exclusively
+held, warm device; no sample exists with a co-tenant or a cold page cache.
+
+### C1 A/B at 0.94 vs 0.98
+
+An earlier line in this ledger claimed 0.94 and 0.98 were identical at C1 on the
+strength of a 177 s vs 178 s figure. That figure was the 245K × 2 control cell — two
+concurrent sequences — and was not a single-stream measurement. Corrected and measured
+properly on burst (prefill ladder, C1 decode, seven and orchid timed suites, same boot,
+one util per boot):
+
+| leg | 0.94 | 0.98 | delta |
+|---|---|---|---|
+| C1 decode, tok/s | 120.7 | 118.4 | −1.9% |
+| 128K prefill TTFT / tps | 17.80 s / 7192 | 18.03 s / 7101 | +1.3% / −1.3% |
+| 261,632 prefill TTFT / tps | 37.63 s / 6953 | 37.59 s / 6960 | −0.1% / +0.1% |
+| seven blend, tok/s | 148.6 | 148.1 | −0.3% |
+| orchid median, tok/s | 239.2 | 238.6 | −0.3% |
+
+No leg failed. The largest single-leg difference is 1.9%, on one card of a pair whose
+other member ran a residency grid concurrently.
+
+### Runtime VRAM growth: what the headroom is actually for
+
+Headroom below the ceiling exists to absorb growth during the engine's lifetime, so the
+question is the peak device demand, not the boot-time fraction. The original gate
+(`util-stress.sh`) could not answer it: it deliberately skipped 0.94 — the only level
+with slack — and at 0.98 the KV pool absorbs runtime demand as an eviction, so device
+usage is flat *by construction*; its receipts hold 79 samples of which 78 are the
+identical value.
+
+`scripts/util-peak.sh` measures against slack instead: boot at 0.94, sample from before
+boot through the last phase, report each phase's increment against the engine's own
+profiled activation peak (that is the correct comparator — the pool is sized as
+`util × total − weights − non-torch − profiled activation − graphs`, so required
+headroom above the profile is `max(0, peak − baseline − profiled_activation)`).
+
+| phase | card 0 | card 1 |
+|---|---|---|
+| baseline, util 0.94 | 92,082 MiB | 91,570 MiB |
+| vision, 16 images | +0 | +0 |
+| structured output | +0 | **+490 MiB** |
+| single 240K prefill | +0 | +0 |
+| 4 concurrent deep prefills | +0 | +0 |
+| all-hands (vision + structured + 2 deep) | +0 | — |
+| 16-way decode at the graph bucket | not run | +0 |
+
+Verdict line from the run: `growth over baseline 0 MiB | engine profiled activation
+1290 MiB | headroom above the engine's own profile: none required`. Two caveats stated
+plainly. The `+490 MiB` on one card and `+0` on the other for the same phase is the
+tell: device usage is a high-water mark, so a zero means *no new physical segment was
+demanded* — the torch cache absorbed it — not that nothing was allocated. And the
+16-way decode leg failed to run on card 0 (`benchmark-decode.py` requires
+`--mtp-tokens`, argparse exited 2, and the phase row still printed with the previous
+peak: a table that looks complete with one phase fabricated). Both fixed.
+
+`PYTORCH_NO_CUDA_MEMORY_CACHING=1`, the obvious way to expose peak demand, **does not
+work on this engine**: the loader then reports `Model loading took 0.0 GiB`, the memory
+profile is computed against a phantom, and CUDA graph capture dies
+(`benchmarks/burst-peak-nocache-20261027/`). The replacement is a positive control —
+allocate 1.5 GiB inside the engine container and require the sampler to record it,
+aborting the run if it cannot — because every row in the table above is a negative
+result, and a sampler that cannot see growth would produce exactly this table.
+
+### TP2 at 0.98: what deep concurrency actually needs
+
+Two Max-Q cards, `TP_SIZE=2`, util 0.98, same probe
+([burst-tp2-0.98-20261027](../benchmarks/burst-tp2-0.98-20261027/)):
+
+| cell | TP1 best (any util) | TP2 @ 0.98 |
+|---|---|---|
+| 245K × 4 | 276 s / 0 evictions | **182.9 s / 0** |
+| 512K × 4 (2.05× oversubscribed) | 550–905 s / 2–6 evictions | **315.1 s / 0** |
+
+Pool 6,858,253 tokens (13.08× the window), non-KV footprint 38.3 GiB per rank. The
+caution: boot free is 93.98/95.05 GiB on the Max-Q pair versus 94.51/95.06 on the
+Workstation Edition, so per-rank margin at 0.98 is ~0.83 GiB — tighter than the 1.4 GiB
+on the card this default was qualified on. Four full-window sequences is a TP2
+question at any single-card utilization; raising util is not a substitute for the
+second card.
+
+## Verdict: `GPU_MEMORY_UTILIZATION` default 0.94 → 0.98
+
+Adopted decision rule (2026-10-26, owner): C1 stays important, and 0.98 becomes the
+default if it is (a) safe under worst-case memory conditions, (b) not measurably worse
+at C1, and (c) clearly better under concurrent deep load.
+
+- **(b) satisfied**: ≤1.9% on every C1 leg, above.
+- **(c) satisfied on two images**: 245K × 4 goes 357 s → 276 s (gg) and 357 s → 277 s
+  (burst) with zero evictions instead of one; 512K × 2 goes 409 s → 270 s; and 0.98
+  clears the 0.96–0.965 trap band on both.
+- **(a) satisfied as measured**: 0.99 boots, so 0.98 is not at a cliff edge; measured
+  runtime growth is 0–490 MiB against ~1.4 GiB of headroom and a 1.29 GiB profiled
+  activation reserve; no OOM line in any cell of any run in this campaign. The
+  outstanding piece is the sampler's positive control, plus a cold-cache / co-tenant
+  boot-margin sample — see *Open items*.
+
+0.97 is not the answer even though it is clean: it is the boundary itself (356 pages on
+gg against a modelled 4 × 89 = 356 requirement — zero margin), and 0.98 costs nothing
+extra that was measured. 0.96 and 0.965 remain forbidden, now measured on both images.
+
+### Open items
+
+Ordered by what they could still change.
+
+1. **Sampler positive control** (`util-peak.sh control`, 1.5 GiB allocated inside the
+   engine container): if the sampler cannot record it, every `+0` in the growth table is
+   uninterpretable and criterion (a) reverts to unmeasured. Run in flight; the probe now
+   aborts rather than reporting phases if it fails.
+2. **Output identity under eviction.** Same prompt and seed, once with zero evictions and
+   once in the thrash regime (0.96, 4 × 245K), comparing full token and logprob hashes.
+   Eviction means re-prefill, and with FP8 KV, chunked prefill and MTP drafting, "the
+   recompute matches" is an assumption. This is the only candidate *correctness* veto
+   over any utilization at or above the band, and it has not been run.
+3. **Cold-cache and co-tenant boot margin at 0.98.** Every boot in this campaign saw an
+   exclusively held, warm device (`94.51/95.06 GiB`). Since the engine refuses to start
+   when free < util × total, a ~1.4 GiB co-tenant is a hard refusal at 0.98 and a non-
+   event at 0.94. Needs a distribution, not a point estimate.
+4. **MTP draft length re-sweep under concurrent deep load.** The 3/2 defaults were chosen
+   as the best *C1* blend, and C1 is no longer the overriding priority; draft tokens also
+   consume per-sequence residency, so util and MTP were never swept together. Marked
+   pending in the README.
+5. **Prefix caching on/off** — the `align` mamba cache mode is chosen because prefix
+   caching is on, so disabling it changes per-sequence residency and may move the band.
+6. **`MAX_NUM_SEQS` sweep at 0.98** — if state costs ~5–7 pages per sequence, 16 slots
+   spend up to ~112 of 384 pages on state alone.
+7. **Band map at a second shape** to pin the per-sequence state allowance (bracketed 5–7
+   pages on gg, contradicted by ~4 in the 512K × 2 cell).
+8. Spark remains unverified by this campaign (its owners' reports stand); gg's provider
+   entry on this host is stale relative to the live server config.
