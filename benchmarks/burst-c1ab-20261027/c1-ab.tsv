@@ -1,0 +1,4 @@
+util	legs	c1_decode_med	prefill_128k_ttft_s/tps	prefill_261632_ttft_s/tps	seven_blend	orchid_med	boot_free	note
+0.94	ok	120.7	17.80 / 7192	37.63 / 6953	148.6	239.2	Free memory on device (94.51/95.05 GiB)	
+0.98	ok	118.4	18.03 / 7101	37.59 / 6960	148.1	238.6	Free memory on device (94.51/95.05 GiB)	
+C1 AB DONE 2026-10-27T05:36:18Z
