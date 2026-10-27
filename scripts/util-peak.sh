@@ -67,7 +67,11 @@ stop_engine() {
 # is the kind that happens between "model loaded" and "API serving".
 start_sampler() {
   : > "$OUT/samples.txt"; : > "$OUT/metrics.txt"
-  ( for i in $(seq 1 3600); do
+  # 2 s per sample. The base window is 2 h; a soak extends the run, so the window has to
+  # extend with it or sampling stops while the engine is still under load and every later
+  # phase silently reports the last pre-soak peak.
+  local iters=$(( 3600 + ${SOAK_MIN:-0} * 60 / 2 + 900 ))
+  ( for i in $(seq 1 "$iters"); do
       printf "%s\t%s\n" "$(date +%s)" "$(nvidia-smi --id="$CARD" --query-gpu=memory.used --format=csv,noheader,nounits)" >> "$OUT/samples.txt"
       # Sum over label sets: what matters per sample is the aggregate, and vLLM emits
       # one line per label set. One awk process per sample, so a missing endpoint is
@@ -128,18 +132,35 @@ mark() {   # $1 = phase name, $2 = note
 # the sampler to record it. If this fails, nothing below it means anything.
 control() {
   local before after hi
+  # The calibration has to FIT inside the buffer it is calibrating against, which it did not
+  # used to have to: at 0.94 the slack was ~5.7 GiB and a 1.5 GiB allocation was a rounding
+  # error. At the 0.98 default the entire remainder is ~1.4 GiB, so a fixed 1.5 GiB control is
+  # not a sensitivity check any more -- it is a deliberate OOM, and it would report "sampler
+  # cannot see growth" for a sampler that is working perfectly. Derive the size from the
+  # utilization actually under test unless the caller overrides it.
+  local ctl="${CONTROL_MiB:-}"
+  if [[ -z "$ctl" ]]; then
+    local avail
+    # memory.free, not total-minus-budget: the pool is already committed, the driver already
+    # holds its residue, and on these cards the difference is the gap between a 1,957 MiB
+    # theoretical remainder and the 1,395 MiB actually available.
+    avail=$(nvidia-smi --id="$CARD" --query-gpu=memory.free --format=csv,noheader,nounits)
+    ctl=$(( avail < 1536 ? avail * 45 / 100 : 1536 ))
+    echo "control: ${avail} MiB free on card $CARD -> calibrating with ${ctl} MiB" >> "$OUT/legs.log"
+  fi
+  CONTROL_MiB="$ctl"   # the row label reports the size actually used, not the requested one
+  local need=$(( ctl * 2 / 3 ))
   before=$(peak)
-  # 1536 1 MiB blocks is unambiguous against a background of tens of MiB, and it is well
-  # inside the ~5.2 GiB of slack a 0.94 boot leaves -- so it cannot perturb the phases.
-  docker exec "$NAME" python3 -c '
-import torch, time
-t = [torch.empty(1024*1024, dtype=torch.uint8, device="cuda") for _ in range(1536)]
+  docker exec -e CTL="$ctl" "$NAME" python3 -c '
+import os, torch, time
+t = [torch.empty(1024*1024, dtype=torch.uint8, device="cuda")
+     for _ in range(int(os.environ["CTL"]))]
 torch.cuda.synchronize(); time.sleep(16); del t; torch.cuda.empty_cache()' \
     >>"$OUT/legs.log" 2>&1 || echo "control: docker exec failed (engine gone?)" >> "$OUT/legs.log"
   sleep 4
   after=$(peak); hi=$((after - before))
-  echo "control: device usage rose $((after - before)) MiB while 1.5 GiB was held" >> "$OUT/legs.log"
-  (( hi >= 1024 )) && return 0
+  echo "control: device usage rose $hi MiB while ${ctl} MiB was held (need >= $need)" >> "$OUT/legs.log"
+  (( hi >= need )) && return 0
   echo "control: only $hi MiB observed -- the sampler cannot see growth" >> "$OUT/legs.log"
   return 1
 }
@@ -202,6 +223,30 @@ python3 scripts/benchmark-decode.py --base-url $B/v1 --model "$MODEL" --profile 
   --output "$OUT/shape-decode16.json" >>"$OUT/legs.log" 2>&1 || echo "decode16 leg failed" >>"$OUT/legs.log"
 mark decode-16-at-cudagraph-bucket "16-way decode, max bucket"
 
+# Sustained load, which is the question the phase list structurally cannot answer. Every
+# phase above is a single excursion: fragmentation, cache-allocator segment creep, and a slow
+# leak all look identical to "no growth" in a one-shot measurement, because they need time to
+# accumulate. Growth that matters here is a TRAJECTORY, so each round re-runs the riskiest
+# interleaving -- including the structured-output/FSM path, which is the only phase that ever
+# moved the peak (+490 MiB on one boot out of four, and absent on the other three) -- and marks
+# the high-water mark separately so drift is visible instead of averaged away.
+if [[ "${SOAK_MIN:-0}" != 0 ]]; then
+  deadline=$(( $(date +%s) + SOAK_MIN * 60 ))
+  round=0
+  while (( $(date +%s) < deadline )); do
+    round=$(( round + 1 ))
+    python3 scripts/verify-structured-output-live.py --base-url "$B/v1" --model "$MODEL" \
+      --output "$OUT/soak-structured-$round.json" >>"$OUT/legs.log" 2>&1 || echo "soak $round: structured failed" >>"$OUT/legs.log"
+    python3 scripts/benchmark-deep-concurrency.py --base-url "$B/v1" --model "$MODEL" \
+      --fractions 0.42 --concurrency 4 --output-tokens 512 --output "$OUT/soak-deep4-$round.jsonl" >>"$OUT/legs.log" 2>&1 || echo "soak $round: deep4 failed" >>"$OUT/legs.log"
+    python3 scripts/test-vision-vllm.py --base-url $B --model "$MODEL" --image-counts 16 \
+      --output "$OUT/soak-vision-$round.json" >>"$OUT/legs.log" 2>&1 || echo "soak $round: vision failed" >>"$OUT/legs.log"
+    sleep 10
+    mark "soak-round-$round" "after ${round} rounds, $(( (SOAK_MIN*60 - (deadline - $(date +%s))) / 60 )) min elapsed"
+  done
+  echo "soak: $round rounds in ${SOAK_MIN} min" >> "$OUT/legs.log"
+fi
+
 # The control runs LAST, and that ordering is not cosmetic. Device usage is a high-water
 # mark, so a control that deliberately adds 1.5 GiB raises the peak permanently: run first,
 # it makes every later phase read delta 0 no matter what those phases do -- which is a
@@ -211,8 +256,8 @@ mark decode-16-at-cudagraph-bucket "16-way decode, max bucket"
 # a device that is otherwise idle, and its result is reported alongside the verdict.
 control_note="PASS"
 control || control_note="FAIL"
-printf "control-1.5GiB\t%s\t%s\t%s\t\t\t%s\tsampler sensitivity check, run after the phases\n" \
-  "$(peak)" "$control_note" "$(nsamples)" "" >> "$ROW"
+printf "control-%sMiB\t%s\t%s\t%s\t\t\t%s\tsampler sensitivity check, run after the phases\n" \
+  "$CONTROL_MiB" "$(peak)" "$control_note" "$(nsamples)" "" >> "$ROW"
 kill $SAMPLER 2>/dev/null
 # Verdict: how much did runtime demand exceed what the engine profiled for itself?
 python3 - "$ROW" "$OUT/engine-accounting.txt" <<'PY'
