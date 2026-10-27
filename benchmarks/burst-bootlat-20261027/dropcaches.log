@@ -1,0 +1,5 @@
+  ple-drop-caches: dropping the page cache so the next measurement starts cold
+    engine not listening and no engine process found -> no service to disturb
+  2026-10-27T10:50:57-05:00 user=root via opencode dropped level=1 cached 612.65->0.68 GiB available 981.22->982.53 GiB elapsed=22s
+    shmem intact (0.30 -> 0.30 GiB): pinned host memory untouched
+    page cache released: 611.97 GiB

@@ -1,0 +1,10 @@
+=== mode: asis ===
+  checkpoint residency before boot: 100% (43827417/43829883/167G/167G) | host Cached 612.8 GiB
+  ready in 189s | model load NAs | kv init NAs | device free at startup 94.5 GiB | Cached 612.8->710.2 GiB | ok
+=== mode: cold ===
+  checkpoint residency before boot: 0% (0/43829883/0/167G) | host Cached 0.7 GiB
+  ready in 271s | model load NAs | kv init NAs | device free at startup 94.5 GiB | Cached 0.7->270.1 GiB | ok
+=== boot-latency rows ===
+mode  residency_pct_before  resident_pages     resident_bytes  ready_seconds  model_load_seconds  kv_alloc_seconds  free_at_startup_GiB  cached_before
+asis  100                   43827417/43829883  167G/167G       189            NA                  NA                94.5                 612.8        
+cold  0                     0/43829883         0/167G          271            NA                  NA                94.5                 0.7          

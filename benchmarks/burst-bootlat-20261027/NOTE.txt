@@ -1,0 +1,65 @@
+Restart latency vs host page-cache state: 189 s warm, 271 s cold, and the difference is all one phase.
+
+WHY
+The 0.98 headroom question turned out not to need this (device free-at-startup is not a host-cache
+quantity), but it exposed something else: the recipe's checkpoint is 167 GiB and was 100 % resident
+on this host, so every boot duration quoted anywhere in this repo has been a warm-cache number that
+was never labelled as one. Two arms, same card (2), same util (0.98), same host, nothing else
+serving, minutes apart.
+
+                        residency before boot    ready    weights read    model load    device free
+  asis (warm)                 100 % (167G/167G)    189 s       26.85 s       100.87 s      94.5 GiB
+  cold (drop_caches)             0 % (0/167G)      271 s      104.10 s       178.31 s      94.5 GiB
+
+  cold penalty: +82 s, i.e. +43 % on the time to serving.
+  of which:     +77.25 s is "Loading weights" (26.85 -> 104.10 s) and +77.4 s is the "Model loading"
+                total (100.87 -> 178.31 s). Everything else is unchanged within noise: multi-modal
+                warmup 14.240 s vs 14.067 s; KV allocation identical at 18.26 GiB available; graph
+                capture identical. The whole cold cost is reading the checkpoint, and it is not
+                distributed across startup -- a clean result for anyone reasoning about restarts.
+
+THE COLD ARM IS VERIFIED, NOT ASSUMED
+  ple-drop-caches: page cache released: 611.97 GiB
+  residency before boot: 0 %  0/167G  (pages 0/43829883)   host Cached 0.7 GiB
+Host Cached went 612.8 -> 0.7 GiB and the checkpoint's own residency went 43,827,417 -> 0 pages
+before the boot began. That assertion is the point of the instrument: fadvise(DONTNEED) and friends
+return success whether or not they evicted anything (docs/ssd-stream-findings.md, section 2), so a
+"cold" boot that was secretly warm would have produced 189 s and a false conclusion.
+
+WHAT THIS SETTLES ABOUT MEMORY SAFETY
+Device free at startup was **94.5 GiB in both arms**, with host page cache swinging from 612.8 GiB
+resident to 0.7 GiB and the checkpoint from 100 % to 0 %. This is the controlled version of the
+natural experiment in docs/qualification.md (22 boots, host-available 662 -> 893 GiB, device reading
+fixed at 94.50/94.51 GiB). Page-cache state does not move the reservation, the KV pool, or the
+1,395 MiB margin. Cold cache is an operational cost, not a stability risk, and the earlier open item
+that conflated the two is closed on that basis.
+
+WHAT THIS DOES NOT SAY
+  * Not a throughput or inter-token number. Nothing was sent to the engine while it booted.
+  * One sample per arm. The split is mechanistically clean (one phase moves, nothing else does), but
+    two samples is two samples; the 82 s delta is well outside any plausible run-to-run noise on this
+    host, the 43 % ratio should be treated as order-of-magnitude until repeated.
+  * The bytes actually read are not instrumented; 167 GiB is the checkpoint's size, an upper bound,
+    so no read-bandwidth figure is claimed. 77 s is the measurement; the rate behind it is not.
+  * The pinned PLE table is out of reach here either way: drop_caches frees clean unmapped page cache
+    only, and the table lives in shared memory (host Shmem measured at ~98 GiB per engine).
+
+AND ONE NUMBER IT RETIRES
+This is the first *timed* boot this recipe has ever had. The "~6-7 minutes" I had been quoting -- in
+conversation, in a comment in start.sh, and in this ledger -- was never measured; it was an
+impression from watching docker logs while other work ran. Two independent instruments now agree:
+189 s from this probe's own poll loop, and 99 samples x 2 s = 198 s from the sustained-load probe's
+sampler between launch and its baseline mark (benchmarks/burst-soak-20261027/peak.tsv). A warm boot
+is about three minutes, so a cold one is about four and a half. The places that said "seven minutes"
+are corrected to describe the mechanism instead of a fabricated duration.
+
+FILES
+  bootlat.tsv        raw output as the instrument produced it. Its model_load / kv_alloc columns read
+                     NA: the patterns did not match this build's log wording ("Model loading took
+                     72.01 GiB memory and ...", note the word "memory"). Fixed in
+                     scripts/boot-latency.sh after this run; the numbers above were re-derived from
+                     the engine-*.log files included here, so they are reproducible from the receipt.
+  engine-asis.log    full engine startup log, warm arm
+  engine-cold.log    full engine startup log, cold arm
+  dropcaches.log     the root helper's own account: released 611.97 GiB, Shmem before and after
+  start-*.log        launcher output including the co-tenant gate line (margin 1395 MiB on card 2)
