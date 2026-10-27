@@ -43,6 +43,9 @@ PORT="${PORT:-$([[ "$TP_SIZE" == 1 ]] && echo 8002 || echo 8125)}"
 B="http://127.0.0.1:${PORT}"
 RESULT_DIR="${RESULT_DIR:?Set a result directory for this run}"
 RESIDENCY_BASELINE="${RESIDENCY_BASELINE-$SCRIPT_DIR/benchmarks/RESIDENCY-GEOMETRY.json}"
+# The residency leg compares against the baseline entry for the utilization this host
+# actually boots with, so it needs the platform default -- not a literal that would
+source "$SCRIPT_DIR/platform-config.sh"
 RETRIEVAL_TOKENS="${RETRIEVAL_TOKENS:-8192 240000}"
 BOUNDARY_TOKENS="${BOUNDARY_TOKENS-280000 480000}"
 LOG="$RESULT_DIR/driver.log"
@@ -88,7 +91,7 @@ leg() {  # $1 = QUANT
   # voids that arithmetic outright, so it gates; pool drift only warns, because pool size
   # legitimately differs by host and card.
   step "$q residency" python3 "$SCRIPT_DIR/scripts/check-residency-geometry.py" \
-    --base-url "$B/v1" --output "$dir/residency.json" --util "${GPU_MEMORY_UTILIZATION:-0.94}" \
+    --base-url "$B/v1" --output "$dir/residency.json" --util "${GPU_MEMORY_UTILIZATION:-${DEFAULT_GPU_MEMORY_UTILIZATION:-0.98}}" \
     ${RESIDENCY_BASELINE:+--baseline "$RESIDENCY_BASELINE"} ${RESIDENCY_HOST:+--host "$RESIDENCY_HOST"}
   local common=(--base-url "$B" --model "$alias")
   step "$q api"        python3 "$SCRIPT_DIR/scripts/test-api-tool-constraints.py" "${common[@]}" --output "$dir/api-tools.json"

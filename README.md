@@ -151,7 +151,7 @@ for checkpoint pages and the host. A lower value is configurable.
 | Recipe default | RTX SM120 | Spark SM121 |
 |---|---|---|
 | Native architecture | x86_64 | arm64 |
-| GPU memory utilization | 0.94 | 0.7 maximum |
+| GPU memory utilization | 0.98 | 0.7 maximum |
 | EXL3 MTP draft tokens | 3 | 2 |
 | Vocabulary projection | Native | B12x |
 | PLE storage | host-offloaded resident table | BF16 mmap checkpoint mapping |
@@ -240,12 +240,17 @@ used in performance tests. The full tool-quality suite uses thinking enabled.
 `MAX_MODEL_LEN`, `MAX_NUM_SEQS`, `MAX_BATCHED_TOKENS`,
 `GPU_MEMORY_UTILIZATION`, `PLE_MMAP`, `MTP_TOKENS` and `ENABLE_SCALE_OUT` can
 override the defaults. `MTP_TOKENS=0` disables speculation.
-`GPU_MEMORY_UTILIZATION` is worth touching only for deep concurrent load, and
-the ladder is measured rather than linear: on one RTX card 0.97–0.98 serve four
-concurrent ~245K sequences with no evictions while **0.96 and 0.965 are 1.7×
-and 2.0× slower than the 0.94 default**, because residency is counted in 3200-token
-pages plus per-sequence state, not in tokens (see the deep-arrival residency
-section in [docs/qualification.md](docs/qualification.md)). `ENABLE_SCALE_OUT`
+`GPU_MEMORY_UTILIZATION` defaults to **0.98 on RTX**, which is worth ~80 KV pages over
+0.94 and is what makes four concurrent ~245K sequences finish in 277s with no evictions
+instead of 357s with one; C1 pays at most 1.9% for it. The ladder is **not** monotone, so
+do not tune by feel: **0.96 and 0.965 are 1.2–2.0× slower than 0.94 was**, because
+residency is counted in 3200-token pages plus per-sequence state and those levels admit
+four sequences they cannot hold. 0.97 is clean but sits exactly on the boundary. The
+ceiling is measured, not guessed: 0.99 boots and 1.00 refuses, i.e. 94.50 of 95.06 GiB is
+claimable. And the band is a property of the engine image — it shifted ~8 pages between
+v0.31 and v0.32 — so re-measure after a rebase; `scripts/check-residency-geometry.py`
+gates the qualification legs on exactly that. Details and receipts in
+[docs/qualification.md](docs/qualification.md). `ENABLE_SCALE_OUT`
 matters only on RTX, where the launcher adds `--enable-scale-out` by default so
 `/v1/chat/completions/render` answers instead of 403 (see the coding-leg note
 under **Reproduce qualification**); set it to `0` on a box whose port is

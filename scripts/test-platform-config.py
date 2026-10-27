@@ -28,7 +28,7 @@ with tempfile.TemporaryDirectory() as folder:
     for key in ('IMAGE','QUANT','GPU_MEMORY_UTILIZATION','PLE_MMAP','VLLM_PLE_MMAP','PLE_MMAP_READAHEAD','RELEASE_IMAGE','MTP_TOKENS','B12X_VOCAB'):
         env.pop(key, None)
     for arch, image, fraction, cute in (
-        ('x86_64','qwen38-rtx:local','0.94','sm_120a'),
+        ('x86_64','qwen38-rtx:local','0.98','sm_120a'),
         ('aarch64','spark-exl3-qwen3.8-flash-next:local','0.7','sm_121a')):
         env['TEST_ARCH'] = arch
         build = subprocess.check_output(['bash', str(root/'build.sh')], env=env, text=True).splitlines()

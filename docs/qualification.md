@@ -1651,17 +1651,19 @@ second card.
 
 Adopted decision rule (2026-10-26, owner): C1 stays important, and 0.98 becomes the
 default if it is (a) safe under worst-case memory conditions, (b) not measurably worse
-at C1, and (c) clearly better under concurrent deep load.
+at C1, and (c) clearly better under concurrent deep load. **Adopted 2026-10-27:
+`DEFAULT_GPU_MEMORY_UTILIZATION` is now 0.98 on RTX.**
 
 - **(b) satisfied**: ≤1.9% on every C1 leg, above.
 - **(c) satisfied on two images**: 245K × 4 goes 357 s → 276 s (gg) and 357 s → 277 s
   (burst) with zero evictions instead of one; 512K × 2 goes 409 s → 270 s; and 0.98
   clears the 0.96–0.965 trap band on both.
-- **(a) satisfied as measured**: 0.99 boots, so 0.98 is not at a cliff edge; measured
-  runtime growth is 0–490 MiB against ~1.4 GiB of headroom and a 1.29 GiB profiled
-  activation reserve; no OOM line in any cell of any run in this campaign. The
-  outstanding piece is the sampler's positive control, plus a cold-cache / co-tenant
-  boot-margin sample — see *Open items*.
+- **(a) satisfied as measured**: 0.99 boots, so 0.98 is not at a cliff edge; runtime
+  growth over the boot baseline is 0–490 MiB against ~1.4 GiB of headroom and a 1.29 GiB
+  profiled activation reserve; and the probe's positive control passed — 1,553 MiB of
+  rise recorded while 1.5 GiB was deliberately held inside the engine container, which is
+  what licenses reading those flat rows as real zeros rather than as a blind sampler. No
+  OOM line in any cell of any run in this campaign.
 
 0.97 is not the answer even though it is clean: it is the boundary itself (356 pages on
 gg against a modelled 4 × 89 = 356 requirement — zero margin), and 0.98 costs nothing
@@ -1671,10 +1673,11 @@ extra that was measured. 0.96 and 0.965 remain forbidden, now measured on both i
 
 Ordered by what they could still change.
 
-1. **Sampler positive control** (`util-peak.sh control`, 1.5 GiB allocated inside the
-   engine container): if the sampler cannot record it, every `+0` in the growth table is
-   uninterpretable and criterion (a) reverts to unmeasured. Run in flight; the probe now
-   aborts rather than reporting phases if it fails.
+1. ~~**Sampler positive control**~~ — **done, passed** (1,553 MiB recorded while 1.5 GiB
+   was held in the engine container; the probe now aborts instead of reporting phases if
+   it ever fails). Its result is what makes the flat growth rows interpretable. Still open
+   underneath it: a cold page cache and a co-tenant boot-margin sample at 0.98, which is
+   item 3.
 2. **Output identity under eviction.** Same prompt and seed, once with zero evictions and
    once in the thrash regime (0.96, 4 × 245K), comparing full token and logprob hashes.
    Eviction means re-prefill, and with FP8 KV, chunked prefill and MTP drafting, "the

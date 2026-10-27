@@ -19,7 +19,18 @@ case "$(uname -m)" in
     DEFAULT_B12X_VOCAB=0
     PLATFORM_KIND=rtx
     DEFAULT_IMAGE=qwen38-rtx:local
-    DEFAULT_GPU_MEMORY_UTILIZATION=0.94
+    # 0.98, measured. The engine's claimable ceiling on a 96 GB card is 94.50 of 95.06
+    # GiB (0.99 boots, 1.00 refuses to start), so 0.98 is not at a cliff edge. It was
+    # adopted because four concurrent ~245K sequences finish in 277s with zero evictions
+    # versus 357s with one at 0.94, on both the v0.31 and v0.32 images, while C1 costs
+    # <= 1.9% on every leg. Two levels are NOT interchangeable: 0.96 and 0.965 are
+    # measurably WORSE than the old 0.94 default (441s and 722s -- residency is counted
+    # in 3200-token pages plus per-sequence state, so admitting four sequences that you
+    # cannot hold is slower than declining to admit them), and 0.97 is clean only because
+    # it sits exactly on the boundary, with zero margin. Re-measure the band after any
+    # rebase: scripts/check-residency-geometry.py is a gating leg that fails when the
+    # page geometry moves. See docs/qualification.md.
+    DEFAULT_GPU_MEMORY_UTILIZATION=0.98
     DEFAULT_CUTE_DSL_ARCH=sm_120a
     DEFAULT_LONGCTX=1
     DEFAULT_MAX_BATCHED_TOKENS=2048
