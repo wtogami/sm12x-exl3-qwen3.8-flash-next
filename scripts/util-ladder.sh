@@ -16,6 +16,10 @@
 set -uo pipefail
 # Repo-relative, not a hardcoded /home/rtx path: this driver runs on gg and on burst.
 cd "$(cd -- "$(dirname -- "${BASH_SOURCE[0]}")/.." && pwd)"
+# Fail fast if that cd did not land in a checkout. A copy placed outside the repo
+# resolved to a directory with no start.sh, polled a port for 33 minutes, and its
+# stop fallback SIGKILLed an engine loading weights on the same card.
+[[ -f start.sh && -f stop.sh ]] || { echo "no start.sh/stop.sh above $(dirname -- "${BASH_SOURCE[0]}") -- run this file from <repo>/scripts/" >&2; exit 2; }
 QUANT="${QUANT:-exl3-ple8}"
 MODEL="${MODEL:-qwen38-$QUANT}"          # served alias, matches start.sh's default
 NAME="${CONTAINER_NAME:-qwen38-$QUANT}"  # and so is the container name
@@ -37,7 +41,22 @@ wait_build() {
   done; return 1
 }
 
-stop_engine() { QUANT=$QUANT IMAGE=$IMG PORT=$PORT bash stop.sh >>"$OUT/ops.log" 2>&1 || docker rm -f "$NAME" >/dev/null 2>&1; sleep 5; }
+# Never `docker rm -f` a *running* container: that is SIGTERM, 10s, SIGKILL. Fine
+# when a driver owns the whole machine, but a misplaced copy of this driver killed a
+# user's engine that was 86% through loading weights. Only stopped containers are
+# removed; a live one under our name that stop.sh could not stop is someone else's
+# work (or a wedged driver) and we refuse the cell loudly instead of ending it.
+stop_engine() {
+  QUANT=$QUANT IMAGE=$IMG PORT=$PORT bash stop.sh >>"$OUT/ops.log" 2>&1 || true
+  local state
+  state=$(docker inspect -f '{{.State.Status}}' "$NAME" 2>/dev/null) || return 0
+  if [[ "$state" == running || "$state" == created || "$state" == restarting ]]; then
+    echo "STOP-REFUSED: container $NAME is still $state; refusing to force-remove it" >>"$OUT/ops.log"
+    return 1
+  fi
+  docker rm "$NAME" >/dev/null 2>&1 || true
+  sleep 5
+}
 
 run_cell() {  # $1 = utilization
   local u="$1" log="$OUT/util-$u.log" w kvg kvt cap free status note pin host_avail

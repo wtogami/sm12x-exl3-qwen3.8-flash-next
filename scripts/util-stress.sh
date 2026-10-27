@@ -5,6 +5,9 @@
 set -uo pipefail
 # Repo-relative, not a hardcoded /home/rtx path: this driver runs on gg and on burst.
 cd "$(cd -- "$(dirname -- "${BASH_SOURCE[0]}")/.." && pwd)"
+# Fail fast if that cd did not land in a checkout (see util-ladder.sh: a copy run
+# from outside the repo polled a dead port and force-killed someone else's engine).
+[[ -f start.sh && -f stop.sh ]] || { echo "no start.sh/stop.sh above $(dirname -- "${BASH_SOURCE[0]}") -- run this file from <repo>/scripts/" >&2; exit 2; }
 # Same override surface as util-ladder.sh, and the same requirement that OUT
 # match: this script derives its cell list from that directory's results.tsv.
 QUANT="${QUANT:-exl3-ple8}"
@@ -17,7 +20,19 @@ SROW="$OUT/stress.tsv"; [[ -e "$SROW" ]] || printf "util\tstress\tpeak_used_MiB\
 # wait for phase 1 to finish
 for i in $(seq 1 240); do grep -q "LADDER DONE" "$OUT/results.tsv" 2>/dev/null && break; sleep 30; done
 
-stop_engine() { QUANT=$QUANT IMAGE=$IMG PORT=$PORT bash stop.sh >>"$OUT/ops.log" 2>&1 || docker rm -f "$NAME" >/dev/null 2>&1; sleep 5; }
+# Only ever removes a container that is no longer running -- see the long comment
+# on the same function in util-ladder.sh for why the force-remove fallback died.
+stop_engine() {
+  QUANT=$QUANT IMAGE=$IMG PORT=$PORT bash stop.sh >>"$OUT/ops.log" 2>&1 || true
+  local state
+  state=$(docker inspect -f '{{.State.Status}}' "$NAME" 2>/dev/null) || return 0
+  if [[ "$state" == running || "$state" == created || "$state" == restarting ]]; then
+    echo "STOP-REFUSED: container $NAME is still $state; refusing to force-remove it" >>"$OUT/ops.log"
+    return 1
+  fi
+  docker rm "$NAME" >/dev/null 2>&1 || true
+  sleep 5
+}
 
 for u in $(awk -F'\t' '$2=="OK" && $1!="0.94" {print $1}' "$OUT/results.tsv"); do
   grep -q "^$u\b" "$SROW" && continue
