@@ -7,7 +7,7 @@ Generated from the linked raw receipts by `scripts/summarize-results.py`.
 > [../docs/performance-comparison.md](../docs/performance-comparison.md) and
 > [../docs/quality-comparison.md](../docs/quality-comparison.md).
 
-RTX profiles run on one RTX PRO 6000 Blackwell 96 GB at a 400 W power limit. The Spark profile, when present, runs on one DGX Spark GB10 with unified memory. C1 is the default-selection priority. All use FP8 KV and host token embeddings. The mmap profiles read PLE rows from checkpoint-backed mappings; the original RTX profiles retain resident host tables. All decode rates below exclude prefill.
+RTX profiles run on one RTX PRO 6000 Blackwell 96 GB at a 400 W power limit. The Spark profile, when present, runs on one DGX Spark GB10 with unified memory. C1 was the default-selection priority for these historical runs. All use FP8 KV and host token embeddings. The mmap profiles read PLE rows from checkpoint-backed mappings; the original RTX profiles retain resident host tables. All decode rates below exclude prefill.
 
 EXL3 and NVFP4 columns retain the v0.1.0 measurements; only the mmap-enabled EXL3 PLE8 column records its v0.2.0 qualification. The RTX EXL3 baseline has a different PLE storage precision, so this is not a controlled mmap-on/off comparison. The mmap run uses existing Linux page cache and benchmark warmups; it is not a cold-disk or constrained-RAM test.
 

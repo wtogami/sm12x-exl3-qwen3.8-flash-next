@@ -40,7 +40,7 @@ lines = ["# Final serving measurements (historical)", "",
          f"> {doc_link('quality-comparison.md')}.", "",
          "RTX profiles run on one RTX PRO 6000 Blackwell 96 GB at a 400 W power limit. "
          "The Spark profile, when present, runs on one DGX Spark GB10 with unified memory. "
-         "C1 is the default-selection priority. All use FP8 KV and host token embeddings. "
+         "C1 was the default-selection priority for these historical runs. All use FP8 KV and host token embeddings. "
          "The mmap profiles read PLE rows from checkpoint-backed mappings; the original RTX "
          "profiles retain resident host tables. All decode rates below exclude prefill.", ""]
 if args.mmap:

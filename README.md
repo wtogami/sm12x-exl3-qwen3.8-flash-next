@@ -4,8 +4,11 @@ A TP=1 SM12x serving recipe with host-resident token embeddings and
 mmap-backed (checkpoint-mapped) PLE n-gram tables, FP8 KV cache, vision, CUDA
 graphs, and tuned MTP. RTX defaults to a 524288-token context via YaRN 2.0
 scaling of the 262144-native window (`LONGCTX=1`); Spark serves the native
-262144. The scheduler has 16 request slots, and C1 performance is the
-priority for the defaults.
+262144. The scheduler has 16 request slots. Single-stream (C1) latency is one
+input to the defaults, not the overriding one: capacity decisions here are made
+against concurrent deep load, because that is where the measured differences are
+large (see the deep-arrival residency section of
+[docs/qualification.md](docs/qualification.md)).
 
 **How fast is it?** (one card each, TP=1, FP8 KV, MTP on)
 
@@ -307,15 +310,17 @@ throughput.
 
 ## MTP defaults
 
-Draft tokens default to **3** for the EXL3 profiles on RTX and **2** for
-`nvfp4` and on Spark — the best measured mixed-C1 blend per profile under
-the C1-priority defaults. Adaptive draft policies (long draft at low
-concurrency, one token at high) were swept and rejected. `MTP_TOKENS=0`
-disables speculation; `MTP_TOKENS=1` trades C1 latency for higher C16
-aggregate. The full sweep tables, the adaptive-policy reproducer, the
+Draft tokens default to **3** for the EXL3 profiles on RTX and **2** for `nvfp4`
+and on Spark — the best measured mixed-C1 blend per profile at sweep time. That
+criterion was C1-weighted, and C1 is no longer the stated priority, so the MTP
+default is **pending** rather than settled: it has not been re-swept against
+aggregate throughput under concurrent deep load. Adaptive draft policies (long
+draft at low concurrency, one token at high) were swept and rejected.
+`MTP_TOKENS=0` disables speculation; `MTP_TOKENS=1` trades C1 latency for higher
+C16 aggregate. The full sweep tables, the adaptive-policy reproducer, the
 code-heavy workload-specific options, and Spark's tuning trail are in
-[docs/tuning-history.md](docs/tuning-history.md); receipts and exceptions
-in [docs/qualification.md](docs/qualification.md).
+[docs/tuning-history.md](docs/tuning-history.md); receipts and exceptions in
+[docs/qualification.md](docs/qualification.md).
 
 ## Kernel choices
 

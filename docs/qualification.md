@@ -4,6 +4,13 @@ Selection priority: the user clarified that C1 matters most. Final defaults
 should favor measured C1 performance; retain C16 tuning and capacity results
 as documented tradeoffs rather than optimizing the default primarily for C16.
 
+**Superseded 2026-10-26: C1 is no longer the overriding selection priority.**
+The deep-arrival residency measurements at the end of this ledger are the reason
+— the 0.94/0.96/0.97/0.98 differences are invisible at C1 and reach 2x at
+four-way deep load. Everything above stays as the record of how today's defaults
+were chosen, but any decision in this file justified by "C1 matters most" is now
+open for revisit, starting with `GPU_MEMORY_UTILIZATION` and the MTP draft length.
+
 Status: development; no serving or performance claims yet.
 
 ## Required release gates
