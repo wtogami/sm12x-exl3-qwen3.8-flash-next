@@ -89,13 +89,16 @@ fi
 used=$(nvidia-smi --id="$GPU" --query-gpu=memory.used --format=csv,noheader,nounits)
 (( used < 256 )) || { echo "GPU $GPU holds $used MiB; not exclusively free" >&2; exit 2; }
 
-ROW="$OUT/bootlat.tsv"; [[ -e "$ROW" ]] || printf "mode\tresidency_pct_before\tresident_before\tresident_total\tready_seconds\tmodel_load_seconds\tkv_alloc_seconds\tfree_at_startup_GiB\tcached_before_GiB\tcached_after_GiB\tnote\n" >> "$ROW"
+ROW="$OUT/bootlat.tsv"; [[ -e "$ROW" ]] || printf "mode\tresidency_pct_before\tresident_pages\tresident_bytes\tready_seconds\tweights_read_seconds\tmodel_load_seconds\tfree_at_startup_GiB\tcached_before_GiB\tcached_after_GiB\tnote\n" >> "$ROW"
 
-residency() {   # -> "<pct>\t<resident>\t<total>" for the checkpoint directory
+residency() {   # -> "<pct>\t<resident/total pages>\t<resident/total bytes>" for the checkpoint dir
+  # Fields of the line we parse, so the column names below mean what they say:
+  #   Resident Pages: 43827417/43829883  167G/167G  100%
+  #        $1 $2            $3              $4        $5 = $NF
   vmtouch -f "$MODEL_DIR" 2>/dev/null | awk '
-    /^ *Resident Pages/ { pct=$NF; sub(/%/,"",pct); print pct "\t" $4 "\t" $6 }'
+    /^ *Resident Pages/ { pct=$NF; sub(/%/,"",pct); print pct "\t" $3 "\t" $4 }'
 }
-cached_gib() { awk -v k="$1:" '$1==k {printf "%.1f", $2/1048576}' /proc/meminfo Cached; }
+cached_gib() { awk '$1=="Cached:" {printf "%.1f", $2/1048576}' /proc/meminfo; }
 
 for mode in $MODES; do
   echo "=== mode: $mode ==="
@@ -112,24 +115,29 @@ for mode in $MODES; do
     *) echo "unknown mode: $mode"; exit 2 ;;
   esac
 
-  IFS=$'\t' read -r rpct rb rtotal < <(residency)
+  IFS=$'\t' read -r rpct rb rbytes < <(residency)
   cbefore=$(cached_gib)
-  echo "  checkpoint residency before boot: ${rpct:-NA}% (${rb:-?}/${rtotal:-?}) | host Cached ${cbefore} GiB"
+  echo "  checkpoint residency before boot: ${rpct:-NA}%  ${rbytes:-?} resident (pages ${rb:-?}) | host Cached ${cbefore} GiB"
   case "$mode" in
     warm) awk -v p="${rpct:-0}" 'BEGIN{ exit !(p+0 >= 50) }' || note="${note}residency=${rpct:-NA}%<50:UNVERIFIED " ;;
     cold) awk -v p="${rpct:-0}" 'BEGIN{ exit !(p+0 <= 25) }'  || note="${note}residency=${rpct:-NA}%>25:UNVERIFIED " ;;
   esac
 
   # Timed from the launch call to the first successful /v1/models, at 1 s resolution: the queueing
-  # and weight read are the part a cold cache can move, and start.sh returns before serving.
+  # and weight read are the part a cold cache can move. Note start.sh RETURNS BEFORE SERVING -- it
+  # submits the container and exits -- so "launcher is gone" means nothing about readiness. The
+  # first version broke out of the wait when the launcher exited, which would have reported ~20 s
+  # boots for every arm. Its exit status is recorded instead, and only a nonzero one aborts early.
   t0=$(date +%s)
-  QUANT="$QUANT" IMAGE="$IMG" GPU="$GPU" PORT="$PORT" CONTAINER_NAME="$NAME" \
-    GPU_MEMORY_UTILIZATION="$UTIL" bash start.sh > "$OUT/start-$mode.log" 2>&1 &
-  launcher=$!
+  : > "$OUT/launcher-$mode.rc"
+  ( QUANT="$QUANT" IMAGE="$IMG" GPU="$GPU" PORT="$PORT" CONTAINER_NAME="$NAME" \
+      GPU_MEMORY_UTILIZATION="$UTIL" bash start.sh > "$OUT/start-$mode.log" 2>&1
+    echo $? > "$OUT/launcher-$mode.rc" ) &
   ready=0
-  for _ in $(seq 1 1200); do
+  for _ in $(seq 1 1800); do
     curl -sf --max-time 4 "$B/v1/models" >/dev/null 2>&1 && { ready=1; break; }
-    kill -0 "$launcher" 2>/dev/null || { sleep 2; curl -sf --max-time 4 "$B/v1/models" >/dev/null 2>&1 && { ready=1; break; }; echo "  launcher exited before serving"; break; }
+    lrc=$(cat "$OUT/launcher-$mode.rc" 2>/dev/null)
+    if [[ -n "$lrc" && "$lrc" != "0" ]]; then note="${note}launcher-rc=$lrc "; break; fi
     sleep 1
   done
   t1=$(date +%s)
@@ -137,13 +145,21 @@ for mode in $MODES; do
   (( ready )) || note="${note}BOOT-FAILED "
 
   docker logs "$NAME" > "$OUT/engine-$mode.log" 2>&1 || true
-  load_s=$(grep -hoE "Model loading took [0-9.]+ GiB and [0-9.]+ seconds" "$OUT/engine-$mode.log" | tail -1 | grep -oE "and [0-9.]+ seconds" | grep -oE "[0-9.]+")
-  kv_s=$(grep -hoE "init engine .* took [0-9.]+ seconds" "$OUT/engine-$mode.log" | tail -1 | grep -oE "[0-9.]+ second" | grep -oE "[0-9.]+")
+  # Patterns verified against the logs this build actually writes (v0.32, exl3):
+  #   "Loading weights took 104.10 seconds"   -- the disk-bound phase; appears twice, the second
+  #                                            being a small secondary load (~4.7 s), so take the first
+  #   "Model loading took 72.01 GiB memory and 178.309458 seconds"
+  # The word "memory" in the second line matters: the first version of that pattern omitted it, both
+  # columns silently reported NA, and the interesting question -- which phase the cold penalty lands
+  # in -- had to be re-derived from the saved receipt by hand. NA is not a null result, it is a
+  # broken pattern, and nothing here should print one without saying so.
+  weights_s=$(grep -hoE "Loading weights took [0-9.]+ seconds" "$OUT/engine-$mode.log" | head -1 | grep -oE "[0-9.]+")
+  load_s=$(grep -hoE "Model loading took [0-9.]+ GiB memory and [0-9.]+ seconds" "$OUT/engine-$mode.log" | tail -1 | grep -oE "and [0-9.]+ seconds" | grep -oE "[0-9.]+")
   freeg=$(grep -hoE "Free memory on device \([0-9.]+/[0-9.]+ GiB\)" "$OUT/engine-$mode.log" | tail -1 | grep -oE "\([0-9.]+" | tr -d '(')
   cafter=$(cached_gib)
   printf "%s\t%s\t%s\t%s\t%s\t%s\t%s\t%s\t%s\t%s\t%s\n" \
-    "$mode" "${rpct:-NA}" "${rb:-NA}" "${rtotal:-NA}" "$ready_s" "${load_s:-NA}" "${kv_s:-NA}" "${freeg:-NA}" "$cbefore" "$cafter" "${note:-ok}" >> "$ROW"
-  echo "  ready in ${ready_s}s | model load ${load_s:-NA}s | kv init ${kv_s:-NA}s | device free at startup ${freeg:-NA} GiB | Cached ${cbefore}->${cafter} GiB | ${note:-ok}"
+    "$mode" "${rpct:-NA}" "${rb:-NA}" "${rbytes:-NA}" "$ready_s" "${weights_s:-NA}" "${load_s:-NA}" "${freeg:-NA}" "$cbefore" "$cafter" "${note:-ok}" >> "$ROW"
+  echo "  ready in ${ready_s}s | weights read ${weights_s:-NA}s | model load ${load_s:-NA}s | device free at startup ${freeg:-NA} GiB | Cached ${cbefore}->${cafter} GiB | ${note:-ok}"
 
   QUANT="$QUANT" IMAGE="$IMG" PORT="$PORT" CONTAINER_NAME="$NAME" bash stop.sh > "$OUT/stop-$mode.log" 2>&1 || true
   sleep 15
